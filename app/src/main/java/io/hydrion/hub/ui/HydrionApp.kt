@@ -1,0 +1,232 @@
+package io.hydrion.hub.ui
+
+import android.app.Application
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import io.hydrion.hub.model.Conversation
+import io.hydrion.hub.model.HubViewModel
+import io.hydrion.hub.model.Mode
+import io.hydrion.hub.provider.ConfigureSheet
+import io.hydrion.hub.provider.ProviderSettings
+import io.hydrion.hub.provider.ProviderStore
+import io.hydrion.hub.ui.chrome.Header
+import io.hydrion.hub.ui.composer.HubComposer
+import io.hydrion.hub.ui.messages.ProvideMessageStyle
+import io.hydrion.hub.ui.messages.MessageList
+import io.hydrion.hub.ui.messages.matchingMessages
+import io.hydrion.hub.ui.sidebar.ConversationDrawer
+import io.hydrion.hub.ui.theme.HydrionTheme
+import io.hydrion.hub.ui.theme.ProviderTheme
+import kotlinx.coroutines.launch
+import java.util.Locale
+
+class ProviderViewModel(application: Application) : AndroidViewModel(application) {
+    val store = ProviderStore(application)
+}
+
+@Composable
+fun HydrionApp() {
+    HydrionTheme {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background,
+            contentColor = MaterialTheme.colorScheme.onBackground) {
+            ProvideMessageStyle { Workspace(viewModel(), viewModel<ProviderViewModel>().store) }
+        }
+    }
+}
+
+@Composable
+private fun Workspace(vm: HubViewModel, providers: ProviderStore) {
+    val state by vm.state.collectAsStateWithLifecycle()
+    val catalog by providers.catalog.collectAsStateWithLifecycle()
+    val current = state.current
+    val selection = catalog.selection(current.mode)
+    var settings by rememberSaveable { mutableStateOf(false) }
+    var configure by rememberSaveable { mutableStateOf(false) }
+    var finding by rememberSaveable(current.id) { mutableStateOf(false) }
+    var query by rememberSaveable(current.id) { mutableStateOf("") }
+    var matchIndex by rememberSaveable(query, current.id) { mutableIntStateOf(0) }
+    val hits = remember(query, current.messages, finding) {
+        if (finding && query.isNotBlank()) matchingMessages(state, query) else emptyList()
+    }
+    val index = matchIndex.coerceIn(0, (hits.size - 1).coerceAtLeast(0))
+    var renameId by rememberSaveable { mutableStateOf<String?>(null) }
+    var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
+    val drawer = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    val focus = LocalFocusManager.current
+    val timelines = rememberSaveableStateHolder()
+    val snackbar = remember { SnackbarHostState() }
+    val notice by vm.notice.collectAsStateWithLifecycle()
+    LaunchedEffect(notice) {
+        notice?.let { snackbar.showSnackbar(it); vm.clearNotice() }
+    }
+
+    fun closeDrawer() { scope.launch { drawer.close() } }
+    fun newChat() {
+        closeDrawer()
+        focus.clearFocus()
+        vm.newConversation()
+    }
+    BackHandler(enabled = !settings && (drawer.isOpen || finding)) {
+        if (drawer.isOpen) closeDrawer() else { finding = false; query = "" }
+    }
+
+    if (settings) {
+        // The settings screen owns back navigation between its nested editors.
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
+            ProviderTheme { ProviderSettings(providers, onBack = { settings = false }) }
+        }
+    } else {
+        ModalNavigationDrawer(
+            drawerState = drawer,
+            drawerContent = {
+                val drawerWidth = (LocalConfiguration.current.screenWidthDp.dp - 44.dp).coerceIn(220.dp, 348.dp)
+                val widthPx = with(LocalDensity.current) { drawerWidth.toPx() }
+                val visible by remember(drawer, widthPx) { derivedStateOf {
+                    drawer.isOpen || drawer.targetValue == DrawerValue.Open || drawer.currentOffset > -widthPx + 1f
+                } }
+                ConversationDrawer(
+                    history = if (visible) state.history else emptyList(),
+                    currentId = current.id, onNew = ::newChat,
+                    onOpen = { vm.openConversation(it); focus.clearFocus(); closeDrawer() },
+                    onSettings = { closeDrawer(); settings = true },
+                    onRename = { renameId = it }, onPin = vm::togglePin, onDelete = { deleteId = it }
+                )
+            }
+        ) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
+                .navigationBarsPadding().imePadding()) {
+                Column(Modifier.align(Alignment.TopCenter).widthIn(max = 900.dp).fillMaxSize()) {
+                    val usage = mockContext(current.mode, current.messages.size)
+                    Header(
+                        mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
+                        contextLabel = usage.first, contextFraction = usage.second,
+                        onMode = vm::setMode, onNew = ::newChat,
+                        onDrawer = { focus.clearFocus(); scope.launch { drawer.open() } },
+                        onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },
+                        onFind = { finding = true }, onDelete = { deleteId = current.id }
+                    )
+                    if (finding) FindBar(query, { query = it }, index, hits.size,
+                        previous = { if (hits.isNotEmpty()) matchIndex = (index - 1 + hits.size) % hits.size },
+                        next = { if (hits.isNotEmpty()) matchIndex = (index + 1) % hits.size },
+                        onClose = { finding = false; query = ""; focus.clearFocus() })
+                    if (current.messages.isEmpty()) {
+                        RecentConversations(
+                            history = state.history, mode = current.mode,
+                            visible = !state.modeLocked && state.draft.text.isBlank() && state.draft.attachments.isEmpty(),
+                            onOpen = { id -> focus.clearFocus(); vm.openConversation(id) },
+                            modifier = Modifier.weight(1f).fillMaxWidth()
+                        )
+                    } else {
+                        timelines.SaveableStateProvider(current.id) {
+                            MessageList(vm, state, if (finding) query else "", index, Modifier.weight(1f).fillMaxWidth())
+                        }
+                    }
+                    key(current.id) {
+                        val chipLabel = if (current.mode == Mode.Chat)
+                            listOfNotNull(selection.label, selection.parameters["effort"]).joinToString(" ")
+                        else selection.label
+                        HubComposer(vm, state, chipLabel, selection.available,
+                            fast = current.mode == Mode.Chat && selection.parameters["speed"] == "Fast",
+                            onConfigure = { focus.clearFocus(); configure = true },
+                            onSend = {
+                                scope.launch {
+                                    sendDraft(vm, providers)?.let { snackbar.showSnackbar(it) }
+                                }
+                            })
+                    }
+                }
+                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 88.dp))
+            }
+        }
+    }
+
+    if (configure) ConfigureSheet(providers, current.mode) { configure = false }
+    fun titleFor(id: String) = if (id == current.id) current.title else state.history.firstOrNull { it.id == id }?.title.orEmpty()
+    renameId?.let { id ->
+        var value by rememberSaveable(id) { mutableStateOf(titleFor(id)) }
+        AlertDialog(onDismissRequest = { renameId = null }, title = { Text("重命名会话") }, text = {
+            OutlinedTextField(value, { value = it }, label = { Text("会话名称") }, singleLine = true)
+        }, confirmButton = {
+            TextButton(onClick = { vm.rename(id, value.trim()); renameId = null }, enabled = value.isNotBlank()) { Text("保存") }
+        }, dismissButton = { TextButton(onClick = { renameId = null }) { Text("取消") } })
+    }
+    deleteId?.let { id ->
+        AlertDialog(onDismissRequest = { deleteId = null }, title = { Text("删除会话？") },
+            text = { Text("将从本机删除「${titleFor(id)}」及其消息。") },
+            confirmButton = { TextButton(onClick = { timelines.removeState(id); vm.deleteConversation(id); deleteId = null }) {
+                Text("删除", color = MaterialTheme.colorScheme.error)
+            } }, dismissButton = { TextButton(onClick = { deleteId = null }) { Text("取消") } })
+    }
+}
+
+private fun mockContext(mode: Mode, messages: Int): Pair<String, Float> {
+    // Image requests are independent. Chat uses a replaceable local usage estimate.
+    val tokens = if (mode == Mode.Image) 0f else messages * 260f
+    return String.format(Locale.ROOT, "%.1fk", tokens / 1000) to (tokens / 128000).coerceAtMost(1f)
+}
+
+@Composable
+private fun RecentConversations(
+    history: List<Conversation>, mode: Mode, visible: Boolean, onOpen: (String) -> Unit, modifier: Modifier
+) {
+    val recent = remember(history, mode, visible) {
+        if (visible) history.asSequence().filter { it.mode == mode }.take(3).toList() else emptyList()
+    }
+    BoxWithConstraints(modifier, contentAlignment = Alignment.BottomCenter) {
+        val count = (maxHeight.value / 46f).toInt().coerceIn(0, recent.size)
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+            recent.take(count).forEach { conversation ->
+                Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
+                    .clickable(onClickLabel = "打开会话") { onOpen(conversation.id) }
+                    .heightIn(min = 46.dp).padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(if (mode == Mode.Chat) Icons.Outlined.ChatBubbleOutline else Icons.Outlined.Image,
+                        contentDescription = null, modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(conversation.title, style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FindBar(query: String, onQuery: (String) -> Unit, index: Int, count: Int,
+                    previous: () -> Unit, next: () -> Unit, onClose: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(query, onQuery, Modifier.weight(1f), placeholder = { Text("查找聊天内容") }, singleLine = true)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (query.isNotBlank()) Text(if (count == 0) "0/0" else "${index + 1}/$count",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row {
+                IconButton(previous, enabled = count > 1, modifier = Modifier.size(36.dp)) { Icon(Icons.Outlined.ExpandLess, "上一处") }
+                IconButton(next, enabled = count > 1, modifier = Modifier.size(36.dp)) { Icon(Icons.Outlined.ExpandMore, "下一处") }
+            }
+        }
+        IconButton(onClose, Modifier.size(38.dp)) { Icon(Icons.Outlined.Close, "关闭查找") }
+    }
+}

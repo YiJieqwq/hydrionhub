@@ -1,0 +1,92 @@
+package io.hydrion.hub.model
+
+import android.content.Context
+import android.util.AtomicFile
+import java.io.File
+import java.io.FileNotFoundException
+import org.json.JSONArray
+import org.json.JSONObject
+
+/** The local demo history is replaced atomically. The codec is used only on Dispatchers.IO. */
+internal class HistoryFile(context: Context) {
+    private val file = AtomicFile(File(context.filesDir, "conversation-history-v1.json"))
+
+    fun load(): SavedWorkspace {
+        val json = try {
+            file.openRead().bufferedReader().use { JSONObject(it.readText()) }
+        } catch (_: FileNotFoundException) {
+            return SavedWorkspace()
+        }
+        val history = json.optJSONArray("history").objects().map { item ->
+            Conversation(id = item.getString("id"), title = item.getString("title"),
+                mode = Mode.valueOf(item.getString("mode")), pinned = item.optBoolean("pinned"),
+                updatedAt = item.getLong("updatedAt"), messages = item.optJSONArray("messages").objects().map(::readMessage))
+        }
+        val drafts = json.optJSONObject("drafts") ?: JSONObject()
+        return SavedWorkspace(history, drafts.keys().asSequence().associateWith { id ->
+            val draft = drafts.getJSONObject(id)
+            Draft(draft.optString("text"), readAttachments(draft.optJSONArray("attachments")),
+                draft.optString("search", Draft().search), draft.optString("imageTool", Draft().imageTool))
+        })
+    }
+
+    fun save(saved: SavedWorkspace) {
+        val history = JSONArray()
+        for (c in saved.history) {
+            history.put(JSONObject().put("id", c.id).put("title", c.title)
+                .put("mode", c.mode.name).put("pinned", c.pinned).put("updatedAt", c.updatedAt)
+                .put("messages", JSONArray(c.messages.map(::writeMessage))))
+        }
+        val drafts = JSONObject()
+        for ((id, draft) in saved.drafts) {
+            drafts.put(id, JSONObject().put("text", draft.text).put("attachments", writeAttachments(draft.attachments))
+                .put("search", draft.search).put("imageTool", draft.imageTool))
+        }
+        val bytes = JSONObject().put("history", history).put("drafts", drafts).toString().toByteArray(Charsets.UTF_8)
+        val stream = file.startWrite()
+        try {
+            stream.write(bytes)
+            file.finishWrite(stream)
+        } catch (failure: Exception) {
+            file.failWrite(stream)
+            throw failure
+        }
+    }
+}
+
+private fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else
+    (0 until length()).map { getJSONObject(it) }
+
+private fun writeAttachments(attachments: List<Attachment>) = JSONArray(attachments.map {
+    JSONObject().put("id", it.id).put("name", it.name).put("uri", it.uri)
+        .put("imageKey", it.imageKey).put("mimeType", it.mimeType).put("width", it.width).put("height", it.height)
+})
+
+private fun readAttachments(array: JSONArray?) = array.objects().map {
+    Attachment(it.getString("id"), it.getString("name"), it.optional("uri"), it.optional("imageKey"), it.optional("mimeType"),
+        it.optInt("width").takeIf { width -> width > 0 }, it.optInt("height").takeIf { height -> height > 0 })
+}
+
+private fun JSONObject.optional(key: String): String? = if (isNull(key)) null else getString(key)
+
+private fun writeMessage(m: Message): JSONObject = JSONObject().put("id", m.id).put("role", m.role.name)
+    .put("text", m.text).put("status", m.status.name).put("createdAt", m.createdAt).put("model", m.model)
+    .put("parameters", JSONObject(m.parameters)).put("attachments", writeAttachments(m.attachments)).put("prompt", m.prompt)
+    .put("thought", m.thought).put("tool", m.tool).put("imageKeys", JSONArray(m.imageKeys))
+    .put("error", m.error).put("replyTo", m.replyTo).put("imageInvocation", m.imageInvocation?.let {
+        JSONObject().put("model", it.model).put("parameters", JSONObject(it.parameters))
+    })
+
+private fun readMessage(j: JSONObject): Message {
+    val keys = j.optJSONArray("imageKeys") ?: JSONArray()
+    val parameters = j.optJSONObject("parameters") ?: JSONObject()
+    return Message(id = j.getString("id"), role = Role.valueOf(j.getString("role")), text = j.optString("text"),
+        status = Generation.valueOf(j.getString("status")), createdAt = j.getLong("createdAt"),
+        model = j.optString("model"), parameters = parameters.keys().asSequence().associateWith(parameters::getString),
+        attachments = readAttachments(j.optJSONArray("attachments")), prompt = j.optString("prompt"),
+        thought = j.optString("thought"), tool = j.optional("tool"), imageKeys = (0 until keys.length()).map { keys.getString(it) },
+        error = j.optional("error"), replyTo = j.optional("replyTo"), imageInvocation = j.optJSONObject("imageInvocation")?.let {
+            val imageParameters = it.getJSONObject("parameters")
+            ImageInvocation(it.getString("model"), imageParameters.keys().asSequence().associateWith(imageParameters::getString))
+        })
+}

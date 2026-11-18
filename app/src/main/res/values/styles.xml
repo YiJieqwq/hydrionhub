@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">HydrionHub</string>
+    <style name="Theme.HydrionHub" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:colorAccent">#406DFF</item>
+    </style>
+</resources>
