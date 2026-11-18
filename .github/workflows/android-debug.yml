@@ -31,7 +31,10 @@ jobs:
           cache: gradle
 
       - name: Prepare Android SDK
-        run: sdkmanager 'platforms;android-35' 'build-tools;34.0.0'
+        run: |
+          if [[ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" || ! -x "$ANDROID_HOME/build-tools/34.0.0/aapt2" ]]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;34.0.0'
+          fi
 
       - name: Test and assemble debug APK
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest
