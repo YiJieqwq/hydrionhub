@@ -36,6 +36,52 @@ class DeepSeekResponsesTransportTest {
 
     private fun event(json: String) = "data: $json\n\n"
 
+    private fun fixture(name: String): String =
+        requireNotNull(javaClass.getResource("/responses/$name.sse")).readText(Charsets.UTF_8)
+
+    private suspend fun parse(wire: String): List<Message> {
+        val messages = mutableListOf<Message>()
+        readResponsesEvents(wire.reader().buffered(), reply) { messages += it }
+        return messages
+    }
+
+    @Test fun openAiSummaryAndRefusalStreamWithoutDuplicatingCompletedParts() = runBlocking {
+        val messages = parse(fixture("openai-summary-refusal"))
+        assertTrue(messages.any { it.thought == "Checked " && it.status == Generation.Generating })
+        assertTrue(messages.any { it.text == "Unable " && it.status == Generation.Generating })
+        val completed = messages.last()
+        assertEquals(Generation.Completed, completed.status)
+        assertEquals("Checked the request.\n\nConfirmed the limit.", completed.thought)
+        assertEquals("Unable to help.", completed.text)
+        assertEquals(TokenUsage(inputTokens = 17, outputTokens = 11, totalTokens = 28,
+            cachedInputTokens = 4, reasoningTokens = 7), completed.usage)
+    }
+
+    @Test fun deepSeekReasoningTextIsSeparateFromAnswerAndIncludesReportedZeroCache() = runBlocking {
+        val messages = parse(fixture("deepseek-reasoning-text"))
+        assertTrue(messages.any { it.thought == "Checked " && it.text.isEmpty() })
+        assertTrue(messages.any { it.text == "Monday." && it.status == Generation.Generating })
+        val completed = messages.last()
+        assertEquals(Generation.Completed, completed.status)
+        assertEquals("Checked the date.", completed.thought)
+        assertEquals("Monday.", completed.text)
+        assertEquals(TokenUsage(inputTokens = 24, outputTokens = 8, totalTokens = 32,
+            cachedInputTokens = 0, reasoningTokens = 3), completed.usage)
+    }
+
+    @Test fun terminalSnapshotRepairsOnlyItsOwnItemAndPrefersItsPublicSummary() = runBlocking {
+        val events = listOf(
+            """{"type":"response.reasoning_text.delta","item_id":"r","output_index":0,"content_index":0,"delta":"raw."}""",
+            """{"type":"response.reasoning_summary_text.delta","item_id":"r","output_index":0,"summary_index":0,"delta":"Summary."}""",
+            """{"type":"response.output_text.delta","item_id":"a","output_index":1,"content_index":0,"delta":"First. "}""",
+            """{"type":"response.output_text.delta","item_id":"b","output_index":2,"content_index":0,"delta":"Sec"}""",
+            """{"type":"response.completed","response":{"status":"completed","output":[{"type":"message","id":"b","content":[{"type":"output_text","text":"Second."}]}]}}"""
+        )
+        val completed = parse(events.joinToString("") { event(it) }).last()
+        assertEquals("First. Second.", completed.text)
+        assertEquals("Summary.", completed.thought)
+    }
+
     @Test fun postsPreparedBodyAndStreamsReasoningAndAnswerOverHttp() = runBlocking {
         val wire = "\uFEFF" + """
             event: response.reasoning_text.delta
@@ -76,7 +122,7 @@ class DeepSeekResponsesTransportTest {
                 }
             }
             val request = prepared("http://127.0.0.1:${server.localPort}/responses")
-            val received = DeepSeekResponsesTransport().stream(request, reply).toList()
+            val received = ResponsesTransport().stream(request, reply).toList()
             val (headers, body) = exchange.await()
 
             assertEquals("POST /responses HTTP/1.1", headers.first())
@@ -95,18 +141,22 @@ class DeepSeekResponsesTransportTest {
 
     @Test fun distinguishesMissingUsageFromZeroAndFallsBackToTheComponentSum() = runBlocking {
         val usages = listOf(
-            "" to null,
-            ""","usage":{"input_tokens":7}""" to null,
-            ""","usage":{"output_tokens":11}""" to null,
-            ""","usage":{"input_tokens":9223372036854775807,"output_tokens":1}""" to null,
-            ""","usage":{"input_tokens":7,"output_tokens":11}""" to 18L,
-            ""","usage":{"total_tokens":0,"input_tokens":0,"output_tokens":0}""" to 0L
+            Triple("", null, null),
+            Triple(""","usage":{"input_tokens":7}""", TokenUsage(inputTokens = 7), null),
+            Triple(""","usage":{"output_tokens":11}""", TokenUsage(outputTokens = 11), null),
+            Triple(""","usage":{"input_tokens":9223372036854775807,"output_tokens":1}""",
+                TokenUsage(inputTokens = Long.MAX_VALUE, outputTokens = 1), null),
+            Triple(""","usage":{"input_tokens":7,"output_tokens":11}""",
+                TokenUsage(inputTokens = 7, outputTokens = 11), 18L),
+            Triple(""","usage":{"total_tokens":0,"input_tokens":0,"output_tokens":0}""",
+                TokenUsage(inputTokens = 0, outputTokens = 0, totalTokens = 0), 0L)
         )
-        for ((usage, expected) in usages) {
+        for ((usage, reported, contextTotal) in usages) {
             val response = event("""{"type":"response.completed","response":{"status":"completed","output":[]$usage}}""")
             val connection = RecordingConnection(response.byteInputStream())
-            val messages = DeepSeekResponsesTransport { connection }.stream(prepared(), reply).toList()
-            assertEquals(expected, messages.last().totalTokens)
+            val messages = ResponsesTransport { connection }.stream(prepared(), reply).toList()
+            assertEquals(contextTotal, messages.last().totalTokens)
+            assertEquals(reported, messages.last().usage)
             assertTrue(connection.disconnected)
         }
     }
@@ -119,7 +169,7 @@ class DeepSeekResponsesTransportTest {
             val connection = RecordingConnection((partial + tail).byteInputStream())
             val seen = mutableListOf<Message>()
             val failure = runCatching {
-                DeepSeekResponsesTransport { connection }.stream(prepared(), reply).toList(seen)
+                ResponsesTransport { connection }.stream(prepared(), reply).toList(seen)
             }.exceptionOrNull()
             assertTrue(failure is IOException)
             assertTrue(failure?.message.orEmpty().contains(detail))
@@ -130,11 +180,71 @@ class DeepSeekResponsesTransportTest {
         }
     }
 
+    @Test fun failedAndIncompleteProviderEventsExposeTheStatusAndKeepDeliveredContent() = runBlocking {
+        for (name in listOf("failed", "incomplete")) {
+            val seen = mutableListOf<Message>()
+            val connection = RecordingConnection(fixture(name).byteInputStream())
+            val error = runCatching {
+                ResponsesTransport { connection }.stream(prepared(), reply).toList(seen)
+            }.exceptionOrNull()
+            assertTrue(error is IOException)
+            val incomplete = name == "incomplete"
+            assertTrue(error?.message.orEmpty().contains(if (incomplete) "响应未完成" else "响应失败"))
+            assertTrue(error?.message.orEmpty().contains(if (incomplete) "max_output_tokens" else "Fixture upstream unavailable."))
+            assertEquals(if (incomplete) "Partial" else "Part", seen.last().text)
+            assertEquals(if (incomplete) 17L else null, seen.last().usage?.totalTokens)
+            assertFalse(seen.any { it.status == Generation.Completed })
+        }
+    }
+
+    @Test fun loneDoneMarkerInvalidDataAndContradictoryStatusCannotCompletePartialText() = runBlocking {
+        val first = event("""{"type":"response.output_text.delta","item_id":"m","output_index":0,"content_index":0,"delta":"partial"}""")
+        val endings = listOf(
+            event("[DONE]") to "中断",
+            event("{") to "无效",
+            event("""{"type":"response.failed","response":{"status":"failed","error":null}}""") to "响应失败",
+            event("""{"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":null}}""") to "响应未完成",
+            event("""{"type":"response.completed","response":{"status":"failed","error":{"message":"declared failed"}}}""") to "declared failed"
+        )
+        for ((ending, expected) in endings) {
+            val seen = mutableListOf<Message>()
+            val error = runCatching {
+                readResponsesEvents((first + ending).reader().buffered(), reply) { seen += it }
+            }.exceptionOrNull()
+            assertTrue(error is IOException)
+            assertTrue(error?.message.orEmpty().contains(expected))
+            assertEquals("partial", seen.last().text)
+            assertFalse(seen.any { it.status == Generation.Completed })
+        }
+    }
+
+    @Test fun aFinalPartialSnapshotDoesNotEraseAlreadyDisplayedText() = runBlocking {
+        val partial = event("""{"type":"response.output_text.delta","item_id":"m","output_index":0,"content_index":0,"delta":"already delivered"}""")
+        val ending = event("""{"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"id":"m","type":"message","content":[{"type":"output_text","text":"already"}]}]}}""")
+        val seen = mutableListOf<Message>()
+        val error = runCatching {
+            readResponsesEvents((partial + ending).reader().buffered(), reply) { seen += it }
+        }.exceptionOrNull()
+        assertTrue(error is IOException)
+        assertEquals("already delivered", seen.last().text)
+    }
+
+    @Test fun streamErrorNeverExposesAnEchoedAuthorizationValue() = runBlocking {
+        val connection = RecordingConnection(event("""{"type":"error","code":"server_error","message":"Failed: Bearer $key","sequence_number":2}""").byteInputStream())
+        val error = runCatching {
+            ResponsesTransport { connection }.stream(prepared(), reply).toList()
+        }.exceptionOrNull()
+        assertTrue(error is IOException)
+        assertTrue(error?.message.orEmpty().contains("响应失败"))
+        assertFalse(error?.message.orEmpty().contains(key))
+        assertTrue(connection.disconnected)
+    }
+
     @Test fun httpFailuresDoNotExposeCredentialsOrFollowRedirects() = runBlocking {
         for (status in listOf(307, 400, 401, 403)) {
             val connection = RecordingConnection("""{"error":{"message":"bad $key"}}""".byteInputStream(), status)
             val failure = runCatching {
-                DeepSeekResponsesTransport { connection }.stream(prepared(), reply).toList()
+                ResponsesTransport { connection }.stream(prepared(), reply).toList()
             }.exceptionOrNull()
             assertTrue(failure is IOException)
             val detail = failure?.message.orEmpty()
@@ -156,7 +266,7 @@ class DeepSeekResponsesTransportTest {
             }
         }
         val connection = RecordingConnection(blocked, onDisconnect = { disconnected.countDown() })
-        val job = launch { DeepSeekResponsesTransport { connection }.stream(prepared(), reply).collect() }
+        val job = launch { ResponsesTransport { connection }.stream(prepared(), reply).collect() }
         withTimeout(4_000) { reading.await() }
         withTimeout(4_000) { job.cancelAndJoin() }
         assertTrue(connection.disconnected)
@@ -172,7 +282,7 @@ class DeepSeekResponsesTransportTest {
                 super.setRequestMethod(method)
             }
         }
-        val job = launch { DeepSeekResponsesTransport { connection }.stream(prepared(), reply).collect() }
+        val job = launch { ResponsesTransport { connection }.stream(prepared(), reply).collect() }
         try {
             withTimeout(4_000) { configuring.await() }
             job.cancel()

@@ -1,0 +1,64 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_openai_fixture","object":"response","created_at":1735689600,"model":"gpt-5","status":"in_progress","output":[],"usage":null,"error":null,"incomplete_details":null}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"reasoning","id":"rs_summary","summary":[]}}
+
+event: response.reasoning_summary_part.added
+data: {"type":"response.reasoning_summary_part.added","sequence_number":2,"output_index":0,"item_id":"rs_summary","summary_index":0,"part":{"type":"summary_text","text":""}}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":3,"output_index":0,"item_id":"rs_summary","summary_index":0,"delta":"Checked "}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":4,"output_index":0,"item_id":"rs_summary","summary_index":0,"delta":"the request."}
+
+event: response.reasoning_summary_text.done
+data: {"type":"response.reasoning_summary_text.done","sequence_number":5,"output_index":0,"item_id":"rs_summary","summary_index":0,"text":"Checked the request."}
+
+event: response.reasoning_summary_part.done
+data: {"type":"response.reasoning_summary_part.done","sequence_number":6,"output_index":0,"item_id":"rs_summary","summary_index":0,"part":{"type":"summary_text","text":"Checked the request."}}
+
+event: response.reasoning_summary_part.added
+data: {"type":"response.reasoning_summary_part.added","sequence_number":7,"output_index":0,"item_id":"rs_summary","summary_index":1,"part":{"type":"summary_text","text":""}}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":8,"output_index":0,"item_id":"rs_summary","summary_index":1,"delta":"Confirme"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":9,"output_index":0,"item_id":"rs_summary","summary_index":1,"delta":"d the limit."}
+
+event: response.reasoning_summary_text.done
+data: {"type":"response.reasoning_summary_text.done","sequence_number":10,"output_index":0,"item_id":"rs_summary","summary_index":1,"text":"Confirmed the limit."}
+
+event: response.reasoning_summary_part.done
+data: {"type":"response.reasoning_summary_part.done","sequence_number":11,"output_index":0,"item_id":"rs_summary","summary_index":1,"part":{"type":"summary_text","text":"Confirmed the limit."}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":12,"output_index":0,"item":{"type":"reasoning","id":"rs_summary","summary":[{"type":"summary_text","text":"Checked the request."},{"type":"summary_text","text":"Confirmed the limit."}]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":13,"output_index":1,"item":{"type":"message","id":"msg_refusal","role":"assistant","status":"in_progress","content":[]}}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","sequence_number":14,"output_index":1,"item_id":"msg_refusal","content_index":0,"part":{"type":"refusal","refusal":""}}
+
+event: response.refusal.delta
+data: {"type":"response.refusal.delta","sequence_number":15,"output_index":1,"item_id":"msg_refusal","content_index":0,"delta":"Unable "}
+
+event: response.refusal.delta
+data: {"type":"response.refusal.delta","sequence_number":16,"output_index":1,"item_id":"msg_refusal","content_index":0,"delta":"to help."}
+
+event: response.refusal.done
+data: {"type":"response.refusal.done","sequence_number":17,"output_index":1,"item_id":"msg_refusal","content_index":0,"refusal":"Unable to help."}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","sequence_number":18,"output_index":1,"item_id":"msg_refusal","content_index":0,"part":{"type":"refusal","refusal":"Unable to help."}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":19,"output_index":1,"item":{"type":"message","id":"msg_refusal","role":"assistant","status":"completed","content":[{"type":"refusal","refusal":"Unable to help."}]}}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":20,"response":{"id":"resp_openai_fixture","object":"response","created_at":1735689600,"model":"gpt-5","status":"completed","output":[{"type":"reasoning","id":"rs_summary","summary":[{"type":"summary_text","text":"Checked the request."},{"type":"summary_text","text":"Confirmed the limit."}]},{"type":"message","id":"msg_refusal","role":"assistant","status":"completed","content":[{"type":"refusal","refusal":"Unable to help."}]}],"usage":{"input_tokens":17,"input_tokens_details":{"cached_tokens":4},"output_tokens":11,"output_tokens_details":{"reasoning_tokens":7},"total_tokens":28},"error":null,"incomplete_details":null}}
+
+: end of fixture

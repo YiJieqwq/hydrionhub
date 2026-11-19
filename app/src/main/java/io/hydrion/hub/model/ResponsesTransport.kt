@@ -15,11 +15,17 @@ import kotlinx.coroutines.launch
 import org.json.JSONException
 import org.json.JSONObject
 
-internal class DeepSeekResponsesTransport(
+internal class ResponsesTransport(
     private val openConnection: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }
 ) {
     fun stream(prepared: LocalModelRequest, request: Message): Flow<Message> = callbackFlow {
-        val connection = openConnection(URL(prepared.url))
+        val connection = try {
+            openConnection(URL(prepared.url))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            throw IOException(redact(failure.message ?: "无法打开 Responses 连接。", prepared.headers))
+        }
         val reader = launch {
             try {
                 connection.requestMethod = "POST"
@@ -41,16 +47,19 @@ internal class DeepSeekResponsesTransport(
                 val status = connection.responseCode
                 if (status !in 200..299) throw IOException(connection.httpError(status))
                 if (!connection.contentType.orEmpty().substringBefore(';').trim().equals("text/event-stream", true)) {
-                    throw IOException("DeepSeek 未返回 Responses 流式响应。")
+                    throw IOException("服务端未返回 Responses 事件流（text/event-stream）。")
                 }
                 connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
-                    readDeepSeekEvents(input, request) { send(it) }
+                    readResponsesEvents(input, request) { send(it) }
                 }
                 close()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                val detail = failure.message?.takeIf(String::isNotBlank) ?: "DeepSeek 连接中断。"
+                // A platform read can return EOF or an IOException when cancellation closes the socket.
+                ensureActive()
+                this@callbackFlow.ensureActive()
+                val detail = failure.message?.takeIf(String::isNotBlank) ?: "Responses 连接中断。"
                 close(IOException(redact(detail, prepared.headers)))
             }
         }
@@ -63,7 +72,7 @@ internal class DeepSeekResponsesTransport(
 }
 
 private fun HttpURLConnection.httpError(status: Int): String {
-    val prefix = "DeepSeek HTTP $status"
+    val prefix = "Responses HTTP $status"
     if (status == 401) return "$prefix · API Key 无效或已过期。"
     if (status == 403) return "$prefix · 当前 API Key 没有访问权限。"
     val body = errorStream?.bufferedReader(Charsets.UTF_8)?.use { input ->
@@ -77,7 +86,9 @@ private fun HttpURLConnection.httpError(status: Int): String {
         String(buffer, 0, size)
     } ?: return prefix
     val detail = try {
-        JSONObject(body).optJSONObject("error")?.opt("message") as? String
+        val json = JSONObject(body)
+        val fields = json.optJSONObject("error") ?: json
+        fields.opt("message") as? String ?: fields.opt("code") as? String
     } catch (_: JSONException) {
         null
     }
@@ -94,5 +105,10 @@ private fun redact(detail: String, headers: Map<String, String>): String {
             if (credential.isNotEmpty()) safe = safe.replace(credential, "[redacted]")
         }
     }
+    safe = bearerToken.replace(safe, "Bearer [redacted]")
+    safe = apiKey.replace(safe, "[redacted]")
     return safe.take(800)
 }
+
+private val bearerToken = Regex("""(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+""")
+private val apiKey = Regex("""\bsk-[A-Za-z0-9_-]+""")

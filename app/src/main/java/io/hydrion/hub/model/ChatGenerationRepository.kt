@@ -16,7 +16,7 @@ internal class ChatGenerationRepository(
     private val currentCatalog: () -> ModelCatalog,
     private val sessionKey: (String) -> String,
     private val attachmentSources: suspend (List<Attachment>) -> Map<Attachment, String>,
-    private val stream: (LocalModelRequest, Message) -> Flow<Message> = DeepSeekResponsesTransport()::stream
+    private val stream: (LocalModelRequest, Message) -> Flow<Message> = ResponsesTransport()::stream
 ) : GenerationRepository {
     private val local = FakeGenerationRepository()
 
