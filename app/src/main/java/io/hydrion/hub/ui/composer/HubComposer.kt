@@ -1,5 +1,7 @@
 package io.hydrion.hub.ui.composer
 
+import android.content.res.Configuration
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -60,6 +62,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -115,7 +119,6 @@ fun HubComposer(
     var sawKeyboard by remember { mutableStateOf(false) }
     var sawHideAnimation by remember { mutableStateOf(false) }
     var previousImeFrame by remember { mutableStateOf<ComposerImeFrame?>(null) }
-    val imeFrame = nextComposerImeFrame(previousImeFrame, ime, imeStart, imeEnd)
     var showTools by remember(state.current.id) { mutableStateOf(false) }
     var importError by remember(state.current.id) { mutableStateOf<String?>(null) }
     val pick = rememberAttachmentPicker(vm) { importError = it }
@@ -127,9 +130,20 @@ fun HubComposer(
     val hiding = imeStart > 0 && imeEnd == 0
     val imeActive = imeVisible || ime > 0 || imeEnd > 0
     val hiddenAfterEditing = sawKeyboard && !imeActive
+    val configuration = LocalConfiguration.current
+    val hardwareKeyboard = configuration.keyboard == Configuration.KEYBOARD_QWERTY &&
+        configuration.hardKeyboardHidden == Configuration.HARDKEYBOARDHIDDEN_NO
+    val resolver = LocalContext.current.contentResolver
+    val hardwareKeyboardOnly = remember(resolver, hardwareKeyboard, windowFocused) {
+        hardwareKeyboard && Settings.Secure.getInt(resolver, "show_ime_with_hard_keyboard", 0) == 0
+    }
+    val imeFrame = nextComposerImeFrame(
+        previousImeFrame, ime, imeStart, imeEnd,
+        expandWithoutIme = hardwareKeyboardOnly && !hiddenAfterEditing && !sawHideAnimation,
+    )
     SideEffect {
         previousImeFrame = imeFrame
-        if (focused && (imeVisible || ime > 0)) sawKeyboard = true
+        if (focused && ime > 0) sawKeyboard = true
         if (hiding && ime > 0) sawHideAnimation = true
     }
     // Some keyboards consume Back themselves. A hardware keyboard has no IME
@@ -144,8 +158,7 @@ fun HubComposer(
         if (editing) 1f else 0f,
         tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerFocus"
     )
-    val imeFraction = imeFrame.editLimit(closedAtZero = hiddenAfterEditing || sawHideAnimation)
-    val expansion = minOf(editGate, imeFraction)
+    val expansion = minOf(editGate, imeFrame.fraction)
 
     val draft = state.draft
     val hasContent = draft.text.isNotEmpty() || draft.attachments.isNotEmpty()

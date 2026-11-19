@@ -18,23 +18,24 @@ internal data class ComposerImeLeg(
     }
 }
 
-internal data class ComposerImeFrame(val height: Int, val leg: ComposerImeLeg?) {
-    val fraction: Float? get() = leg?.at(height)
+internal data class ComposerImeFrame(val height: Int, val fraction: Float, val leg: ComposerImeLeg?)
 
-    // Some IMEs jump directly to zero without supplying an animation leg.
-    fun editLimit(closedAtZero: Boolean): Float =
-        fraction ?: if (height == 0 && closedAtZero) 0f else 1f
-}
-
-internal fun nextComposerImeFrame(previous: ComposerImeFrame?, height: Int, source: Int, target: Int): ComposerImeFrame {
-    if (source == target) return ComposerImeFrame(height, null)
+internal fun nextComposerImeFrame(
+    previous: ComposerImeFrame?, height: Int, source: Int, target: Int,
+    expandWithoutIme: Boolean = false,
+): ComposerImeFrame {
     val active = previous?.leg
-    val leg = when {
-        active == null -> ComposerImeLeg(source, target, if (source > 0) 1f else 0f)
-        active.destination == target -> active
-        previous.height != active.destination ->
-            ComposerImeLeg(previous.height, target, active.at(previous.height))
-        else -> ComposerImeLeg(source, target, active.at(previous.height))
+    if (source == target) {
+        // Some keyboards briefly stop reporting animation bounds while the inset is still travelling.
+        if (active != null && height != target) return ComposerImeFrame(height, active.at(height), active)
+        val fraction = if (height > 0 || expandWithoutIme) 1f else 0f
+        return ComposerImeFrame(height, fraction, null)
     }
-    return ComposerImeFrame(height, leg)
+    val leg = when {
+        active?.destination == target -> active
+        // Bounds may arrive after focus or even after an inset jump. Start at the last rendered frame.
+        previous != null -> ComposerImeLeg(previous.height, target, previous.fraction)
+        else -> ComposerImeLeg(source, target, if (source > 0 || expandWithoutIme) 1f else 0f)
+    }
+    return ComposerImeFrame(height, leg.at(height), leg)
 }
