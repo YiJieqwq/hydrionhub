@@ -73,6 +73,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.unit.sp
 import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubState
 import io.hydrion.hub.model.HubViewModel
@@ -157,13 +158,14 @@ fun HubComposer(
             onSend()
         }
     }
-    val sideInset = lerp(35.dp, 20.dp, toolbar) - 7.75.dp * expansion
+    val sideInset = lerp(35.dp, 12.25.dp, expansion)
     // The host has already consumed max(IME, navigation bars). On gesture navigation
     // the collapsed reference is measured from the physical edge, not the nav top.
     val compactGap = (35.dp - with(density) { nav.toDp() }).coerceAtLeast(8.dp)
-    val bottomGap = lerp(compactGap, 6.dp, toolbar) + 6.25.dp * expansion
-    val editorMinHeight = lerp(49.25.dp, 40.dp, toolbar) + 6.5.dp * expansion
+    val bottomGap = lerp(compactGap, 12.25.dp, expansion)
+    val editorMinHeight = lerp(49.25.dp, 46.5.dp, toolbar)
     val controlRowHeight = 47.75.dp
+    val editorTextStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp)
     Column(modifier.fillMaxWidth().padding(start = sideInset, end = sideInset, bottom = bottomGap)) {
         importError?.let { error ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -173,7 +175,7 @@ fun HubComposer(
                 }
             }
         }
-        val shape = if (expansion == 0f) CircleShape else RoundedCornerShape(24.dp)
+        val shape = if (toolbar == 0f) CircleShape else RoundedCornerShape(24.dp)
         Surface(
             modifier = Modifier.fillMaxWidth().testTag("composer-capsule").border(0.66.dp, HubStyle.ComposerBorder, shape),
             shape = shape,
@@ -197,7 +199,7 @@ fun HubComposer(
                             value = draft.text,
                             onValueChange = vm::setDraft,
                             modifier = Modifier.fillMaxWidth().padding(
-                                start = lerp(49.dp, 15.dp, toolbar), end = lerp(49.dp, 16.dp, toolbar)
+                                start = lerp(48.dp, 15.dp, toolbar), end = lerp(48.dp, 16.dp, toolbar)
                             ).onFocusChanged {
                                 if (it.isFocused && !focused) {
                                     sawKeyboard = false
@@ -205,17 +207,18 @@ fun HubComposer(
                                 }
                                 focused = it.isFocused
                             }.semantics { contentDescription = "消息输入框" },
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
+                            textStyle = editorTextStyle.copy(color = colors.onSurface),
                             cursorBrush = SolidColor(colors.primary),
                             maxLines = if (hasContent || focused) 5 else 1,
                             decorationBox = { editor ->
                                 Box(Modifier.fillMaxWidth().heightIn(min = editorMinHeight)
-                                    .padding(vertical = 4.dp), contentAlignment = Alignment.CenterStart) {
+                                    .padding(top = lerp(5.dp, 16.dp, toolbar), bottom = 4.dp),
+                                    contentAlignment = Alignment.CenterStart) {
                                     if (draft.text.isEmpty()) {
                                         Text(
                                             if (state.current.mode == Mode.Chat) "Chat with AI" else "描述想生成的图片",
                                             color = HubStyle.ComposerHint,
-                                            style = MaterialTheme.typography.bodyLarge,
+                                            style = editorTextStyle,
                                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                                         )
                                     }

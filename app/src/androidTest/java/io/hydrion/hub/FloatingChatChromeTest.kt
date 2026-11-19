@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
@@ -43,11 +44,27 @@ class FloatingChatChromeTest {
         assertEquals(label, expected, pixels / density, 1.5f)
     }
 
+    private fun checkHintLayout(shell: ComposeRect, startDp: Float, baselineDp: Float) {
+        val hint = screen.onNodeWithText("Chat with AI", useUnmergedTree = true)
+        val layouts = mutableListOf<TextLayoutResult>()
+        hint.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val layout = layouts.single()
+        val box = hint.fetchSemanticsNode().boundsInRoot
+        val baseline = box.top - shell.top + layout.firstBaseline
+        assertDp("placeholder start", startDp, box.left - shell.left)
+        if (screen.activity.resources.configuration.fontScale == 1f) {
+            assertDp("placeholder first baseline", baselineDp, baseline)
+        }
+        Log.i("HydrionUiTest", "hint start=${box.left - shell.left} baseline=$baseline " +
+            "lineBox=${box.height} font=${layout.layoutInput.style.fontSize} lineHeight=${layout.layoutInput.style.lineHeight}")
+    }
+
     @Test fun capsuleTracksWindowAndKeyboardInDeviceDp() {
         val root = screen.onRoot().fetchSemanticsNode().boundsInRoot
         val panel = bounds("floating-header")
         val compact = bounds("composer-capsule")
         assertDp("compact height", 49.25f, compact.height)
+        checkHintLayout(compact, 48f, 30.5f)
         assertDp("compact left margin", 35f, compact.left - panel.left)
         assertDp("compact right margin", 35f, panel.right - compact.right)
         val nav = screen.runOnIdle {
@@ -73,6 +90,7 @@ class FloatingChatChromeTest {
         }
         val expanded = bounds("composer-capsule")
         assertDp("expanded height", 94.25f, expanded.height)
+        checkHintLayout(expanded, 15f, 35f)
         assertDp("expanded left margin", 12.25f, expanded.left - panel.left)
         assertDp("expanded right margin", 12.25f, panel.right - expanded.right)
         val shellBottom = screen.onNodeWithTag("composer-capsule", true).fetchSemanticsNode().boundsInWindow.bottom
@@ -119,7 +137,7 @@ class FloatingChatChromeTest {
     @Test fun composerRendersAnIntermediateToolbarFrameOnTheComposeClock() {
         val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
         val clock = screen.mainClock
-        val start = bounds("composer-capsule").left
+        val start = bounds("composer-capsule")
         clock.autoAdvance = false
         try {
             // A draft opens the same toolbar without the OS keyboard. Advance real Compose layout/draw one frame at a time.
@@ -132,10 +150,12 @@ class FloatingChatChromeTest {
             Log.i("HydrionUiTest", "Compose-clock toolbar frames $frames")
             val end = frames.last()
             val middle = frames.firstOrNull { frame ->
-                val travel = (start - frame.left) / (start - end.left)
+                val travel = (frame.bounds.height - start.height) / (end.bounds.height - start.height)
                 travel in 0.25f..0.75f
             }
-            assertTrue("The toolbar must have a rendered intermediate width: $frames", middle != null)
+            assertTrue("The toolbar must have a rendered intermediate height: $frames", middle != null)
+            assertTrue("Entering a draft without the IME must keep its side margins",
+                frames.all { it.bounds.left == start.left && it.bounds.right == start.right })
             requireNotNull(middle)
             assertTrue("The moving tool stroke must fade in: $frames", middle.ink in 50 until end.ink - 2)
             assertTrue("The tool must translate within the changing capsule: $frames", middle.glyphX + density < end.glyphX)
@@ -146,7 +166,7 @@ class FloatingChatChromeTest {
         }
     }
 
-    private data class ToolFrame(val left: Float, val ink: Int, val glyphX: Float)
+    private data class ToolFrame(val bounds: ComposeRect, val ink: Int, val glyphX: Float)
 
     private fun sampleToolFrame(): ToolFrame {
         val shell = screen.onNodeWithTag("composer-capsule", true)
@@ -157,7 +177,7 @@ class FloatingChatChromeTest {
         val ink = ys.maxOf { y -> xs.maxOf { x -> Color.red(image.getPixel(x, y)) } }
         val strokeColumns = xs.filter { x -> ys.any { y -> Color.red(image.getPixel(x, y)) >= ink - 2 } }
         val center = (strokeColumns.first() + strokeColumns.last()) / 2f
-        return ToolFrame(shell.fetchSemanticsNode().boundsInRoot.left, ink, center)
+        return ToolFrame(shell.fetchSemanticsNode().boundsInRoot, ink, center)
     }
 
     @Test fun scrollingRevealsMessagesBehindChromeAndClearsFirstAndLastTurns() {

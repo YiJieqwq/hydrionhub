@@ -86,10 +86,11 @@ class ComposerDraftTest {
         val panel = screen.onNodeWithTag("floating-header", true).fetchSemanticsNode().boundsInRoot
         val rootBottom = screen.onRoot().fetchSemanticsNode().boundsInRoot.bottom
         val nav = screen.runOnIdle { ViewCompat.getRootWindowInsets(view)!!.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom }
-        assertEquals("draft left margin", 20f, (shell.left - panel.left) / density, 1.5f)
-        assertEquals("draft right margin", 20f, (panel.right - shell.right) / density, 1.5f)
-        assertEquals("single-line draft height", 88f, shell.height / density, 2f)
-        assertEquals("draft clearance above navigation", 6f, (rootBottom - shell.bottom - nav) / density, 1.5f)
+        assertEquals("draft left margin", 35f, (shell.left - panel.left) / density, 1.5f)
+        assertEquals("draft right margin", 35f, (panel.right - shell.right) / density, 1.5f)
+        assertEquals("single-line draft height", 94.25f, shell.height / density, 1.5f)
+        assertEquals("draft clearance from screen edge", maxOf(35f, nav / density + 8f),
+            (rootBottom - shell.bottom) / density, 1.5f)
 
         screen.onNode(input).performClick().performTextInput("中")
         screen.onNode(input).assertTextContains("继续编辑中")
