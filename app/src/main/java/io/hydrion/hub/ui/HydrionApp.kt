@@ -134,7 +134,7 @@ private fun Workspace(vm: HubViewModel) {
                         Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
                             Header(
                                 mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
-                                contextUsage = contextUsage(current, selectedEntry?.first),
+                                contextUsage = contextUsage(current, selectedEntry),
                                 onMode = vm::setMode, onNew = ::newChat,
                                 onDrawer = { focus.clearFocus(); scope.launch { drawer.open() } },
                                 onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },

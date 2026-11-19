@@ -34,6 +34,22 @@ data class Draft(
 
 data class RemoteModel(val providerId: String, val modelId: String)
 
+/** Counts reported for a single response. Cached and reasoning tokens are subsets of input and output. */
+data class TokenUsage(
+    val inputTokens: Long? = null,
+    val outputTokens: Long? = null,
+    val totalTokens: Long? = null,
+    val cachedInputTokens: Long? = null,
+    val reasoningTokens: Long? = null
+) {
+    val contextTokens: Long? get() {
+        totalTokens?.takeIf { it >= 0 }?.let { return it }
+        val input = inputTokens ?: return null
+        val output = outputTokens ?: return null
+        return if (input >= 0 && output >= 0 && input <= Long.MAX_VALUE - output) input + output else null
+    }
+}
+
 data class Message(
     val id: String = newId(),
     val role: Role,
@@ -51,8 +67,11 @@ data class Message(
     val replyTo: String? = null,
     val imageInvocation: ImageInvocation? = null,
     val remoteModel: RemoteModel? = null,
-    val totalTokens: Long? = null
-)
+    val totalTokens: Long? = null,
+    val usage: TokenUsage? = null
+) {
+    val reportedUsage: TokenUsage? get() = usage ?: totalTokens?.let { TokenUsage(totalTokens = it) }
+}
 
 data class Conversation(
     val id: String = newId(),

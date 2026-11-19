@@ -3,6 +3,7 @@ package io.hydrion.hub.model
 import android.content.ContextWrapper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -53,19 +54,43 @@ class RemoteHistoryTest {
         val directory = File(app.cacheDir, "history-test-${newId()}").apply { mkdirs() }
         val context = object : ContextWrapper(app) { override fun getFilesDir(): File = directory }
         try {
-            File(directory, "conversation-history-v1.json").writeText("""
+            val file = File(directory, "conversation-history-v1.json")
+            file.writeText("""
                 {"history":[{"id":"legacy","title":"Hello","mode":"Chat","updatedAt":1,
-                "messages":[{"id":"1","role":"Assistant","text":"Hi","status":"Completed","createdAt":1}]}]}
+                "messages":[{"id":"1","role":"Assistant","text":"Hi","status":"Completed","createdAt":1},
+                    {"id":"2","role":"Assistant","text":"Hi","status":"Completed","createdAt":2,
+                    "remoteModel":{"providerId":"deepseek","modelId":"deepseek-flash"},"totalTokens":123}]}]}
             """.trimIndent())
             val history = HistoryFile(context)
             val legacy = history.load().history.single()
-            assertNull(legacy.messages.single().remoteModel)
-            assertNull(legacy.messages.single().totalTokens)
-            val reply = Message(role = Role.Assistant, text = "response",
-                remoteModel = RemoteModel("deepseek","deepseek-flash"), totalTokens = 123L)
-            val saved = SavedWorkspace(listOf(legacy.copy(messages = legacy.messages + reply)))
+            val unmetered = legacy.messages.first()
+            assertNull(unmetered.remoteModel)
+            assertNull(unmetered.totalTokens)
+            assertNull(unmetered.reportedUsage)
+            val old = legacy.messages.last()
+            assertEquals(RemoteModel("deepseek", "deepseek-flash"), old.remoteModel)
+            assertEquals(123L, old.totalTokens)
+            assertEquals(TokenUsage(totalTokens = 123), old.reportedUsage)
+            val full = TokenUsage(inputTokens = 60, outputTokens = 11, totalTokens = 71,
+                cachedInputTokens = 18, reasoningTokens = 0)
+            val parts = TokenUsage(inputTokens = 16, outputTokens = 4)
+            val partial = TokenUsage(outputTokens = 9, reasoningTokens = 3)
+            val newReplies = listOf(full, parts, partial).map { usage ->
+                Message(role = Role.Assistant, remoteModel = old.remoteModel, usage = usage)
+            }
+            val saved = SavedWorkspace(listOf(legacy.copy(messages = legacy.messages + newReplies)))
             history.save(saved)
-            assertEquals(saved, HistoryFile(context).load())
+            val written = JSONObject(file.readText()).getJSONArray("history").getJSONObject(0).getJSONArray("messages")
+            assertEquals(123L, written.getJSONObject(1).getLong("totalTokens"))
+            assertEquals(71L, written.getJSONObject(2).getLong("totalTokens"))
+            assertEquals(20L, written.getJSONObject(3).getLong("totalTokens"))
+            val loaded = HistoryFile(context).load().history.single().messages
+            assertEquals(legacy.messages.map { it.reportedUsage }, loaded.take(2).map { it.reportedUsage })
+            assertEquals(listOf(full, parts, partial), loaded.drop(2).map { it.usage })
+            assertEquals(listOf(full, parts, partial), loaded.drop(2).map { it.reportedUsage })
+            assertNull(loaded[3].usage?.totalTokens)
+            assertNull(loaded[4].totalTokens)
+            assertEquals(old.remoteModel, loaded[4].remoteModel)
         } finally {
             directory.deleteRecursively()
         }

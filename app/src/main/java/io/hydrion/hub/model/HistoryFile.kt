@@ -72,12 +72,23 @@ private fun readAttachments(array: JSONArray?) = array.objects().map {
 
 private fun JSONObject.optional(key: String): String? = if (isNull(key)) null else getString(key)
 
+private fun TokenUsage.toStoredJson() = JSONObject()
+    .put("inputTokens", inputTokens).put("outputTokens", outputTokens).put("totalTokens", totalTokens)
+    .put("cachedInputTokens", cachedInputTokens).put("reasoningTokens", reasoningTokens)
+
+private fun JSONObject.count(key: String): Long? = opt(key)?.toString()?.toLongOrNull()?.takeIf { it >= 0L }
+
+private fun JSONObject.readUsage() = TokenUsage(
+    inputTokens = count("inputTokens"), outputTokens = count("outputTokens"), totalTokens = count("totalTokens"),
+    cachedInputTokens = count("cachedInputTokens"), reasoningTokens = count("reasoningTokens")
+)
+
 private fun writeMessage(m: Message): JSONObject = JSONObject().put("id", m.id).put("role", m.role.name)
     .put("text", m.text).put("status", m.status.name).put("createdAt", m.createdAt).put("model", m.model)
     .put("parameters", JSONObject(m.parameters)).put("attachments", writeAttachments(m.attachments)).put("prompt", m.prompt)
     .put("thought", m.thought).put("tool", m.tool).put("imageKeys", JSONArray(m.imageKeys))
     .put("remoteModel", m.remoteModel?.let { JSONObject().put("providerId", it.providerId).put("modelId", it.modelId) })
-    .put("totalTokens", m.totalTokens)
+    .put("totalTokens", m.reportedUsage?.contextTokens).put("usage", m.usage?.toStoredJson())
     .put("error", m.error).put("replyTo", m.replyTo).put("imageInvocation", m.imageInvocation?.let {
         JSONObject().put("model", it.model).put("parameters", JSONObject(it.parameters))
     })
@@ -91,7 +102,7 @@ private fun readMessage(j: JSONObject): Message {
         attachments = readAttachments(j.optJSONArray("attachments")), prompt = j.optString("prompt"),
         thought = j.optString("thought"), tool = j.optional("tool"), imageKeys = (0 until keys.length()).map { keys.getString(it) },
         remoteModel = j.optJSONObject("remoteModel")?.let { RemoteModel(it.getString("providerId"), it.getString("modelId")) },
-        totalTokens = j.optLong("totalTokens", -1).takeIf { it >= 0 },
+        totalTokens = j.count("totalTokens"), usage = j.optJSONObject("usage")?.readUsage(),
         error = j.optional("error"), replyTo = j.optional("replyTo"), imageInvocation = j.optJSONObject("imageInvocation")?.let {
             val imageParameters = it.getJSONObject("parameters")
             ImageInvocation(it.getString("model"), imageParameters.keys().asSequence().associateWith(imageParameters::getString))
