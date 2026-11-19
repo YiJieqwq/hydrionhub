@@ -12,7 +12,7 @@ internal class LocalModelRequest(
     val url: String = ""
 )
 
-internal const val IMAGE_MODEL_REQUIRED = "没有可用的图像生成模型。请前往「设置 → 图像生成模型」，启用供应商并选择模型。"
+internal const val IMAGE_MODEL_REQUIRED = "所选图像生成模型不可用。请前往「设置 → 图像生成模型」启用供应商，或重新选择模型。"
 
 internal fun ModelCatalog.imageRequest(prompt: String, parentImageLimit: Int? = null): LocalModelRequest {
     val (model, provider) = requireNotNull(selectedEntry(Mode.Image)) { IMAGE_MODEL_REQUIRED }

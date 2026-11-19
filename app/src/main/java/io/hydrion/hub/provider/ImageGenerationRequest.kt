@@ -1,61 +1,105 @@
 package io.hydrion.hub.provider
 
+import io.hydrion.hub.model.ImageInvocation
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.model.RemoteModel
 import java.net.URI
 import org.json.JSONObject
 
-internal val Provider.isConfiguredImageEndpoint: Boolean
-    get() = mode == Mode.Image && protocol.trim().equals("OpenAI Images", ignoreCase = true) && baseUrl.isNotBlank()
+private const val OFFICIAL_IMAGE_ENDPOINT = "https://api.openai.com/v1/images/generations"
 
 internal fun Provider.imageEndpoint(): String {
-    require(isConfiguredImageEndpoint) { "请选择已配置的 OpenAI Images 供应商。" }
+    require(mode == Mode.Image && protocol.trim().equals("OpenAI Images", true) && id != "demo-image") {
+        "请单独配置使用 OpenAI Images 协议的图像生成模型供应商。"
+    }
     val uri = runCatching { URI(baseUrl.trim()) }.getOrNull()
-    require(uri != null && uri.scheme.equals("https", true) && uri.host != null && uri.rawUserInfo == null &&
-        uri.rawQuery == null && uri.rawFragment == null && (uri.port == -1 || uri.port in 1..65535) &&
-        uri.path.split('/').none { it == "." || it == ".." }) { "图像服务须使用有效的 HTTPS 地址。" }
-    val path = uri.rawPath.trimEnd('/').removeSuffix("/images/generations")
-    val prefix = if (path.isEmpty() && uri.host.equals("api.openai.com", true)) "/v1" else path
-    return "https://${uri.rawAuthority}$prefix/images/generations"
+    require(uri != null && uri.scheme.equals("https", true) &&
+        (uri.rawAuthority.equals("api.openai.com", true) || uri.rawAuthority.equals("api.openai.com:443", true)) &&
+        uri.rawQuery == null && uri.rawFragment == null &&
+        uri.rawPath in setOf("", "/", "/v1", "/v1/", "/v1/images/generations")) {
+        "图像生成仅支持 OpenAI 官方 HTTPS 地址，请使用 https://api.openai.com/v1。"
+    }
+    return OFFICIAL_IMAGE_ENDPOINT
 }
 
+internal fun ModelCatalog.imageInvocation(prompt: String, parentImageLimit: Int? = null): ImageInvocation {
+    val entry = requireNotNull(selectedEntry(Mode.Image)) { IMAGE_MODEL_REQUIRED }
+    if (entry.second.baseUrl.isBlank()) {
+        require(entry.second.id == "demo-image" || !entry.second.protocol.equals("OpenAI Images", true) ||
+            entry.first.externalModelId !in supportedImageModels) { "请为 OpenAI 图像供应商填写官方 HTTPS 服务地址。" }
+        val local = imageRequest(prompt, parentImageLimit)
+        return ImageInvocation(local.model, local.parameters)
+    }
+    val request = prepareImageGeneration(prompt, parentImageLimit)
+    return ImageInvocation(request.model, request.parameters, remoteModel = entry.route)
+}
+
+/** Render the selected template once. Keep only the wire options safe to persist and replay. */
 internal fun ModelCatalog.prepareImageGeneration(prompt: String, parentImageLimit: Int? = null): LocalModelRequest {
     val (model, provider) = requireNotNull(selectedEntry(Mode.Image)) { IMAGE_MODEL_REQUIRED }
     val endpoint = provider.imageEndpoint()
-    require(prompt.isNotBlank()) { "图像生成需要文本提示。" }
-    val local = imageRequest(prompt, parentImageLimit)
-    val template = local.body
-    // Only the non-streaming generation options exposed by this client have wire representations.
+    val id = model.externalModelId
+    require(id in supportedImageModels) { "请选择受支持的 OpenAI GPT 图像生成模型。" }
+    val template = imageRequest(prompt, parentImageLimit).body
     val localFields = setOf("width", "height", "aspect", "input_modalities", "output_modalities", "abilities",
         "allow_remote_image_links", "code_interpreter")
-    val allowed = setOf("model", "prompt", "n", "size", "quality")
-    require(template.keys().asSequence().all { it in allowed || it in localFields }) {
-        "当前图像请求仅支持 model、prompt、n、size 和 quality；请检查自定义字段。"
+    require(template.keys().asSequence().all { it == "prompt" || it in imageOptions || it in localFields }) {
+        "当前图像请求仅支持 model、prompt、n、size 和 quality，请检查自定义字段。"
     }
-    val text = template.opt("prompt") as? String
-    require(!text.isNullOrBlank() && text.codePointCount(0, text.length) <= 32_000) { "图像提示词必须是 1 到 32000 个字符的文本。" }
-    val id = model.externalModelId
-    require(id.isNotBlank()) { "图像生成模型 ID 不能为空。" }
-    val count = template.getInt("n")
-    require(count in 1..10 && (id != "dall-e-3" || count == 1)) { "图像数量超过当前模型支持的范围。" }
-    val body = JSONObject().put("model", id).put("prompt", text).put("n", count)
-    val options = local.parameters.toMutableMap()
-    imageSize(template)?.let { size ->
+    require(!template.has("model") || template.opt("model") == id) { "请求模板不可替换所选图像模型。" }
+    require(template.opt("prompt") == prompt) { "在线生图模板须原样使用 {{prompt}}，以便编辑和重试。" }
+    val options = mutableMapOf("model" to id, "n" to template.getInt("n").toString())
+    imageSize(template)?.let { options["size"] = it }
+    if (template.has("quality")) options["quality"] = imageQuality(model, template.opt("quality") as? String)
+    return LocalModelRequest(model.name, model.profile.headers, imageBody(model, prompt, options), options, endpoint)
+}
+
+/** Prepare a request for the saved route, regardless of subsequent changes to the active image selection. */
+internal fun ModelCatalog.prepareOfficialImageGeneration(
+    route: RemoteModel, prompt: String, parameters: Map<String, String>, sessionKey: (String) -> String
+): LocalModelRequest {
+    val (model, provider) = requireNotNull(entries(Mode.Image).singleOrNull { it.route == route }) {
+        "原图像生成模型或供应商已停用或移除，请恢复该配置后重试。"
+    }
+    val endpoint = provider.imageEndpoint()
+    require(parameters["model"] == model.externalModelId) { "原图像生成模型 ID 已更改，请恢复原配置后重试。" }
+    val body = imageBody(model, prompt, parameters)
+    val custom = model.profile.headers.filterValues { it.isNotBlank() }
+    val allowed = setOf("authorization", "openai-project", "openai-organization", "x-client-request-id", "accept", "content-type")
+    require(custom.all { (name, value) -> name.lowercase() in allowed && value.all { it.code in 32..126 } }) {
+        "图像服务的请求头无效或不受支持。"
+    }
+    val headers = chatHeaders(custom, sessionKey(provider.id), provider.name) + ("Accept" to "application/json")
+    val authorization = headers.entries.single { it.key.equals("Authorization", true) }.value
+    require(Regex("(?i)Bearer [!-~]+").matches(authorization)) { "OpenAI 图像服务需要 Bearer 授权。" }
+    return LocalModelRequest(model.name, headers, body, parameters, endpoint)
+}
+
+private val imageOptions = setOf("model", "size", "quality", "n")
+private fun imageBody(model: ProviderModel, prompt: String, parameters: Map<String, String>): JSONObject {
+    require(model.externalModelId in supportedImageModels) { "请选择受支持的 OpenAI GPT 图像生成模型。" }
+    require(prompt.isNotBlank() && prompt.codePointCount(0, prompt.length) <= 32_000) {
+        "图像提示词必须是 1 到 32000 个字符的文本。"
+    }
+    require(parameters.keys.all { it in imageOptions }) { "原图像请求包含不支持的参数。" }
+    require((model.profile.budget ?: 1) > 0) { "当前模型的请求预算不足。" }
+    val count = parameters["n"]?.toIntOrNull()
+    require(count != null && count in 1..minOf(4, model.profile.imageBudget ?: 4)) { "图像数量超过当前模型的预算。" }
+    val body = JSONObject().put("model", model.externalModelId).put("prompt", prompt).put("n", count)
+    parameters["size"]?.let { size ->
         require(supportsSize(model, size)) { "当前模型不支持该图像尺寸。" }
         body.put("size", size)
-        options["size"] = size
     }
-    if (template.has("quality")) {
-        val quality = imageQuality(model, template.opt("quality") as? String)
-        body.put("quality", quality)
-        options["quality"] = quality
-    }
-    return LocalModelRequest(local.model, local.headers, body, options, endpoint)
+    parameters["quality"]?.let { body.put("quality", imageQuality(model, it)) }
+    return body
 }
 
 private val dimensions = Regex("[1-9][0-9]{0,4}x[1-9][0-9]{0,4}")
 private val extendedQualityModels = setOf("gpt-image-2.5-sunburst", "gpt-image-2.5-flare",
     "gpt-image-2.5-sunburst-2026-09-08", "gpt-image-2.5-flare-2026-09-08")
 private val variableSizeModels = extendedQualityModels + setOf("gpt-image-2", "gpt-image-2-2026-04-21")
+private val supportedImageModels = variableSizeModels + setOf("gpt-image-1-mini", "gpt-image-1.5",
+    "gpt-image-2.6-sunburst", "gpt-image-2.6-flare", "chatgpt-image-latest")
 private val commonSizes = setOf("auto", "1024x1024", "1536x1024", "1024x1536")
 
 private fun imageSize(body: JSONObject): String? {
@@ -76,8 +120,6 @@ private fun imageSize(body: JSONObject): String? {
 
 private fun supportsSize(model: ProviderModel, size: String): Boolean {
     val id = model.externalModelId.lowercase()
-    if (id == "dall-e-2") return size in setOf("256x256", "512x512", "1024x1024")
-    if (id == "dall-e-3") return size in setOf("1024x1024", "1792x1024", "1024x1792")
     if (size in commonSizes) return true
     if (!dimensions.matches(size)) return false
     if (id in variableSizeModels) {
@@ -85,26 +127,14 @@ private fun supportsSize(model: ProviderModel, size: String): Boolean {
         return w % 16 == 0 && h % 16 == 0 && maxOf(w, h) <= 3840 && w.toLong() * h <= 3840L * 2160 &&
             maxOf(w, h) <= 3 * minOf(w, h)
     }
-    if (id.startsWith("gpt-image-") || id == "chatgpt-image-latest") return false
-    return model.configureCapabilities().any { it.key == "size" && size in it.choices }
+    return false
 }
 
 private fun imageQuality(model: ProviderModel, raw: String?): String {
     val id = model.externalModelId.lowercase()
-    val value = raw?.lowercase()
-    val dallE = id == "dall-e-2" || id == "dall-e-3"
-    val quality = when {
-        value == "standard" && !dallE -> "auto"
-        value == "high" && id == "dall-e-3" -> "hd"
-        else -> value
-    }
-    val supported = when {
-        id == "dall-e-2" -> setOf("standard")
-        id == "dall-e-3" -> setOf("standard", "hd")
-        id in extendedQualityModels ->
-            setOf("auto", "low", "medium", "high", "xhigh", "max")
-        else -> setOf("auto", "low", "medium", "high")
-    }
+    val quality = raw?.lowercase()?.let { if (it == "standard") "auto" else it }
+    val supported = if (id in extendedQualityModels) setOf("auto", "low", "medium", "high", "xhigh", "max")
+        else setOf("auto", "low", "medium", "high")
     require(quality != null && quality in supported) { "当前模型不支持该图像质量。" }
     return quality
 }

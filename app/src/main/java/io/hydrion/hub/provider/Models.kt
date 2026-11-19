@@ -58,6 +58,8 @@ data class ModelCatalog(
 
     fun selectedEntry(mode: Mode): Pair<ProviderModel, Provider>? {
         val available = entries(mode)
+        val preferred = active[mode] ?: defaults[mode]
+        if (mode == Mode.Image && preferred != null) return available.singleOrNull { it.route == preferred }
         return available.find { it.route == active[mode] } ?: available.find { it.route == defaults[mode] }
             ?: available.firstOrNull()
     }
@@ -101,9 +103,13 @@ data class ModelCatalog(
     fun normalized(): ModelCatalog {
         // Disabled providers keep their route and parameter preferences until re-enabled.
         val declared = providers.flatMap { p -> p.models.map { m -> RemoteModel(p.id, m.id) to (m to p) } }.toMap()
-        fun belongs(mode: Mode, route: RemoteModel) = declared[route]?.let { (m, p) ->
-            m.selectableMode(p) == mode
-        } == true
+        fun belongs(mode: Mode, route: RemoteModel): Boolean {
+            val entry = declared[route]
+            if (entry != null) return (mode == Mode.Image && entry.second.mode == Mode.Image) ||
+                entry.first.selectableMode(entry.second) == mode
+            // Preserve a missing image route across saves. The user must select a replacement explicitly.
+            return mode == Mode.Image && providers.none { it.id == route.providerId && it.mode != Mode.Image }
+        }
         val validDefaults = Mode.entries.mapNotNull { mode ->
             val route = defaults[mode]?.takeIf { belongs(mode, it) } ?: entries(mode).firstOrNull()?.route
             route?.let { mode to it }

@@ -30,7 +30,7 @@ fun modelLabel(store: ProviderStore, mode: Mode): String {
 fun ConfigureSheet(store: ProviderStore, mode: Mode, onDismiss: () -> Unit) {
     val catalog by store.catalog.collectAsState()
     val models = remember(catalog, mode) { catalog.entries(mode) }
-    var route by remember(mode, catalog) { mutableStateOf(catalog.selectedEntry(mode)?.route) }
+    var route by remember(mode, catalog) { mutableStateOf(catalog.selectedEntry(mode)?.route ?: models.firstOrNull()?.route) }
     val entry = models.firstOrNull { it.route == route }
     var edits by remember(mode, catalog) { mutableStateOf(emptyMap<RemoteModel, Map<String, String>>()) }
     val values = entry?.let { edits[it.route] ?: catalog.parameters(it.first, it.second) }.orEmpty()

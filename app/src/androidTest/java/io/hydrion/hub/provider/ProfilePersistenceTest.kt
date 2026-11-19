@@ -63,11 +63,11 @@ class ProfilePersistenceTest {
             type = ModelType.Image, externalId = "gpt-image-1.5", imageBudget = 2,
             headers = mapOf("X-Image-Request" to "fixture"), requestBody = """{"n":3}"""))
         val p = Provider("images-a", Mode.Image, "A", "OpenAI Images", "https://api.openai.com", listOf(image))
-        val b = p.copy(id = "images-b", baseUrl = "https://images.example/prefix/images/generations",
+        val b = p.copy(id = "images-b", baseUrl = "https://api.openai.com:443/v1/images/generations",
             models = listOf(image.copy(profile = image.profile.copy(headers = mapOf("X-B" to "fixture")))))
         val catalog = ModelCatalog(listOf(p, b), active = mapOf(Mode.Image to RemoteModel(b.id, image.id)))
         val result = catalog.prepareImageGeneration("a \"quote\"")
-        assertEquals("https://images.example/prefix/images/generations", result.url)
+        assertEquals("https://api.openai.com/v1/images/generations", result.url)
         assertEquals("a \"quote\"", result.body.getString("prompt"))
         assertEquals("gpt-image-1.5", result.body.getString("model"))
         assertEquals(2, result.body.getInt("n"))
@@ -77,11 +77,32 @@ class ProfilePersistenceTest {
         assertEquals(mapOf("X-B" to "fixture"), result.headers)
         assertFalse(result.parameters.containsValue("fixture"))
         assertEquals("https://api.openai.com/v1/images/generations", p.imageEndpoint())
-        for (bad in listOf("http://example.com", "https://user@example.com", "https://example.com/path?query=x")) {
+        for (bad in listOf("http://example.com", "https://user@example.com", "https://example.com/path?query=x",
+            "https://images.example/prefix/images/generations")) {
             assertTrue(runCatching { p.copy(baseUrl = bad).imageEndpoint() }.isFailure)
         }
         assertTrue(runCatching { catalog.prepareImageGeneration("  ") }.isFailure)
         assertEquals("", catalog.imageRequest("  ").url)
+    }
+
+    @Test fun invocationStoresOnlyWireOptionsAndRejectsReplacedPromptsAndModels() {
+        val (localImage, localProvider) = demoCatalog().selectedEntry(Mode.Image)!!
+        val onlineImage = localImage.copy(profile = localImage.profile.copy(type = ModelType.Image,
+            externalId = "gpt-image-1.5", headers = mapOf("X-Private" to "fixture-secret")))
+        val provider = localProvider.copy(id = "online", models = listOf(onlineImage), baseUrl = "https://api.openai.com/v1")
+        val catalog = ModelCatalog(listOf(provider))
+        val invocation = catalog.imageInvocation("my prompt")
+        assertEquals(RemoteModel(provider.id, onlineImage.id), invocation.remoteModel)
+        assertEquals(setOf("model", "size", "quality", "n"), invocation.parameters.keys)
+        assertFalse(invocation.parameters.values.contains("my prompt"))
+        assertFalse(invocation.parameters.values.contains("fixture-secret"))
+        assertNull(demoCatalog().imageInvocation("demo").remoteModel)
+        val wrong = listOf("""{"model":"gpt-image-2","prompt":"{{prompt}}"}""", """{"prompt":"override"}""",
+            """{"prompt":"{{prompt}}","image":"ref"}""")
+        for (template in wrong) {
+            val changed = ModelCatalog(listOf(provider.copy(requestBody = template)))
+            assertTrue(runCatching { changed.imageInvocation("my prompt") }.isFailure)
+        }
     }
 
     @Test fun wirePreparationConvertsDimensionsRejectsUnsupportedFieldsAndKeepsTheMockTemplate() {
@@ -89,7 +110,7 @@ class ProfilePersistenceTest {
         fun catalog(extra: String, id: String = "gpt-image-1.5", width: Int = 1536): ModelCatalog {
             val profile = ModelProfile(type = ModelType.Image, externalId = id, requestBody = extra)
             val template = """{"prompt":"{{prompt}}","width":$width,"height":1024,"aspect":"3:2","quality":"High"}"""
-            return ModelCatalog(listOf(owner.copy(baseUrl = "https://example.test/v1",
+            return ModelCatalog(listOf(owner.copy(id = "custom-images", baseUrl = "https://api.openai.com/v1",
                 requestBody = template, models = listOf(model.copy(profile = profile)))))
         }
         val valid = catalog("{}")
@@ -117,8 +138,9 @@ class ProfilePersistenceTest {
         val prefs = fixture.getSharedPreferences("catalog", Context.MODE_PRIVATE)
         try {
             val (model, base) = demoCatalog().selectedEntry(Mode.Image)!!
-            val one = base.copy(id = "p1", baseUrl = "https://first.example/v1")
-            val two = base.copy(id = "p2", baseUrl = "https://second.example/v1")
+            val models = listOf(model.copy(profile = model.profile.copy(type = ModelType.Image, externalId = "gpt-image-1.5")))
+            val one = base.copy(id = "p1", models = models, baseUrl = "https://api.openai.com/v1")
+            val two = base.copy(id = "p2", models = models, baseUrl = "https://api.openai.com")
             val origin = encodeCatalog(ModelCatalog(listOf(one, two))).put("formatVersion", 99)
                 .put("futureSetting", "preserve-me").toString()
             prefs.edit().putString("catalog", origin).commit()
@@ -127,7 +149,7 @@ class ProfilePersistenceTest {
             store.save(two, "local-test-two", null)
             store.configure(Mode.Image, RemoteModel(two.id, model.id), mapOf("quality" to "High"))
             val prepared = store.prepareImageGeneration("scene")
-            assertEquals("https://second.example/v1/images/generations", prepared.url)
+            assertEquals("https://api.openai.com/v1/images/generations", prepared.url)
             assertEquals("Bearer local-test-two", prepared.headers["Authorization"])
             assertEquals("application/json", prepared.headers["Accept"])
             assertEquals(origin, prefs.getString("catalog", null))

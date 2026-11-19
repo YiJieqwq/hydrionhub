@@ -48,10 +48,9 @@ class ProviderStore(context: Context) {
 
     internal fun prepareImageGeneration(prompt: String, parentImageLimit: Int? = null): LocalModelRequest {
         val current = state.value
-        val (_, provider) = requireNotNull(current.selectedEntry(Mode.Image)) { IMAGE_MODEL_REQUIRED }
-        val request = current.prepareImageGeneration(prompt, parentImageLimit)
-        val headers = chatHeaders(request.headers, sessionKey(provider.id), provider.name) + ("Accept" to "application/json")
-        return LocalModelRequest(request.model, headers, request.body, request.parameters, request.url)
+        val invocation = current.imageInvocation(prompt, parentImageLimit)
+        val route = requireNotNull(invocation.remoteModel) { "请选择在线图像生成模型。" }
+        return current.prepareOfficialImageGeneration(route, prompt, invocation.parameters, ::sessionKey)
     }
 
     fun configure(mode: Mode, modelId: String, parameters: Map<String, String>) {
