@@ -36,7 +36,7 @@ class HeaderDrawerTest {
                 HydrionTheme {
                     Header(
                         mode = Mode.Chat, locked = locked.value, title = "示例会话", pinned = false,
-                        contextLabel = "0.5k", contextFraction = 0.1f, onMode = {}, onDrawer = { opens++ },
+                        contextUsage = ContextUsage(500, 5000, estimated = true), onMode = {}, onDrawer = { opens++ },
                         onNew = {}, onRename = {}, onPin = {}, onFind = {}, onDelete = {}
                     )
                 }

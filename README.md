@@ -1,6 +1,12 @@
 # HydrionHub · 氢离子
 
-Android 原生多模型客户端 0.1.4。Chat 和 Image 在同一个界面内运行，回复、工具记录和图片均由本机模拟。项目使用 Kotlin、Jetpack Compose、Material 3、ViewModel 与 StateFlow。
+HydrionHub 是用 Kotlin 和 Jetpack Compose 编写的 Android 多模型客户端。本分支从 0.1.4 恢复了 0.1.5 的 DeepSeek 对话功能。默认模型仍是本机 Hydrion。恢复版使用独立包名 `io.hydrion.hub.reconstructed`，可以与原应用并排安装，两者分别保存聊天记录。
+
+## 使用 DeepSeek
+
+在「设置 → 语言模型供应商 → DeepSeek」输入 API Key 并保存，然后在聊天输入框的模型选择器里选 DeepSeek。密钥只在本次运行中保留。Flash 支持文字和图片，V4 Pro 支持文字。对话通过 HTTPS 请求 `/responses`，可查看流式思考和正文。停止生成会保留已收到的内容，重新生成历史回复会沿用该条回复的模型。
+
+顶栏显示接口最近一次返回的 token 总数。用量环低于 80% 为蓝色，达到 80% 变红。DeepSeek 的上下文窗口默认是 1,000,000 tokens，可在对应模型的「编辑模型 → 基础 → 上下文窗口」修改。DeepSeek 蓝鲸图标来自 Lobe Icons，MIT 许可随应用附带。[Lobe Icons](https://github.com/lobehub/lobe-icons)
 
 ## 运行
 
@@ -32,7 +38,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | 顶栏与侧栏 | `ui/chrome`、`ui/sidebar` | 空会话模式选择、会话信息、全文查找和历史管理 |
 | 输入框 | `ui/composer` | 折叠与编辑状态、附件、工具箱和发送/停止 |
 | 消息列表 | `ui/messages` | 按稳定 ID 延迟渲染，Chat 展示 Markdown 子集、思考和工具记录。Image 展示可交互的结果卡片 |
-| 会话与生成 | `model` | ViewModel 接收事件，ConversationSession 更新状态，FakeGenerationRepository 输出可取消的生成流。历史文件由后台线程原子写入 |
+| 会话与生成 | `model` | ConversationSession 更新状态，ChatGenerationRepository 按请求选择本机模拟或 DeepSeek SSE 数据流。历史文件由后台线程原子写入 |
 | 模型与供应商 | `provider` | 供应商、模型和能力声明、Configure、配置编辑、JSON 模板与本地保存 |
 | 主题 | `ui/theme` | 纯黑背景、中性灰胶囊控件、字号层级、低对比描边与 H⁺ 标志 |
 
@@ -43,8 +49,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - 空会话与已有会话的左上角均为两道横杠，点击后打开侧栏。空会话顶部居中选择 Chat 或 Image。已有消息时，左上双行胶囊显示会话名称，下行依次为锁、模式、用量环与数值（例如 0.5k）。点击胶囊可改名。极窄窗口或大字体下，新建入口收进更多菜单。
 - 默认采用深色主题与中文界面，保留设计稿中的 Chat、Image、Configure、Done 等标签。设置首页采用居中标题、带分隔线的深灰分组列表和底部搜索框。聚焦搜索时可用右侧关闭按钮退出。
 - 聊天输入框的本地尺寸过渡暂用线性插值，时长取 90 Hz 下约三个帧周期（33 ms）。随后输入框的位置跟随系统输入法边距变化。收起键盘后，图片缩略图仍显示在文字上方，可逐张移除。顶栏、输入框和底部搜索等胶囊控件共用细灰色高光边缘。
-- Chat 的上下文用量是本机演示估算。Image 独立处理每次请求，手动添加的参考图随该条请求保存。生成图片为程序绘制的示例风景，不会根据提示词做真实推理。
-- 首次启动预设两个语言模型和一个图片模型。停用供应商后，发送时会使用同类的其他可用模型。重新启用会恢复原来的模型偏好。模型选择面板从本机示例目录添加，支持按名称或能力筛选。
+- 本机 Chat 显示估算用量。Image 独立处理每次请求，手动添加的参考图随该条请求保存。生成图片为程序绘制的示例风景。
+- 首次启动预设本机对话模型、本机图像模型和 DeepSeek 对话模型。停用供应商后，发送时会使用同类的其他可用模型。重新启用会恢复原来的模型偏好。模型选择面板支持按名称或能力筛选。
 - Tools 面板按当前模式展示可用项。Chat 的已启用数量跟随搜索和生图的选择变化，Image 展示参考图张数与配置入口。
 
 ## 样式与模型配置

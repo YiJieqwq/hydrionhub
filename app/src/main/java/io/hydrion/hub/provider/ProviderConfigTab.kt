@@ -43,7 +43,8 @@ internal fun ProviderConfigTab(
         Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(16.dp)) {
             Column {
                 ManageSwitch("启用供应商", Icons.Outlined.PowerSettingsNew, provider.enabled) { onUpdate(provider.copy(enabled = it)) }
-                ManageLink("API 协议", Icons.Outlined.Cable, provider.protocol) { protocolDialog = true }
+                ManageLink("API 协议", Icons.Outlined.Cable, provider.protocol,
+                    if (provider.id == DEEPSEEK_PROVIDER_ID) null else { { protocolDialog = true } })
                 ManageLink("管理模型", Icons.Outlined.ViewInAr, provider.models.size.toString(), onModels)
             }
         }
@@ -60,7 +61,11 @@ internal fun ProviderConfigTab(
             })
         ConfigField("Base URL", "Base URL", provider.baseUrl, { onUpdate(provider.copy(baseUrl = it)) },
             keyboardType = KeyboardType.Uri, placeholder = "https://")
-        if (provider.mode == Mode.Chat) {
+        if (provider.id == DEEPSEEK_PROVIDER_ID) {
+            val endpoint = remember(provider.baseUrl) { runCatching { provider.deepSeekEndpoint() } }
+            Text(endpoint.getOrElse { it.message ?: "服务地址无效" }, style = MaterialTheme.typography.bodySmall,
+                color = if (endpoint.isSuccess) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
+        } else if (provider.mode == Mode.Chat) {
             GroupTitle("内置图片生成")
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 ManageSwitch("启用内置图片生成", Icons.Outlined.Image, provider.builtinImage) {
@@ -101,14 +106,15 @@ private fun ManageSwitch(label: String, icon: ImageVector, checked: Boolean, onC
 }
 
 @Composable
-private fun ManageLink(label: String, icon: ImageVector, value: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 50.dp).padding(horizontal = 14.dp),
+private fun ManageLink(label: String, icon: ImageVector, value: String, onClick: (() -> Unit)?) {
+    val action = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)
+    Row(Modifier.fillMaxWidth().then(action).heightIn(min = 50.dp).padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Icon(icon, null, Modifier.size(20.dp), MaterialTheme.colorScheme.onSurfaceVariant)
         Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
         Text(value, Modifier.weight(1f), maxLines = 2, textAlign = TextAlign.End, overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(18.dp), MaterialTheme.colorScheme.onSurfaceVariant)
+        if (onClick != null) Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(18.dp), MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

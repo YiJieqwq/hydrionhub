@@ -11,6 +11,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubViewModel
+import io.hydrion.hub.model.Mode
+import io.hydrion.hub.provider.deepSeekProvider
 import java.io.File
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -26,6 +28,31 @@ class ComposerDraftTest {
     private fun waitFor(matcher: SemanticsMatcher, count: Int = 1) {
         screen.waitUntil(timeoutMillis = 15_000) {
             screen.onAllNodes(matcher).fetchSemanticsNodes().size == count
+        }
+    }
+
+    @Test
+    fun missingDeepSeekKeyShowsDismissibleErrorAndKeepsDraft() {
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        val previous = screen.runOnIdle { vm.providers.catalog.value.selectedModel(Mode.Chat)!! }
+        try {
+            screen.runOnIdle {
+                vm.providers.save(deepSeekProvider, "", null)
+                vm.providers.configure(Mode.Chat, deepSeekProvider.models.first().id, emptyMap())
+                vm.setDraft("draft")
+            }
+            screen.onNodeWithContentDescription("发送消息").performClick()
+            screen.onNodeWithTag("composer-error").assertIsDisplayed()
+            screen.onNodeWithText("API Key", substring = true).assertIsDisplayed()
+            screen.onNode(input).assertTextContains("draft")
+            screen.onNodeWithContentDescription("关闭错误提示").performClick()
+            screen.onNodeWithTag("composer-error").assertDoesNotExist()
+            screen.runOnIdle { assertTrue(vm.state.value.current.messages.isEmpty()) }
+        } finally {
+            screen.runOnIdle {
+                vm.providers.configure(Mode.Chat, previous.id, vm.providers.catalog.value.parameters(previous))
+                vm.setDraft("")
+            }
         }
     }
 

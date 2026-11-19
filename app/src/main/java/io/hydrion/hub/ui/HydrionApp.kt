@@ -1,6 +1,5 @@
 package io.hydrion.hub.ui
 
-import android.app.Application
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
@@ -17,18 +16,22 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.provider.ConfigureSheet
+import io.hydrion.hub.provider.DEEPSEEK_PROVIDER_ID
 import io.hydrion.hub.provider.ProviderSettings
-import io.hydrion.hub.provider.ProviderStore
 import io.hydrion.hub.ui.chrome.Header
+import io.hydrion.hub.ui.chrome.contextUsage
 import io.hydrion.hub.ui.composer.HubComposer
 import io.hydrion.hub.ui.messages.ProvideMessageStyle
 import io.hydrion.hub.ui.messages.MessageList
@@ -37,24 +40,20 @@ import io.hydrion.hub.ui.sidebar.ConversationDrawer
 import io.hydrion.hub.ui.theme.HydrionTheme
 import io.hydrion.hub.ui.theme.ProviderTheme
 import kotlinx.coroutines.launch
-import java.util.Locale
-
-class ProviderViewModel(application: Application) : AndroidViewModel(application) {
-    val store = ProviderStore(application)
-}
 
 @Composable
 fun HydrionApp() {
     HydrionTheme {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background,
             contentColor = MaterialTheme.colorScheme.onBackground) {
-            ProvideMessageStyle { Workspace(viewModel(), viewModel<ProviderViewModel>().store) }
+            ProvideMessageStyle { Workspace(viewModel()) }
         }
     }
 }
 
 @Composable
-private fun Workspace(vm: HubViewModel, providers: ProviderStore) {
+private fun Workspace(vm: HubViewModel) {
+    val providers = vm.providers
     val state by vm.state.collectAsStateWithLifecycle()
     val catalog by providers.catalog.collectAsStateWithLifecycle()
     val current = state.current
@@ -76,6 +75,7 @@ private fun Workspace(vm: HubViewModel, providers: ProviderStore) {
     val timelines = rememberSaveableStateHolder()
     val snackbar = remember { SnackbarHostState() }
     val notice by vm.notice.collectAsStateWithLifecycle()
+    val errors by vm.errors.collectAsStateWithLifecycle()
     LaunchedEffect(notice) {
         notice?.let { snackbar.showSnackbar(it); vm.clearNotice() }
     }
@@ -118,10 +118,11 @@ private fun Workspace(vm: HubViewModel, providers: ProviderStore) {
                 .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
                 .navigationBarsPadding().imePadding()) {
                 Column(Modifier.align(Alignment.TopCenter).widthIn(max = 900.dp).fillMaxSize()) {
-                    val usage = mockContext(current.mode, current.messages.size)
+                    val selectedEntry = remember(catalog, current.mode) { catalog.selectedEntry(current.mode) }
+                    val usage = contextUsage(current, selectedEntry?.first)
                     Header(
                         mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
-                        contextLabel = usage.first, contextFraction = usage.second,
+                        contextUsage = usage,
                         onMode = vm::setMode, onNew = ::newChat,
                         onDrawer = { focus.clearFocus(); scope.launch { drawer.open() } },
                         onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },
@@ -144,15 +145,17 @@ private fun Workspace(vm: HubViewModel, providers: ProviderStore) {
                         }
                     }
                     key(current.id) {
+                        errors[current.id]?.let { detail -> ComposerError(detail) { vm.clearError(current.id) } }
                         val chipLabel = if (current.mode == Mode.Chat)
                             listOfNotNull(selection.label, selection.parameters["effort"]).joinToString(" ")
                         else selection.label
                         HubComposer(vm, state, chipLabel, selection.available,
                             fast = current.mode == Mode.Chat && selection.parameters["speed"] == "Fast",
+                            toolsAvailable = selectedEntry?.second?.id != DEEPSEEK_PROVIDER_ID,
                             onConfigure = { focus.clearFocus(); configure = true },
                             onSend = {
                                 scope.launch {
-                                    sendDraft(vm, providers)?.let { snackbar.showSnackbar(it) }
+                                    sendDraft(vm, providers)?.let { vm.reportError(current.id, it) }
                                 }
                             })
                     }
@@ -181,10 +184,24 @@ private fun Workspace(vm: HubViewModel, providers: ProviderStore) {
     }
 }
 
-private fun mockContext(mode: Mode, messages: Int): Pair<String, Float> {
-    // Image requests are independent. Chat uses a replaceable local usage estimate.
-    val tokens = if (mode == Mode.Image) 0f else messages * 260f
-    return String.format(Locale.ROOT, "%.1fk", tokens / 1000) to (tokens / 128000).coerceAtMost(1f)
+@Composable
+private fun ComposerError(detail: String, onDismiss: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    Surface(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).testTag("composer-error"),
+        shape = MaterialTheme.shapes.medium, color = Color(0xFF9C1724), contentColor = Color.White
+    ) {
+        Row(Modifier.padding(start = 12.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("消息发送失败", style = MaterialTheme.typography.titleSmall)
+                Text(detail, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = { clipboard.setText(AnnotatedString(detail)) }) {
+                Icon(Icons.Outlined.ContentCopy, "复制错误", Modifier.size(18.dp))
+            }
+            IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "关闭错误提示", Modifier.size(18.dp)) }
+        }
+    }
 }
 
 @Composable

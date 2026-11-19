@@ -7,15 +7,23 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 
+private const val DEEPSEEK_CATALOG_FORMAT = 4
+
 class ProviderStore(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("model_catalog_v1", Context.MODE_PRIVATE)
-    private val state = MutableStateFlow(
-        preferences.getString("catalog", null)?.let { saved -> runCatching { decodeCatalog(saved) }.getOrNull() }
-            ?: demoCatalog()
-    )
+    private val state = MutableStateFlow(loadCatalog())
+
+    private fun loadCatalog(): ModelCatalog {
+        val json = preferences.getString("catalog", null)?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val loaded = json?.let { runCatching { decodeCatalog(it) }.getOrNull() } ?: return demoCatalog().withDeepSeekPreset()
+        if (json.optInt("formatVersion") < DEEPSEEK_CATALOG_FORMAT) {
+            preferences.edit().putString("catalog", encodeCatalog(loaded).toString()).apply()
+        }
+        return loaded
+    }
     val catalog = state.asStateFlow()
 
-    // The mock client never sends credentials or writes them to disk.
+    // The key is held in this store for the current session.
     private val sessionKeys = mutableMapOf<String, String>()
     fun sessionKey(providerId: String): String = sessionKeys[providerId].orEmpty()
 
@@ -71,6 +79,7 @@ private fun JSONObject.modeMap(key: String): Map<Mode, String> =
     getJSONObject(key).stringMap().mapKeys { Mode.valueOf(it.key) }
 
 internal fun encodeCatalog(catalog: ModelCatalog): JSONObject = JSONObject().apply {
+    put("formatVersion", DEEPSEEK_CATALOG_FORMAT)
     put("providers", JSONArray(catalog.providers.map { provider ->
         JSONObject().apply {
             put("id", provider.id)
@@ -98,9 +107,10 @@ internal fun encodeCatalog(catalog: ModelCatalog): JSONObject = JSONObject().app
     put("overrides", JSONObject().apply { catalog.overrides.forEach { (id, values) -> put(id, JSONObject(values)) } })
 }
 
-internal fun decodeCatalog(text: String): ModelCatalog {
-    val json = JSONObject(text)
-    return ModelCatalog(
+internal fun decodeCatalog(text: String): ModelCatalog = decodeCatalog(JSONObject(text))
+
+private fun decodeCatalog(json: JSONObject): ModelCatalog {
+    val catalog = ModelCatalog(
         providers = json.getJSONArray("providers").mapObjects { p ->
             Provider(p.getString("id"), Mode.valueOf(p.getString("mode")), p.getString("name"),
                 p.getString("protocol"), p.getString("baseUrl"), p.getJSONArray("models").mapObjects { m ->
@@ -116,4 +126,5 @@ internal fun decodeCatalog(text: String): ModelCatalog {
             obj.keys().asSequence().associateWith { obj.getJSONObject(it).stringMap() }
         }
     ).normalized()
+    return if (json.optInt("formatVersion") < DEEPSEEK_CATALOG_FORMAT) catalog.withDeepSeekPreset() else catalog
 }

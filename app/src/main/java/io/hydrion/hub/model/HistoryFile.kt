@@ -73,6 +73,8 @@ private fun writeMessage(m: Message): JSONObject = JSONObject().put("id", m.id).
     .put("text", m.text).put("status", m.status.name).put("createdAt", m.createdAt).put("model", m.model)
     .put("parameters", JSONObject(m.parameters)).put("attachments", writeAttachments(m.attachments)).put("prompt", m.prompt)
     .put("thought", m.thought).put("tool", m.tool).put("imageKeys", JSONArray(m.imageKeys))
+    .put("remoteModel", m.remoteModel?.let { JSONObject().put("providerId", it.providerId).put("modelId", it.modelId) })
+    .put("totalTokens", m.totalTokens)
     .put("error", m.error).put("replyTo", m.replyTo).put("imageInvocation", m.imageInvocation?.let {
         JSONObject().put("model", it.model).put("parameters", JSONObject(it.parameters))
     })
@@ -85,6 +87,8 @@ private fun readMessage(j: JSONObject): Message {
         model = j.optString("model"), parameters = parameters.keys().asSequence().associateWith(parameters::getString),
         attachments = readAttachments(j.optJSONArray("attachments")), prompt = j.optString("prompt"),
         thought = j.optString("thought"), tool = j.optional("tool"), imageKeys = (0 until keys.length()).map { keys.getString(it) },
+        remoteModel = j.optJSONObject("remoteModel")?.let { RemoteModel(it.getString("providerId"), it.getString("modelId")) },
+        totalTokens = j.optLong("totalTokens", -1).takeIf { it >= 0 },
         error = j.optional("error"), replyTo = j.optional("replyTo"), imageInvocation = j.optJSONObject("imageInvocation")?.let {
             val imageParameters = it.getJSONObject("parameters")
             ImageInvocation(it.getString("model"), imageParameters.keys().asSequence().associateWith(imageParameters::getString))

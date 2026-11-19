@@ -5,14 +5,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 internal interface GenerationRepository {
-    /** Cancelling collection ends local waiting. A future provider may also cancel its server-side request. */
-    fun generate(mode: Mode, request: Message, retry: Boolean): Flow<Message>
+    /** The immutable transcript ends at the specific question being answered. */
+    fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>): Flow<Message>
 }
 
 internal class FakeGenerationRepository(
     private val wait: suspend (Long) -> Unit = { delay(it) }
 ) : GenerationRepository {
-    override fun generate(mode: Mode, request: Message, retry: Boolean): Flow<Message> = flow {
+    override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>): Flow<Message> = flow {
         wait(350)
         var reply = request.copy(status = Generation.Generating, thought = if (mode == Mode.Chat && request.parameters["reasoning_enabled"] != "false")
             "已读取当前消息与附件，正在整理本地示例回复。" else "")

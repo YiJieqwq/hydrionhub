@@ -34,12 +34,14 @@ internal fun ModelGroup(title: String, content: @Composable ColumnScope.() -> Un
 @Composable
 internal fun ModelField(
     label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier,
-    singleLine: Boolean = true, keyboard: KeyboardType = KeyboardType.Text, trailingIcon: (@Composable () -> Unit)? = null
+    singleLine: Boolean = true, keyboard: KeyboardType = KeyboardType.Text, placeholder: String? = null,
+    trailingIcon: (@Composable () -> Unit)? = null
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         TextField(value, onChange, Modifier.fillMaxWidth().semantics { contentDescription = label },
             singleLine = singleLine, maxLines = if (singleLine) 1 else 8, trailingIcon = trailingIcon,
+            placeholder = placeholder?.let { hint -> { Text(hint) } },
             keyboardOptions = KeyboardOptions(keyboardType = keyboard), shape = RoundedCornerShape(12.dp),
             colors = TextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,

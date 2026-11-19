@@ -46,8 +46,13 @@ data class ModelCatalog(
         return options.find { it.id == defaults[mode] } ?: options.firstOrNull()
     }
 
-    fun selectedModel(mode: Mode): ProviderModel? =
-        models(mode).find { it.id == active[mode] } ?: defaultModel(mode)
+    fun selectedEntry(mode: Mode): Pair<ProviderModel, Provider>? {
+        val available = entries(mode)
+        return available.find { it.first.id == active[mode] } ?: available.find { it.first.id == defaults[mode] }
+            ?: available.firstOrNull()
+    }
+
+    fun selectedModel(mode: Mode): ProviderModel? = selectedEntry(mode)?.first
 
     fun parameters(model: ProviderModel, values: Map<String, String> = overrides[model.id].orEmpty()): Map<String, String> =
         model.configureCapabilities().mapNotNull { cap ->
@@ -58,7 +63,7 @@ data class ModelCatalog(
 
     fun selection(mode: Mode): ModelSelection {
         val model = selectedModel(mode) ?: return ModelSelection("无可用模型", emptyMap(), false)
-        return ModelSelection(model.name, model.requestParameters(parameters(model)))
+        return ModelSelection(model.name, model.requestParameters(parameters(model), mode))
     }
 
     fun withProvider(provider: Provider, requestedDefaults: Map<Mode, String>): ModelCatalog {
@@ -144,3 +149,22 @@ internal fun demoCatalog(): ModelCatalog = ModelCatalog(
         ))
     )
 ).normalized()
+
+internal const val DEEPSEEK_PROVIDER_ID = "deepseek"
+internal const val DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+
+internal val deepSeekProvider = Provider(
+    DEEPSEEK_PROVIDER_ID, Mode.Chat, "DeepSeek", "OpenAI Responses", DEEPSEEK_BASE_URL,
+    listOf(
+        deepSeekModel("deepseek-flash", "DeepSeek V4.1 Flash", setOf("text", "image"), listOf("Low", "High", "Max")),
+        deepSeekModel("deepseek-v4-pro", "DeepSeek V4 Pro", setOf("text"), listOf("High", "Max"))
+    )
+)
+
+private fun deepSeekModel(id: String, name: String, input: Set<String>, levels: List<String>) =
+    ProviderModel(id, name, profile = ModelProfile(type = ModelType.Chat, externalId = id, input = input,
+        output = setOf("text"), abilities = setOf("tools", "reasoning", "structured"),
+        levels = levels, allowDisabling = true))
+
+internal fun ModelCatalog.withDeepSeekPreset(): ModelCatalog =
+    if (providers.any { it.id == DEEPSEEK_PROVIDER_ID }) this else withProvider(deepSeekProvider, emptyMap())

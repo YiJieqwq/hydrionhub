@@ -15,7 +15,8 @@ internal class ConversationSession(
     private val scope: CoroutineScope,
     private val repository: GenerationRepository,
     private val persist: (SavedWorkspace) -> Unit,
-    private val now: () -> Long = System::currentTimeMillis
+    private val now: () -> Long = System::currentTimeMillis,
+    private val onGenerationError: (conversationId: String, detail: String) -> Unit = { _, _ -> }
 ) {
     private val mutable = MutableStateFlow(HubState())
     val state: StateFlow<HubState> = mutable.asStateFlow()
@@ -134,17 +135,18 @@ internal class ConversationSession(
     }
 
     fun send(model: String, parameters: Map<String, String>, search: String?, imageTool: String?,
-             image: ImageInvocation? = null) {
+             image: ImageInvocation? = null, remoteModel: RemoteModel? = null) {
         val s = screen
         val draft = s.draft.copy(search = search ?: s.draft.search, imageTool = imageTool ?: s.draft.imageTool)
         val prompt = draft.text.trim()
         if (s.isGenerating || model.isBlank() || (prompt.isEmpty() && draft.attachments.isEmpty())) return
         val user = Message(role = Role.User, text = prompt, attachments = draft.attachments, createdAt = now(),
-            model = model, parameters = parameters.toMap(), imageInvocation = image?.copy(parameters = image.parameters.toMap()))
+            model = model, remoteModel = remoteModel, parameters = parameters.toMap(),
+            imageInvocation = image?.copy(parameters = image.parameters.toMap()))
         val response = Message(role = Role.Assistant, status = Generation.Sending, prompt = prompt,
             model = image?.model ?: model, parameters = user.imageInvocation?.parameters ?: user.parameters,
-            replyTo = user.id, createdAt = now(),
-            attachments = draft.attachments, tool = selectedTool(s.current.mode, draft))
+            replyTo = user.id, createdAt = now(), remoteModel = remoteModel,
+            attachments = draft.attachments, tool = if (remoteModel == null) selectedTool(s.current.mode, draft) else null)
         val title = if (!s.modeLocked && s.current.title == "新会话")
             prompt.ifBlank { draft.attachments.first().name }.lineSequence().first().take(32) else s.current.title
         changeDraft(draft.copy(text = "", attachments = emptyList()))
@@ -153,15 +155,21 @@ internal class ConversationSession(
     }
 
     private fun generate(id: String, mode: Mode, response: Message, retry: Boolean = false) {
+        val history = requireNotNull(conversation(id)).messages.takeWhile { it.id != response.id }
         save()
         val job = scope.launch(start = CoroutineStart.LAZY) {
+            val generation = coroutineContext[Job]
             try {
-                repository.generate(mode, response, retry).collect { message -> replaceReply(id, response.id, message) }
+                repository.generate(mode, response, retry, history).collect { message ->
+                    if (jobs[id] === generation) replaceReply(id, response.id, message)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
+                if (jobs[id] !== generation) return@launch
                 val partial = conversation(id)?.messages?.find { it.id == response.id } ?: return@launch
-                replaceReply(id, response.id, partial.copy(status = Generation.Error, error = "生成中断，请重新生成。"))
+                val detail = failure.localizedMessage?.takeIf { it.isNotBlank() } ?: "生成中断，请重新生成。"
+                replaceReply(id, response.id, partial.copy(status = Generation.Error, error = detail))
             }
         }
         jobs[id] = job
@@ -179,6 +187,7 @@ internal class ConversationSession(
             touch(updated)
             jobs.remove(conversationId)
             save()
+            if (reply.status == Generation.Error) onGenerationError(conversationId, reply.error ?: "消息生成失败。")
         }
     }
 
@@ -219,6 +228,7 @@ internal class ConversationSession(
         val user = if (target.role == Role.User) target else item.messages.find { it.id == target.replyTo } ?: return
         val original = item.messages.find { it.replyTo == user.id }
         val response = Message(id = original?.id ?: newId(), role = Role.Assistant, status = Generation.Sending,
+            remoteModel = original?.remoteModel ?: user.remoteModel,
             model = original?.model ?: user.imageInvocation?.model ?: user.model,
             parameters = original?.parameters ?: user.imageInvocation?.parameters ?: user.parameters,
             prompt = user.text, attachments = user.attachments, replyTo = user.id,

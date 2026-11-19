@@ -8,6 +8,21 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ProfilePersistenceTest {
+    @Test fun legacyCatalogGainsDeepSeekOnceAndKeepsUserSettings() {
+        val old = demoCatalog().copy(active = mapOf(Mode.Chat to "demo-quick"))
+        val legacy = encodeCatalog(old).apply { remove("formatVersion") }
+        val migrated = decodeCatalog(legacy.toString())
+        assertEquals("demo-quick", migrated.selectedModel(Mode.Chat)?.id)
+        assertEquals(deepSeekProvider, migrated.providers.single { it.id == DEEPSEEK_PROVIDER_ID })
+        val removed = migrated.copy(providers = migrated.providers.filterNot { it.id == DEEPSEEK_PROVIDER_ID })
+        assertTrue(decodeCatalog(encodeCatalog(removed).toString()).providers.none { it.id == DEEPSEEK_PROVIDER_ID })
+        val m = deepSeekProvider.models.first()
+        val profile = m.profile.copy(contextWindowTokens = 12_345)
+        assertEquals(12_345, m.copy(profile = profile.toStoredJson().readProfile()).contextWindowTokens)
+        val oldProfile = profile.toStoredJson().apply { remove("contextWindowTokens") }.readProfile()
+        assertEquals(1_000_000, m.copy(profile = oldProfile).contextWindowTokens)
+    }
+
     @Test fun loadsPreProfileCatalogAndRoundTripsNewSettingsWithoutHeaderValues() {
         val legacy = encodeCatalog(demoCatalog())
         val legacyModel = legacy.getJSONArray("providers").getJSONObject(0).getJSONArray("models").getJSONObject(0)

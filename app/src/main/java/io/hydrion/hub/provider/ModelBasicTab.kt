@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
 private val modelTypes = listOf(ModelType.Chat to "对话", ModelType.Embedding to "嵌入", ModelType.Image to "图像")
@@ -44,6 +45,11 @@ internal fun ModelBasicTab(draft: ModelEditDraft) {
             clipboard.setText(AnnotatedString(profile.externalId))
         }) { Icon(Icons.Outlined.ContentCopy, "复制模型 ID", Modifier.size(19.dp)) } })
     ModelField("模型名称", draft.name, { draft.name = it })
+    if (draft.type == ModelType.Chat) {
+        val preset = defaultContextWindowTokens(profile.externalId.ifBlank { draft.name })
+        ModelField("上下文窗口（tokens）", draft.contextWindow, { draft.contextWindow = it },
+            keyboard = KeyboardType.Number, placeholder = "默认 $preset")
+    }
     ModelGroup("模型类型") {
         Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             modelTypes.forEach { (type, label) ->

@@ -211,7 +211,8 @@ private fun requireExportSize(width: Int, height: Int) {
     }
 }
 
-private suspend fun writePng(stream: OutputStream, key: String, width: Int, height: Int) {
+internal suspend fun writePng(stream: OutputStream, key: String, width: Int, height: Int) {
+    requireExportSize(width, height)
     renderSlots.withPermit {
         val bitmap = renderLandscape(key, width, height)
         try {

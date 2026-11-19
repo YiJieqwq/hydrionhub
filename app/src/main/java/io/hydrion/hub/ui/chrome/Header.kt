@@ -15,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -30,8 +32,8 @@ import io.hydrion.hub.model.Mode
 
 @Composable
 internal fun Header(
-    mode: Mode, locked: Boolean, title: String, pinned: Boolean, contextLabel: String,
-    contextFraction: Float, onMode: (Mode) -> Unit, onDrawer: () -> Unit, onNew: () -> Unit,
+    mode: Mode, locked: Boolean, title: String, pinned: Boolean, contextUsage: ContextUsage,
+    onMode: (Mode) -> Unit, onDrawer: () -> Unit, onNew: () -> Unit,
     onRename: () -> Unit, onPin: () -> Unit, onFind: () -> Unit, onDelete: () -> Unit
 ) {
     BoxWithConstraints(
@@ -44,7 +46,7 @@ internal fun Header(
                 DrawerButton(onDrawer)
                 Spacer(Modifier.width(6.dp))
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                    ConversationChip(title, mode, contextLabel, contextFraction, onRename)
+                    ConversationChip(title, mode, contextUsage, onRename)
                 }
                 Spacer(Modifier.width(6.dp))
                 ConversationActions(pinned, compactActions, onNew, onPin, onFind, onDelete)
@@ -95,7 +97,7 @@ private fun ModePicker(mode: Mode, onMode: (Mode) -> Unit, modifier: Modifier = 
 
 @Composable
 private fun ConversationChip(
-    title: String, mode: Mode, usage: String, fraction: Float, onRename: () -> Unit
+    title: String, mode: Mode, usage: ContextUsage, onRename: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     Column(
@@ -113,12 +115,15 @@ private fun ConversationChip(
         ) {
             Icon(Icons.Outlined.Lock, "已锁定", Modifier.size(11.dp), tint = colors.onSurfaceVariant)
             Text(mode.name, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, color = colors.onSurfaceVariant)
+            val ringColor = if (usage.high) Color(0xFFEF4444) else Color(0xFF3B82F6)
             CircularProgressIndicator(
-                progress = { fraction }, modifier = Modifier.size(11.dp), strokeWidth = 1.6.dp,
-                color = colors.onSurface, trackColor = colors.outline, strokeCap = StrokeCap.Butt,
+                progress = { usage.fraction }, modifier = Modifier.size(11.dp).testTag("context-usage-ring")
+                    .semantics { stateDescription = "${usage.tokens ?: "—"} / ${usage.window} tokens" },
+                strokeWidth = 1.6.dp,
+                color = ringColor, trackColor = ringColor.copy(alpha = 0.45f), strokeCap = StrokeCap.Butt,
                 gapSize = 0.dp
             )
-            Text(usage, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, color = colors.onSurfaceVariant)
+            usage.label?.let { Text(it, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, color = colors.onSurfaceVariant) }
         }
     }
 }

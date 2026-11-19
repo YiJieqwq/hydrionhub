@@ -66,9 +66,13 @@ fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
                     items(providers, key = { it.id }) { provider ->
                         val defaultIds = Mode.entries.mapNotNull { catalog.defaultModel(it)?.id }
                         val defaults = provider.models.filter { it.id in defaultIds }.joinToString { it.name }
-                        val subtitle = listOfNotNull(if (provider.enabled) null else "已停用", provider.protocol,
+                        val connection = if (provider.id == DEEPSEEK_PROVIDER_ID) "在线" else "本地模拟"
+                        val subtitle = listOfNotNull(if (provider.enabled) null else "已停用", connection, provider.protocol,
                             "${provider.models.size} 个模型", defaults.takeIf { it.isNotEmpty() }?.let { "默认 · $it" })
                         LinkRow(provider.name, subtitle.joinToString("  ·  ")) { navigation.open(provider, store) }
+                    }
+                    if (currentMode == Mode.Chat && providers.none { it.id == DEEPSEEK_PROVIDER_ID }) {
+                        item { LinkRow("添加 DeepSeek", deepSeekProvider.protocol) { navigation.open(deepSeekProvider, store) } }
                     }
                 }
             }

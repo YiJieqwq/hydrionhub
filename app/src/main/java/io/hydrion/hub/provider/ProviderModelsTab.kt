@@ -138,7 +138,7 @@ private fun LocalModelPicker(
                 Text("选择模型", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                 TextButton(onClick = onDismiss) { Text("完成") }
             }
-            Text("本地示例目录", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            Text(if (provider.id == DEEPSEEK_PROVIDER_ID) "DeepSeek 模型预设" else "本地示例目录", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = query, onValueChange = { query = it }, singleLine = true,

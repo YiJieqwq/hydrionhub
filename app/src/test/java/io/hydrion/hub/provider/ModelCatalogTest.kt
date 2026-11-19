@@ -20,7 +20,7 @@ class ModelCatalogTest {
         }
         val next = catalog.copy(providers = remaining, active = mapOf(Mode.Chat to "demo-reason")).normalized()
         assertEquals("Hydrion Mini", next.selection(Mode.Chat).label)
-        assertTrue(next.selection(Mode.Chat).parameters.isEmpty())
+        assertEquals(mapOf(CONTEXT_WINDOW_PARAMETER to "128000"), next.selection(Mode.Chat).parameters)
         assertEquals(catalog.selection(Mode.Image), next.selection(Mode.Image))
     }
 

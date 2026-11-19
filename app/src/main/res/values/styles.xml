@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">HydrionHub</string>
+    <string name="app_name">HydrionHub 恢复版</string>
     <style name="Theme.HydrionHub" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">#000000</item>
         <item name="android:windowLightStatusBar">false</item>

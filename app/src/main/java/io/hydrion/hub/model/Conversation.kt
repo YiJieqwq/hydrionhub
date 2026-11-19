@@ -30,6 +30,8 @@ data class Draft(
     val imageTool: String = "自定义图片生成"
 )
 
+data class RemoteModel(val providerId: String, val modelId: String)
+
 data class Message(
     val id: String = newId(),
     val role: Role,
@@ -45,7 +47,9 @@ data class Message(
     val imageKeys: List<String> = emptyList(),
     val error: String? = null,
     val replyTo: String? = null,
-    val imageInvocation: ImageInvocation? = null
+    val imageInvocation: ImageInvocation? = null,
+    val remoteModel: RemoteModel? = null,
+    val totalTokens: Long? = null
 )
 
 data class Conversation(

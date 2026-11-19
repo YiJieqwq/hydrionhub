@@ -37,6 +37,9 @@ private val abilityNames = mapOf(
 internal fun modelBadges(model: ProviderModel): List<String> =
     (model.configureCapabilities().map(::capabilityLabel) + model.profile.abilities.map { abilityNames[it] ?: it }).distinct()
 
+private fun Provider.presets(): List<ProviderModel> =
+    if (id == DEEPSEEK_PROVIDER_ID) deepSeekProvider.models else localModelPresets(mode)
+
 internal fun localModelChoices(provider: Provider, query: String): ModelChoices {
     val needle = query.trim()
     fun matches(model: ProviderModel): Boolean {
@@ -50,7 +53,7 @@ internal fun localModelChoices(provider: Provider, query: String): ModelChoices 
         return fields.any { it.contains(needle, ignoreCase = true) }
     }
     return ModelChoices(
-        available = localModelPresets(provider.mode).filter { !isConfigured(provider.id, provider.models, it) && matches(it) },
+        available = provider.presets().filter { !isConfigured(provider.id, provider.models, it) && matches(it) },
         configured = provider.models.filter(::matches)
     )
 }
@@ -58,9 +61,9 @@ internal fun localModelChoices(provider: Provider, query: String): ModelChoices 
 /** Preset identities remain distinct across providers and survive local display-name edits. */
 internal fun addLocalModels(provider: Provider, selected: Set<String>): List<ProviderModel> {
     val next = provider.models.toMutableList()
-    for (preset in localModelPresets(provider.mode)) {
+    for (preset in provider.presets()) {
         if (preset.id in selected && !isConfigured(provider.id, next, preset))
-            next.add(preset.copy(id = presetId(provider.id, preset)))
+            next.add(if (provider.id == DEEPSEEK_PROVIDER_ID) preset else preset.copy(id = presetId(provider.id, preset)))
     }
     return next
 }

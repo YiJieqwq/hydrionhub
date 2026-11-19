@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -14,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -28,6 +30,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
@@ -35,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.model.*
+import io.hydrion.hub.R
+import io.hydrion.hub.provider.DEEPSEEK_PROVIDER_ID
 import io.hydrion.hub.ui.theme.IonMark
 import kotlinx.coroutines.flow.collect
 import java.text.DateFormat
@@ -172,14 +177,20 @@ private fun AssistantTurn(msg: Message, mode: Mode, query: String, vm: HubViewMo
             Text(messageTime(msg.createdAt), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
             MessageActions(msg, mode, vm, busy)
         } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            IonMark(22.dp)
+            if (msg.remoteModel?.providerId == DEEPSEEK_PROVIDER_ID) {
+                Box(Modifier.size(26.dp).clip(CircleShape).background(colors.surfaceContainerHigh),
+                    contentAlignment = Alignment.Center) {
+                    Image(painterResource(R.drawable.deepseek_whale), "DeepSeek", Modifier.size(21.dp))
+                }
+            } else IonMark(22.dp)
             Text(msg.model.ifBlank { "HydrionHub" }, Modifier.weight(1f, fill = false),
                 style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(messageTime(msg.createdAt), color = colors.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
         }
-        var thoughtExpanded by rememberSaveable(msg.id, query) {
-            mutableStateOf(query.isNotEmpty() && msg.thought.contains(query, ignoreCase = true))
+        val thinking = msg.remoteModel != null && msg.status.isActive && msg.text.isEmpty()
+        var thoughtExpanded by rememberSaveable(msg.id, query, thinking) {
+            mutableStateOf(thinking || (query.isNotEmpty() && msg.thought.contains(query, ignoreCase = true)))
         }
         if (msg.thought.isNotBlank()) {
             Thought(msg, query, thoughtExpanded, onToggle = { thoughtExpanded = !thoughtExpanded })

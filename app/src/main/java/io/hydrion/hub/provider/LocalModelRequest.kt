@@ -4,11 +4,12 @@ import io.hydrion.hub.model.Mode
 import org.json.JSONObject
 import org.json.JSONArray
 
-internal data class LocalModelRequest(
+internal class LocalModelRequest(
     val model: String,
     val headers: Map<String, String>,
     val body: JSONObject,
-    val parameters: Map<String, String>
+    val parameters: Map<String, String>,
+    val url: String = ""
 )
 
 internal fun ModelCatalog.imageTarget(builtin: Boolean): Pair<ProviderModel, Provider>? {
@@ -32,10 +33,11 @@ internal fun ModelCatalog.localRequest(
     parentImageLimit: Int? = null
 ): LocalModelRequest {
     require(model.profile.budget?.let { requests <= it } != false) { "本次发送需要 $requests 次模拟请求，超过模型的请求预算。" }
-    val options = model.requestParameters(parameters(model))
+    val mode = model.profile.type?.mode ?: providers.firstOrNull { p -> p.models.any { it.id == model.id } }?.mode
+    val options = model.requestParameters(parameters(model), mode)
     val sample = RequestTemplate.sample(model, parameters = options, prompt = prompt)
     val body = if (imageTemplate == null) {
-        JSONObject(options).put("model", model.externalModelId).put("prompt", prompt)
+        JSONObject(options - CONTEXT_WINDOW_PARAMETER).put("model", model.externalModelId).put("prompt", prompt)
     } else JSONObject(RequestTemplate.preview(imageTemplate, sample).getOrThrow())
     if (model.profile.type != null) {
         body.put("input_modalities", JSONArray(model.profile.input))

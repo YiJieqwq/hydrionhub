@@ -83,6 +83,7 @@ fun HubComposer(
     onConfigure: () -> Unit,
     onSend: () -> Unit,
     modifier: Modifier = Modifier,
+    toolsAvailable: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
     val focusManager = LocalFocusManager.current
@@ -220,8 +221,9 @@ fun HubComposer(
                         IconButton(onClick = {
                             showTools = true
                             keyboard?.hide()
-                        }) {
-                            Icon(Icons.Outlined.Tune, "打开工具箱", Modifier.size(21.dp), tint = colors.onSurface)
+                        }, enabled = toolsAvailable) {
+                            Icon(Icons.Outlined.Tune, "打开工具箱", Modifier.size(21.dp),
+                                tint = colors.onSurface.copy(alpha = if (toolsAvailable) 1f else 0.38f))
                         }
                         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                             Row(

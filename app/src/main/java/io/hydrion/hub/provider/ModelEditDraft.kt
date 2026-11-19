@@ -57,6 +57,7 @@ internal class ModelEditDraft(val initial: ProviderModel, val mode: Mode, val wa
     var makeDefault by mutableStateOf(wasDefault)
     var budget by mutableStateOf(startingProfile.budget?.toString().orEmpty())
     var imageBudget by mutableStateOf(startingProfile.imageBudget?.toString().orEmpty())
+    var contextWindow by mutableStateOf(startingProfile.contextWindowTokens?.toString().orEmpty())
     var headers by mutableStateOf(originalHeaders)
     var checked by mutableStateOf(originalChecks)
     var custom by mutableStateOf(originalCustom)
@@ -64,6 +65,7 @@ internal class ModelEditDraft(val initial: ProviderModel, val mode: Mode, val wa
     val currentDefault: Boolean get() = wasDefault && type == initialType
 
     val dirty get() = name != initial.name || profile != startingProfile || makeDefault != wasDefault ||
+        contextWindow != startingProfile.contextWindowTokens?.toString().orEmpty() ||
         headers != originalHeaders || budget != startingProfile.budget?.toString().orEmpty() ||
         imageBudget != startingProfile.imageBudget?.toString().orEmpty() || checked != originalChecks || custom != originalCustom
 
@@ -86,6 +88,8 @@ internal class ModelEditDraft(val initial: ProviderModel, val mode: Mode, val wa
         if (id.isBlank()) return ModelPage.Basic to "请输入模型 ID 或名称"
         if (others.any { it.id != initial.id && it.externalModelId.trim() == id }) return ModelPage.Basic to "供应商中已有相同模型 ID"
         if (others.any { it.id != initial.id && it.name.trim().equals(label, ignoreCase = true) }) return ModelPage.Basic to "供应商中已有同名模型"
+        if (type == ModelType.Chat && contextWindow.isNotBlank() && (contextWindow.toIntOrNull() ?: 0) <= 0)
+            return ModelPage.Basic to "上下文窗口须为正整数，留空使用预设值。"
         val invalidBudget = listOf(budget, imageBudget).any { it.isNotBlank() && (it.toIntOrNull() ?: -1) < 0 }
         if (invalidBudget) return ModelPage.Advanced to "预算必须是非负整数"
         if (headers.any { !headerName.matches(it.key.trim()) || it.value.any { c -> c == '\n' || c == '\r' } }) {
@@ -113,6 +117,7 @@ internal class ModelEditDraft(val initial: ProviderModel, val mode: Mode, val wa
         if (!dirty) return initial
         val id = profile.externalId.trim().ifBlank { name.trim() }
         val clean = profile.copy(externalId = id, headers = headers.associate { it.key.trim() to it.value },
+            contextWindowTokens = contextWindow.toIntOrNull()?.takeIf { it > 0 },
             budget = budget.toIntOrNull(), imageBudget = imageBudget.toIntOrNull(), requestBody = profile.requestBody.trim())
         val capabilities = buildList {
             if (type == ModelType.Chat && "reasoning" in clean.abilities) {
@@ -134,4 +139,4 @@ internal class ModelEditDraft(val initial: ProviderModel, val mode: Mode, val wa
 }
 
 private val fieldName = Regex("[A-Za-z_][A-Za-z0-9_]*")
-private val headerName = Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+internal val headerName = Regex("[!#$%&'*+.^_`|~0-9A-Za-z-]+")
