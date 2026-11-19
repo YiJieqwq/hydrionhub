@@ -1,5 +1,6 @@
 package io.hydrion.hub.ui.messages
 
+import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import io.hydrion.hub.model.GeneratedImageStore
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Message
 import kotlinx.coroutines.CancellationException
@@ -34,15 +36,31 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ImageResult(msg: Message, query: String, vm: HubViewModel, busy: Boolean, showRegenerate: Boolean) {
-    val size = remember(msg.parameters) { outputSize(msg.parameters) }
+    val demoSize = remember(msg.parameters) { outputSize(msg.parameters) }
+    val sizes = remember(msg.imageKeys, demoSize) {
+        msg.imageKeys.associateWith { pictureSize(it, demoSize) }
+    }
     val pager = rememberPagerState { msg.imageKeys.size }
     val scope = rememberCoroutineScope()
     var opened by rememberSaveable(msg.id) { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val page = pager.currentPage.coerceIn(msg.imageKeys.indices)
-    fun reference(imageKey: String) {
+    val pageSize = sizes[msg.imageKeys[page]]
+    suspend fun reference(imageKey: String): Boolean {
+        val size = sizes[imageKey] ?: return false
+        val conversation = vm.state.value.current.id
+        try {
+            if (GeneratedImageStore.isStored(imageKey)) GeneratedImageStore(context).requireAvailable(imageKey)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            showImageFailure(context, e, "无法读取原始生成图片")
+            return false
+        }
+        if (vm.state.value.current.id != conversation) return false
         vm.referenceImage(imageKey, size.width, size.height)
         Toast.makeText(context, "已添加到输入框", Toast.LENGTH_SHORT).show()
+        return true
     }
     MessageCard(LocalMessageStyle.current.renderPalette.assistant, Modifier.fillMaxWidth(), RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -50,9 +68,10 @@ internal fun ImageResult(msg: Message, query: String, vm: HubViewModel, busy: Bo
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))) {
                 HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth()) { index ->
                     val key = msg.imageKeys[index]
-                    MockPicture(
-                        key = key, width = size.width, height = size.height, description = "生成的图片，第 ${index + 1} 张",
-                        modifier = Modifier.fillMaxWidth().aspectRatio((size.width.toFloat() / size.height).coerceIn(.9f, 2.1f))
+                    val aspect = sizes[key]?.let { it.width.toFloat() / it.height } ?: 1f
+                    GeneratedPicture(
+                        key = key, width = demoSize.width, height = demoSize.height, description = "生成的图片，第 ${index + 1} 张",
+                        modifier = Modifier.fillMaxWidth().aspectRatio(aspect.coerceIn(.9f, 2.1f))
                             .clickable(role = Role.Button, onClickLabel = "查看大图") { opened = key }
                     )
                 }
@@ -74,13 +93,13 @@ internal fun ImageResult(msg: Message, query: String, vm: HubViewModel, busy: Bo
                         modifier = Modifier.capsuleEdge().background(Color.Black.copy(alpha = .55f), CircleShape))
                 }
             }
-            Text(listOfNotNull("${size.width} × ${size.height}", "${msg.imageKeys.size} 张", msg.parameters["quality"]).joinToString(" · "),
+            Text(listOfNotNull(pageSize?.let { "${it.width} × ${it.height}" }, "${msg.imageKeys.size} 张", msg.parameters["quality"]).joinToString(" · "),
                 color = LocalContentColor.current, style = MaterialTheme.typography.labelMedium)
             val custom = msg.parameters.filterKeys { it !in setOf("size", "aspect", "quality", "n") }
             if (custom.isNotEmpty()) Text(custom.entries.joinToString(" · ") { "${it.key} ${it.value}" },
                 color = LocalContentColor.current, style = MaterialTheme.typography.labelSmall)
             FlowRow(Modifier.fillMaxWidth()) {
-                TextButton(onClick = { reference(msg.imageKeys[page]) }, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                TextButton(onClick = { scope.launch { reference(msg.imageKeys[page]) } }, enabled = pageSize != null, contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Icon(Icons.Outlined.AddPhotoAlternate, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("作为参考图", style = MaterialTheme.typography.labelMedium)
@@ -94,13 +113,15 @@ internal fun ImageResult(msg: Message, query: String, vm: HubViewModel, busy: Bo
         }
     }
     val initial = opened?.let { msg.imageKeys.indexOf(it) } ?: -1
-    if (initial >= 0) PictureViewer(msg, size, initial, onReference = ::reference, onDismiss = { opened = null })
+    if (initial >= 0) PictureViewer(msg, demoSize, sizes, initial, onReference = ::reference, onDismiss = { opened = null })
 }
 
 @Composable
-private fun PictureViewer(msg: Message, size: Extent, initial: Int, onReference: (String) -> Unit, onDismiss: () -> Unit) {
+private fun PictureViewer(msg: Message, demoSize: Extent, sizes: Map<String, Extent?>, initial: Int,
+                          onReference: suspend (String) -> Boolean, onDismiss: () -> Unit) {
     val pager = rememberPagerState(initialPage = initial) { msg.imageKeys.size }
     val key = msg.imageKeys[pager.currentPage.coerceIn(msg.imageKeys.indices)]
+    val size = sizes[key]
     var saveKey by rememberSaveable { mutableStateOf<String?>(null) }
     var working by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -115,8 +136,7 @@ private fun PictureViewer(msg: Message, size: Extent, initial: Int, onReference:
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                val reason = if (e is IllegalArgumentException) e.message else null
-                Toast.makeText(context, reason ?: "图片操作失败，请重试", Toast.LENGTH_LONG).show()
+                showImageFailure(context, e, "图片操作失败，请重试")
             } finally {
                 working = false
             }
@@ -126,7 +146,7 @@ private fun PictureViewer(msg: Message, size: Extent, initial: Int, onReference:
         val target = saveKey
         saveKey = null
         if (target != null && uri != null) runAction("PNG 已保存") {
-            saveMockPicture(context, uri, target, size.width, size.height)
+            savePicture(context, uri, target, demoSize.width, demoSize.height)
         }
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -136,25 +156,26 @@ private fun PictureViewer(msg: Message, size: Extent, initial: Int, onReference:
                     IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "关闭大图") }
                     Text("${pager.currentPage + 1} / ${msg.imageKeys.size}", Modifier.weight(1f),
                         style = MaterialTheme.typography.labelLarge)
-                    IconButton(enabled = !working && saveKey == null, onClick = {
-                        runAction("图片已复制") { copyMockPicture(context, key, size.width, size.height) }
+                    IconButton(enabled = size != null && !working && saveKey == null, onClick = {
+                        runAction("图片已复制") { copyPicture(context, key, demoSize.width, demoSize.height) }
                     }) { Icon(Icons.Outlined.ContentCopy, "复制图片") }
-                    IconButton(enabled = !working && saveKey == null, onClick = {
+                    IconButton(enabled = size != null && !working && saveKey == null, onClick = {
                         saveKey = key
-                        saveFile.launch("HydrionHub-${key.take(12)}-${pager.currentPage + 1}.png")
+                        saveFile.launch("HydrionHub-${key.take(12).replace(':', '-')}-${pager.currentPage + 1}.png")
                     }) { Icon(Icons.Outlined.Download, "保存图片") }
                 }
                 HorizontalPager(state = pager, modifier = Modifier.weight(1f).fillMaxWidth()) { page ->
-                    MockPicture(msg.imageKeys[page], size.width, size.height, "大图，第 ${page + 1} 张",
+                    GeneratedPicture(msg.imageKeys[page], demoSize.width, demoSize.height, "大图，第 ${page + 1} 张",
                         Modifier.fillMaxSize(), fit = true)
                 }
                 if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
                 Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)) {
                     if (msg.prompt.isNotBlank()) Text(msg.prompt, style = MaterialTheme.typography.bodyLarge,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text("${msg.model} · ${size.width} × ${size.height} · ${messageTime(msg.createdAt, true)}",
+                    Text(listOfNotNull(msg.model, size?.let { "${it.width} × ${it.height}" },
+                        messageTime(msg.createdAt, true)).joinToString(" · "),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick = { onReference(key); onDismiss() }) {
+                    TextButton(onClick = { scope.launch { if (onReference(key)) onDismiss() } }, enabled = size != null) {
                         Icon(Icons.Outlined.AddPhotoAlternate, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp)); Text("作为参考图")
                     }
@@ -162,4 +183,9 @@ private fun PictureViewer(msg: Message, size: Extent, initial: Int, onReference:
             }
         }
     }
+}
+
+private fun showImageFailure(context: Context, error: Exception, fallback: String) {
+    val reason = if (error is IllegalArgumentException) error.message else null
+    Toast.makeText(context, reason ?: fallback, Toast.LENGTH_LONG).show()
 }

@@ -5,7 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.hydrion.hub.provider.ProviderStore
 import io.hydrion.hub.provider.responsesImageSources
-import io.hydrion.hub.provider.imageRequest
+import io.hydrion.hub.provider.LocalModelRequest
+import io.hydrion.hub.provider.imageInvocation
+import io.hydrion.hub.provider.prepareOfficialImageGeneration
 import io.hydrion.hub.runtime.ProotEnvironmentStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -24,8 +26,11 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     private var changedDuringLoad = false
     internal val providers = ProviderStore(app)
     private val environments by lazy { ProotEnvironmentStore(app) }
-    private val generation = ChatGenerationRepository({ providers.catalog.value }, providers::sessionKey,
-        app.contentResolver::responsesImageSources)
+    private val images = GeneratedImageStore(app)
+    private val generation = ImageGenerationRepository(
+        ChatGenerationRepository({ providers.catalog.value }, providers::sessionKey, app::responsesImageSources),
+        ::prepareImage, OpenAiImagesTransport()::generate, images::saveBatch, images::discard
+    )
     private val mutableErrors = MutableStateFlow<Map<String, String>>(emptyMap())
     internal val errors = mutableErrors.asStateFlow()
     private val session = ConversationSession(viewModelScope, generation,
@@ -52,6 +57,15 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
                 session.restore(saved)
                 loaded = true
                 if (changedDuringLoad) writes.trySend(session.snapshot())
+                val retained = saved.imageReferences() + session.snapshot().imageReferences() +
+                    state.value.draft.attachments.mapNotNull { it.imageKey }
+                try {
+                    images.pruneUnreferenced(retained)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // The next startup can reclaim old images after history has been read successfully.
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -96,15 +110,32 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteMessage(id: String) = session.deleteMessage(id)
     fun regenerate(id: String) {
         clearError(state.value.current.id)
-        session.regenerate(id) { prompt, parentImageLimit ->
-            val request = providers.catalog.value.imageRequest(prompt, parentImageLimit)
-            ImageInvocation(request.model, request.parameters)
+        session.regenerate(id, ::validateImage) { prompt, parentImageLimit ->
+            providers.catalog.value.imageInvocation(prompt, parentImageLimit)
         }
     }
+    internal fun validateImage(image: ImageInvocation, prompt: String, attachments: List<Attachment>) {
+        if (image.remoteModel != null) prepareImage(image, prompt, attachments)
+    }
+
+    private fun prepareImage(image: ImageInvocation, prompt: String, attachments: List<Attachment>): LocalModelRequest {
+        require(attachments.isEmpty()) { IMAGE_TEXT_ONLY }
+        return providers.catalog.value.prepareOfficialImageGeneration(requireNotNull(image.remoteModel), prompt,
+            image.parameters, providers::sessionKey)
+    }
+
     fun preparePrompt(id: String) = session.preparePrompt(id)
 
     override fun onCleared() {
         writes.close()
         super.onCleared()
     }
+}
+
+private fun SavedWorkspace.imageReferences(): Set<String> = buildSet {
+    for (conversation in history) for (message in conversation.messages) {
+        addAll(message.imageKeys)
+        message.attachments.mapNotNullTo(this) { it.imageKey }
+    }
+    drafts.values.forEach { draft -> draft.attachments.mapNotNullTo(this) { it.imageKey } }
 }

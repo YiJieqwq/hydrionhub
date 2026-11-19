@@ -84,7 +84,7 @@ import io.hydrion.hub.model.HubState
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.ui.messages.AttachmentPicture
-import io.hydrion.hub.ui.messages.MockPicture
+import io.hydrion.hub.ui.messages.GeneratedPicture
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.capsuleEdge
 
@@ -387,7 +387,7 @@ private fun DraftAttachment(attachment: Attachment, onRemove: () -> Unit) {
     if (key != null || (uri != null && attachment.mimeType?.startsWith("image/") == true)) {
         Box(Modifier.size(72.dp).clip(RoundedCornerShape(12.dp))) {
             if (key != null) {
-                MockPicture(key, attachment.width ?: 1024, attachment.height ?: 1024,
+                GeneratedPicture(key, attachment.width ?: 1024, attachment.height ?: 1024,
                     "参考图缩略图", Modifier.matchParentSize())
             } else if (uri != null) AttachmentPicture(uri, Modifier.matchParentSize())
             IconButton(onClick = onRemove, modifier = Modifier.align(Alignment.TopEnd).size(32.dp)) {

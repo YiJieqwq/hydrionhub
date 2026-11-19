@@ -343,8 +343,10 @@ private fun MessageAttachment(attachment: Attachment, query: String) {
     if (imageKey != null) {
         val width = attachment.width?.coerceAtLeast(1) ?: 1024
         val height = attachment.height?.coerceAtLeast(1) ?: 1024
-        MockPicture(imageKey, width, height, attachment.name,
-            Modifier.width(100.dp).aspectRatio((width.toFloat() / height).coerceIn(.67f, 1.75f)).clip(RoundedCornerShape(10.dp)))
+        val size = pictureSize(imageKey, Extent(width, height))
+        val aspect = size?.let { it.width.toFloat() / it.height } ?: 1f
+        GeneratedPicture(imageKey, width, height, attachment.name,
+            Modifier.width(100.dp).aspectRatio(aspect.coerceIn(.67f, 1.75f)).clip(RoundedCornerShape(10.dp)))
     } else if (uri != null && attachment.mimeType?.startsWith("image/") == true) {
         AttachmentPicture(uri, Modifier.width(128.dp).height(90.dp).clip(RoundedCornerShape(10.dp)))
     }

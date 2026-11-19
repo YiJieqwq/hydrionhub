@@ -1,7 +1,6 @@
 package io.hydrion.hub.ui
 
 import io.hydrion.hub.model.HubViewModel
-import io.hydrion.hub.model.ImageInvocation
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
 import io.hydrion.hub.model.CHAT_PROTOCOL_PARAMETER
@@ -10,7 +9,8 @@ import io.hydrion.hub.model.selectedTool
 import io.hydrion.hub.provider.ProviderStore
 import io.hydrion.hub.provider.IMAGE_MODEL_REQUIRED
 import io.hydrion.hub.provider.externalModelId
-import io.hydrion.hub.provider.imageRequest
+import io.hydrion.hub.provider.imageInvocation
+import io.hydrion.hub.provider.ModelSelection
 import io.hydrion.hub.provider.inputIssue
 import io.hydrion.hub.provider.localRequest
 import io.hydrion.hub.provider.chatProtocol
@@ -43,22 +43,34 @@ internal suspend fun sendDraft(vm: HubViewModel, providers: ProviderStore): Stri
         return "当前模型未启用工具能力，请调整模型或工具箱设置。"
     val prepared = withContext(Dispatchers.Default) {
         runCatching {
-            val prompt = before.draft.text
-            val request = if (mode == Mode.Image) catalog.imageRequest(prompt)
-                else catalog.localRequest(model, prompt, requests = if (imageTool) 2 else 1, provider = provider)
+            val prompt = before.draft.text.trim()
             val image = when {
-                mode == Mode.Image -> request
-                imageTool -> catalog.imageRequest(prompt, parentImageLimit = model.profile.imageBudget)
+                mode == Mode.Image -> catalog.imageInvocation(prompt)
+                imageTool -> catalog.imageInvocation(prompt, parentImageLimit = model.profile.imageBudget)
                 else -> null
             }
-            request to image?.let { ImageInvocation(it.model, it.parameters) }
+            val selection = if (mode == Mode.Image) {
+                val invocation = requireNotNull(image)
+                ModelSelection(invocation.model, invocation.parameters)
+            } else {
+                val local = catalog.localRequest(model, prompt, requests = if (imageTool) 2 else 1, provider = provider)
+                ModelSelection(local.model, local.parameters)
+            }
+            selection to image
         }
     }
-    val (request, image) = prepared.getOrElse { return "本地请求未发送：${it.message.orEmpty()}" }
+    val (selection, image) = prepared.getOrElse { return it.message ?: "请求未发送，请检查模型设置。" }
     val now = vm.state.value
     if (now.current.id == before.current.id && now.current.mode == mode && now.draft == before.draft &&
         providers.catalog.value == catalog && !now.isGenerating) {
-        vm.send(request.model, request.parameters, image = image)
+        if (image != null) {
+            try {
+                vm.validateImage(image, before.draft.text.trim(), before.draft.attachments)
+            } catch (invalid: IllegalArgumentException) {
+                return invalid.message ?: "请检查图像供应商设置。"
+            }
+        }
+        vm.send(selection.label, selection.parameters, image = image)
     }
     return null
 }

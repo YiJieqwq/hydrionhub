@@ -97,8 +97,19 @@ class ProfilePersistenceTest {
         assertFalse(invocation.parameters.values.contains("my prompt"))
         assertFalse(invocation.parameters.values.contains("fixture-secret"))
         assertNull(demoCatalog().imageInvocation("demo").remoteModel)
+        val explicitLocal = ModelCatalog(listOf(provider.copy(protocol = "local", baseUrl = "")))
+        assertNull(explicitLocal.imageInvocation("demo").remoteModel)
+        for (protocol in listOf("OpenAI Images", "Unknown")) {
+            val missingUrl = ModelCatalog(listOf(provider.copy(protocol = protocol, baseUrl = "")))
+            assertTrue(runCatching { missingUrl.imageInvocation("my prompt") }.isFailure)
+        }
         val wrong = listOf("""{"model":"gpt-image-2","prompt":"{{prompt}}"}""", """{"prompt":"override"}""",
             """{"prompt":"{{prompt}}","image":"ref"}""")
+        val badToken = "fixture-secret-placeholder"
+        val unparseable = ModelCatalog(listOf(provider.copy(requestBody = """{"n":$badToken}""")))
+        val error = runCatching { unparseable.imageInvocation("my prompt") }.exceptionOrNull()
+        assertTrue(error is IllegalArgumentException)
+        assertFalse(error?.message.orEmpty().contains(badToken))
         for (template in wrong) {
             val changed = ModelCatalog(listOf(provider.copy(requestBody = template)))
             assertTrue(runCatching { changed.imageInvocation("my prompt") }.isFailure)

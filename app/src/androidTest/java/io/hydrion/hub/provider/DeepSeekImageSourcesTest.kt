@@ -26,7 +26,7 @@ class DeepSeekImageSourcesTest {
             val uri = FileProvider.getUriForFile(context, context.packageName + ".images", file)
             val picker = Attachment("photo", "photo.png", uri = uri.toString(), mimeType = "image/png")
             val generated = Attachment("mock", "scene.png", imageKey = "landscape", width = 32, height = 24)
-            val resolved = context.contentResolver.responsesImageSources(listOf(picker, generated, picker), deepSeekProvider)
+            val resolved = context.responsesImageSources(listOf(picker, generated, picker), deepSeekProvider)
             assertEquals("data:image/png;base64,AQID", resolved.getValue(picker))
             val png = Base64.decode(resolved.getValue(generated).substringAfter(','), Base64.DEFAULT)
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

@@ -19,7 +19,7 @@ class PictureExportTest {
         val file = File.createTempFile("scene-", ".png", context.cacheDir)
         try {
             val uri = Uri.fromFile(file)
-            saveMockPicture(context, uri, "persistent-image", 240, 160)
+            savePicture(context, uri, "persistent-image", 240, 160)
             val first = file.readBytes()
             val decoded = requireNotNull(BitmapFactory.decodeFile(file.path))
             try {
@@ -29,7 +29,7 @@ class PictureExportTest {
             } finally {
                 decoded.recycle()
             }
-            saveMockPicture(context, uri, "persistent-image", 240, 160)
+            savePicture(context, uri, "persistent-image", 240, 160)
             assertArrayEquals(first, file.readBytes())
         } finally {
             file.delete()

@@ -36,6 +36,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import io.hydrion.hub.model.GeneratedImageStore
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
@@ -67,8 +68,18 @@ private fun scaledSize(width: Int, height: Int, maxEdge: Int): Pair<Int, Int> {
     return max(1, (width * ratio).roundToInt()) to max(1, (height * ratio).roundToInt())
 }
 
+internal fun pictureSize(key: String, demoSize: Extent): Extent? {
+    if (!GeneratedImageStore.isStored(key)) return demoSize
+    return try {
+        val (width, height) = GeneratedImageStore.dimensions(key)
+        Extent(width, height)
+    } catch (_: Exception) {
+        null
+    }
+}
+
 @Composable
-internal fun MockPicture(
+internal fun GeneratedPicture(
     key: String,
     width: Int,
     height: Int,
@@ -76,10 +87,15 @@ internal fun MockPicture(
     modifier: Modifier = Modifier,
     fit: Boolean = false,
 ) {
-    val (w, h) = scaledSize(width, height, if (fit) 1440 else 480)
-    val cacheId = "mock/$w/$h/$key"
-    BitmapPreview(cacheId, description, modifier, fit) {
-        renderLandscape(key, w, h)
+    val maxEdge = if (fit) 1440 else 480
+    if (GeneratedImageStore.isStored(key)) {
+        val context = LocalContext.current.applicationContext
+        BitmapPreview("stored/$maxEdge/$key", description, modifier, fit, cache = false) {
+            GeneratedImageStore(context).decodePreview(key, maxEdge)
+        }
+    } else {
+        val (w, h) = scaledSize(width, height, maxEdge)
+        BitmapPreview("mock/$w/$h/$key", description, modifier, fit) { renderLandscape(key, w, h) }
     }
 }
 
@@ -97,15 +113,18 @@ private fun BitmapPreview(
     description: String,
     modifier: Modifier,
     fit: Boolean,
+    cache: Boolean = true,
     load: () -> Bitmap,
 ) {
     val preview by key(cacheId) {
-        produceState<Preview>(initialValue = previews.get(cacheId)?.let { Preview.Ready(it) } ?: Preview.Loading) {
+        val cached = if (cache) previews.get(cacheId) else null
+        produceState<Preview>(initialValue = cached?.let { Preview.Ready(it) } ?: Preview.Loading) {
             if (value is Preview.Ready) return@produceState
             value = try {
                 val bitmap = withContext(Dispatchers.IO) {
                     renderSlots.withPermit {
-                        previews.get(cacheId) ?: load().also { previews.put(cacheId, it) }
+                        if (cache) previews.get(cacheId) ?: load().also { previews.put(cacheId, it) }
+                        else load()
                     }
                 }
                 Preview.Ready(bitmap)
@@ -174,25 +193,34 @@ private fun decodeAttachment(context: Context, uri: Uri, maxEdge: Int): Bitmap {
         .also { if (it !== bitmap) bitmap.recycle() }
 }
 
-internal suspend fun saveMockPicture(context: Context, uri: Uri, key: String, width: Int, height: Int) {
+internal suspend fun savePicture(context: Context, uri: Uri, key: String, width: Int, height: Int) {
     withContext(Dispatchers.IO) {
-        requireExportSize(width, height)
-        val resolver = context.contentResolver
-        val stream = resolver.openOutputStream(uri, "wt") ?: throw IOException("无法打开保存位置")
-        stream.use { writePng(it, key, width, height) }
+        fun openDestination() = context.contentResolver.openOutputStream(uri, "wt") ?: throw IOException("无法打开保存位置")
+        if (GeneratedImageStore.isStored(key)) {
+            // Opening a document with "wt" may truncate it. Check and copy the original first.
+            val staged = File.createTempFile("image-export-", ".png", context.cacheDir)
+            try {
+                staged.outputStream().use { writePng(context, it, key, width, height) }
+                staged.inputStream().use { input -> openDestination().use { output -> input.copyTo(output) } }
+            } finally {
+                staged.delete()
+            }
+        } else {
+            requireExportSize(width, height)
+            openDestination().use { writeDemoPng(it, key, width, height) }
+        }
     }
 }
 
-internal suspend fun copyMockPicture(context: Context, key: String, width: Int, height: Int) {
+internal suspend fun copyPicture(context: Context, key: String, width: Int, height: Int) {
     val uri = withContext(Dispatchers.IO) {
-        requireExportSize(width, height)
         val directory = File(context.cacheDir, "copies")
         if (!directory.isDirectory && !directory.mkdirs()) throw IOException("无法打开图片缓存")
         val expiry = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
         directory.listFiles()?.filter { it.isFile && it.lastModified() < expiry }?.forEach { it.delete() }
         val file = File.createTempFile("HydrionHub-", ".png", directory)
         try {
-            file.outputStream().use { writePng(it, key, width, height) }
+            file.outputStream().use { writePng(context, it, key, width, height) }
             FileProvider.getUriForFile(context, context.packageName + ".images", file)
         } catch (e: Exception) {
             file.delete()
@@ -211,7 +239,13 @@ private fun requireExportSize(width: Int, height: Int) {
     }
 }
 
-internal suspend fun writePng(stream: OutputStream, key: String, width: Int, height: Int) {
+internal suspend fun writePng(context: Context, stream: OutputStream, key: String, width: Int, height: Int) {
+    if (GeneratedImageStore.isStored(key)) GeneratedImageStore(context).copyPng(key, stream)
+    else writeDemoPng(stream, key, width, height)
+}
+
+internal suspend fun writeDemoPng(stream: OutputStream, key: String, width: Int, height: Int) {
+    require(!GeneratedImageStore.isStored(key)) { "原始生成图片无法作为本地示例图导出" }
     requireExportSize(width, height)
     renderSlots.withPermit {
         val bitmap = renderLandscape(key, width, height)

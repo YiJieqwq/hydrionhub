@@ -1,6 +1,7 @@
 package io.hydrion.hub.provider
 
 import android.content.ContentResolver
+import android.content.Context
 import android.net.Uri
 import android.util.Base64
 import android.util.Base64OutputStream
@@ -75,7 +76,7 @@ private class LimitedImageBuffer(private val limit: Int) : ByteArrayOutputStream
 }
 
 /** Resolve only explicitly selected content URIs or local generated references; network URLs stay references. Call on IO. */
-internal suspend fun ContentResolver.responsesImageSources(
+internal suspend fun Context.responsesImageSources(
     attachments: List<Attachment>, provider: Provider
 ): Map<Attachment, String> {
     require(attachments.size <= provider.responsesImageLimit) { "每次请求最多可包含 ${provider.responsesImageLimit} 张图片。" }
@@ -85,16 +86,16 @@ internal suspend fun ContentResolver.responsesImageSources(
         currentCoroutineContext().ensureActive()
         val uri = file.uri?.let(Uri::parse)
         val source = if (file.imageKey != null || uri?.scheme == ContentResolver.SCHEME_CONTENT) {
-            val mime = file.imageType().ifEmpty { getType(requireNotNull(uri))?.substringBefore(';')?.trim()?.lowercase().orEmpty() }
+            val mime = file.imageType().ifEmpty { contentResolver.getType(requireNotNull(uri))?.substringBefore(';')?.trim()?.lowercase().orEmpty() }
             require(mime in imageTypes) { "当前支持 PNG、JPEG、GIF 和 WebP 图片，无法加入附件「${file.name}」。" }
             val prefix = "data:$mime;base64,"
             val buffer = LimitedImageBuffer(minOf(remaining, MAX_INLINE_SIZE + prefix.length))
             buffer.write(prefix.toByteArray(Charsets.US_ASCII))
             Base64OutputStream(buffer, Base64.NO_WRAP).use { encoded ->
                 if (file.imageKey != null) {
-                    writePng(encoded, file.imageKey, file.width ?: 1024, file.height ?: 1024)
+                    writePng(this@responsesImageSources, encoded, file.imageKey, file.width ?: 1024, file.height ?: 1024)
                 } else {
-                    val input = openInputStream(requireNotNull(uri)) ?: throw IOException("无法打开附件「${file.name}」。")
+                    val input = contentResolver.openInputStream(requireNotNull(uri)) ?: throw IOException("无法打开附件「${file.name}」。")
                     input.use {
                         val chunk = ByteArray(DEFAULT_BUFFER_SIZE)
                         while (true) {

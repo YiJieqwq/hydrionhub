@@ -25,8 +25,9 @@ internal fun Provider.imageEndpoint(): String {
 internal fun ModelCatalog.imageInvocation(prompt: String, parentImageLimit: Int? = null): ImageInvocation {
     val entry = requireNotNull(selectedEntry(Mode.Image)) { IMAGE_MODEL_REQUIRED }
     if (entry.second.baseUrl.isBlank()) {
-        require(entry.second.id == "demo-image" || !entry.second.protocol.equals("OpenAI Images", true) ||
-            entry.first.externalModelId !in supportedImageModels) { "请为 OpenAI 图像供应商填写官方 HTTPS 服务地址。" }
+        require(entry.second.id == "demo-image" || entry.second.protocol.trim().equals("local", true)) {
+            "请选择本机图片模型，或为在线图像供应商配置受支持的协议与官方 HTTPS 地址。"
+        }
         val local = imageRequest(prompt, parentImageLimit)
         return ImageInvocation(local.model, local.parameters)
     }
@@ -40,7 +41,12 @@ internal fun ModelCatalog.prepareImageGeneration(prompt: String, parentImageLimi
     val endpoint = provider.imageEndpoint()
     val id = model.externalModelId
     require(id in supportedImageModels) { "请选择受支持的 OpenAI GPT 图像生成模型。" }
-    val template = imageRequest(prompt, parentImageLimit).body
+    val template = try {
+        imageRequest(prompt, parentImageLimit).body
+    } catch (_: Exception) {
+        // Template parser errors can quote arbitrary configuration values, including credentials.
+        throw IllegalArgumentException("图像请求模板无效或超出模型预算，请检查 JSON、模板变量和张数。")
+    }
     val localFields = setOf("width", "height", "aspect", "input_modalities", "output_modalities", "abilities",
         "allow_remote_image_links", "code_interpreter")
     require(template.keys().asSequence().all { it == "prompt" || it in imageOptions || it in localFields }) {
