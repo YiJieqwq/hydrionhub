@@ -20,6 +20,10 @@ internal data class ComposerImeLeg(
 
 internal data class ComposerImeFrame(val height: Int, val leg: ComposerImeLeg?) {
     val fraction: Float? get() = leg?.at(height)
+
+    // Some IMEs jump directly to zero without supplying an animation leg.
+    fun editLimit(closedAtZero: Boolean): Float =
+        fraction ?: if (height == 0 && closedAtZero) 0f else 1f
 }
 
 internal fun nextComposerImeFrame(previous: ComposerImeFrame?, height: Int, source: Int, target: Int): ComposerImeFrame {

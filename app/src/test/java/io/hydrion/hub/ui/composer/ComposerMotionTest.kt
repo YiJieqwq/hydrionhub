@@ -5,6 +5,15 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class ComposerMotionTest {
+    @Test fun aConfirmedDismissalClosesOnTheFirstZeroInsetEvenWithoutAnAnimation() {
+        val visible = nextComposerImeFrame(null, height = 800, source = 800, target = 800)
+        assertEquals(1f, visible.editLimit(closedAtZero = false), 0f)
+        val hidden = nextComposerImeFrame(visible, height = 0, source = 0, target = 0)
+        assertEquals(0f, hidden.editLimit(closedAtZero = true), 0f)
+        // A hardware keyboard also has a zero inset, but the software IME has never been dismissed.
+        assertEquals(1f, hidden.editLimit(closedAtZero = false), 0f)
+    }
+
     @Test fun dismissalBeginsImmediatelyAndReachesTheClosedShapeAtHalfHeight() {
         var frame: ComposerImeFrame? = null
         for ((height, fraction) in listOf(800 to 1f, 799 to .9975f, 600 to .5f, 400 to 0f, 230 to 0f, 0 to 0f)) {

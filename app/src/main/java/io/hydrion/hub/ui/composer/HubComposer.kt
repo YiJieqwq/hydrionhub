@@ -142,7 +142,7 @@ fun HubComposer(
         if (editing) 1f else 0f,
         tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerFocus"
     )
-    val imeFraction = imeFrame.fraction ?: if (ime == 0 && sawHideAnimation) 0f else 1f
+    val imeFraction = imeFrame.editLimit(closedAtZero = hiddenAfterEditing || sawHideAnimation)
     val expansion = minOf(editGate, imeFraction)
 
     val draft = state.draft

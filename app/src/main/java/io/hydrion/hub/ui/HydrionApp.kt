@@ -1,5 +1,6 @@
 package io.hydrion.hub.ui
 
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
@@ -115,10 +116,15 @@ private fun Workspace(vm: HubViewModel) {
             }
         ) {
             val selectedEntry = remember(catalog, current.mode) { catalog.selectedEntry(current.mode) }
+            // Legacy IMEs can remove the entire inset between composition and layout.
+            // Place the host using the same inset frame that determines the composer shape.
+            val imeInsets = WindowInsets.ime
+            val hostImeInsets = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R)
+                WindowInsets(bottom = imeInsets.getBottom(LocalDensity.current)) else imeInsets
             Box(
                 Modifier.fillMaxSize()
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                    .imePadding(),
+                    .windowInsetsPadding(hostImeInsets),
                 contentAlignment = Alignment.TopCenter
             ) {
                 Scaffold(

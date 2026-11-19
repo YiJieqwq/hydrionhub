@@ -17,6 +17,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -131,6 +132,36 @@ class FloatingChatChromeTest {
             assertEquals(keyboard, imeHeight())
             assertEquals(expanded, bounds("composer-capsule"))
             screen.onNodeWithContentDescription("打开工具箱").assertIsDisplayed()
+        }
+    }
+
+    @Test fun emptyComposerIsCompactOnTheFirstFrameAfterTheImeIsGone() {
+        val view = screen.activity.window.decorView
+        val imeType = WindowInsetsCompat.Type.ime()
+        fun keyboardHeight() = screen.runOnUiThread {
+            ViewCompat.getRootWindowInsets(view)?.getInsets(imeType)?.bottom ?: 0
+        }
+        val compact = bounds("composer-capsule")
+        screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction()).performClick()
+        screen.waitUntil(20_000) {
+            keyboardHeight() > 80 * density && abs(bounds("composer-capsule").height / density - 94.25f) < 1.5f
+        }
+        screen.mainClock.autoAdvance = false
+        try {
+            screen.runOnUiThread { WindowCompat.getInsetsController(screen.activity.window, view).hide(imeType) }
+            screen.waitUntil(20_000) { keyboardHeight() == 0 }
+            val frames = List(6) {
+                screen.mainClock.advanceTimeByFrame()
+                screen.waitForIdle()
+                bounds("composer-capsule")
+            }
+            // The shape can finish before the host moves to the bottom of the window.
+            assertEquals("first shape after dismissal", compact.size, frames.first().size)
+            val firstAtBottom = frames.firstOrNull { it.bottom >= compact.bottom - density }
+            assertEquals("first frame at the screen bottom: $frames", compact, firstAtBottom)
+            assertEquals(compact, frames.last())
+        } finally {
+            screen.mainClock.autoAdvance = true
         }
     }
 
