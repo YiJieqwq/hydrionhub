@@ -37,7 +37,8 @@ internal fun Header(
     onRename: () -> Unit, onPin: () -> Unit, onFind: () -> Unit, onDelete: () -> Unit
 ) {
     BoxWithConstraints(
-        Modifier.fillMaxWidth().testTag("floating-header").padding(horizontal = 14.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().testTag("floating-header")
+            .padding(start = 14.dp, top = 12.dp, end = 14.dp, bottom = 6.dp),
         contentAlignment = Alignment.CenterStart
     ) {
         if (locked) {
@@ -60,7 +61,7 @@ internal fun Header(
 
 @Composable
 private fun DrawerButton(onClick: () -> Unit) {
-    Surface(modifier = Modifier.capsuleEdge(), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    Surface(modifier = Modifier.testTag("header-drawer-capsule").capsuleEdge(), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = MaterialTheme.colorScheme.onSurface) {
         IconButton(onClick = onClick, modifier = Modifier.size(44.dp)) {
             Icon(
@@ -133,7 +134,7 @@ private fun ConversationActions(
     pinned: Boolean, compact: Boolean, onNew: () -> Unit, onPin: () -> Unit, onFind: () -> Unit, onDelete: () -> Unit
 ) {
     var more by remember { mutableStateOf(false) }
-    Surface(modifier = Modifier.capsuleEdge(), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    Surface(modifier = Modifier.testTag("header-actions-capsule").capsuleEdge(), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = MaterialTheme.colorScheme.onSurface) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (!compact) IconButton(onClick = onNew, modifier = Modifier.size(44.dp)) {

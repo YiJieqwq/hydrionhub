@@ -238,12 +238,26 @@ class FloatingChatChromeTest {
             val timeline = screen.onNodeWithTag("message-timeline", true)
             screen.waitForIdle()
             val header = bounds("floating-header")
+            val safeTop = screen.runOnIdle {
+                ViewCompat.getRootWindowInsets(screen.activity.window.decorView)!!
+                    .getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()).top
+            }
+            val headerInWindow = screen.onNodeWithTag("floating-header", true).fetchSemanticsNode().boundsInWindow
+            assertDp("system inset consumed once", 0f, headerInWindow.top - safeTop)
+            val left = bounds("header-drawer-capsule")
+            val right = bounds("header-actions-capsule")
+            val title = bounds("conversation-chip")
+            assertDp("header top clearance", 12f, minOf(left.top, right.top, title.top) - header.top)
+            assertDp("header bottom clearance", 6f, header.bottom - maxOf(left.bottom, right.bottom, title.bottom))
+            assertDp("both header capsule tops align", 0f, left.top - right.top)
+            assertDp("both header capsule bottoms align", 0f, left.bottom - right.bottom)
             val capsule = bounds("composer-capsule")
             val last = bounds("message-turn-${messages.last().id}")
             assertTrue("Last turn must be fully above composer ($last, $capsule)", last.height > 0 && last.bottom <= capsule.top)
             timeline.performScrollToIndex(0)
             val first = bounds("message-turn-${messages.first().id}")
             assertTrue("First turn must be fully below header ($first, $header)", first.height > 0 && first.top >= header.bottom)
+            assertDp("first message gap below header", 12f, first.top - header.bottom)
 
             // Position the middle of the tall purple reply behind both overlays.
             timeline.performScrollToIndex(1)
