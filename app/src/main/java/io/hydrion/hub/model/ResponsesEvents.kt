@@ -37,7 +37,8 @@ internal class ResponsesEventAccumulator(request: Message) {
     fun accept(data: String, eventName: String): ResponsesUpdate {
         try {
             val event = JSONObject(data)
-            val type = event.optString("type").ifEmpty { eventName }
+            val type = (event.opt("type") as? String).orEmpty().ifEmpty { eventName }
+            if (type.isBlank()) throw IOException("Responses 流式事件缺少类型。")
             val before = message
             when (type) {
                 "response.completed", "response.failed", "response.incomplete" -> {
