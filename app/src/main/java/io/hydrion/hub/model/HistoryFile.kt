@@ -23,10 +23,13 @@ internal class HistoryFile(context: Context) {
                 updatedAt = item.getLong("updatedAt"), messages = item.optJSONArray("messages").objects().map(::readMessage))
         }
         val drafts = json.optJSONObject("drafts") ?: JSONObject()
+        val defaults = Draft()
         return SavedWorkspace(history, drafts.keys().asSequence().associateWith { id ->
             val draft = drafts.getJSONObject(id)
+            val imageTool = draft.optString("imageTool", defaults.imageTool)
             Draft(draft.optString("text"), readAttachments(draft.optJSONArray("attachments")),
-                draft.optString("search", Draft().search), draft.optString("imageTool", Draft().imageTool))
+                draft.optString("search", defaults.search),
+                if (imageTool == "模型内置图片生成") CUSTOM_IMAGE_TOOL else imageTool)
         })
     }
 

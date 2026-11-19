@@ -1,5 +1,6 @@
 package io.hydrion.hub.model
 
+import io.hydrion.hub.provider.IMAGE_MODEL_REQUIRED
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -221,18 +222,34 @@ internal class ConversationSession(
         save()
     }
 
-    fun regenerate(id: String) {
+    fun regenerate(id: String, resolveImage: (String, Int?) -> ImageInvocation = { _, _ ->
+        throw IllegalArgumentException(IMAGE_MODEL_REQUIRED)
+    }) {
         val item = screen.current
         if (screen.isGenerating) return
         val target = item.messages.find { it.id == id } ?: return
         val user = if (target.role == Role.User) target else item.messages.find { it.id == target.replyTo } ?: return
         val original = item.messages.find { it.replyTo == user.id }
+        val needsImage = item.mode == Mode.Image || user.imageInvocation != null ||
+            original?.tool?.contains("图片生成") == true || !original?.imageKeys.isNullOrEmpty()
+        val image = if (needsImage) {
+            val parentLimit = if (item.mode == Mode.Chat) user.parameters["image_budget"]?.toIntOrNull() else null
+            try {
+                resolveImage(user.text, parentLimit)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                onGenerationError(item.id, failure.localizedMessage?.takeIf { it.isNotBlank() } ?: "请检查图像生成模型的配置。")
+                return
+            }
+        } else null
         val response = Message(id = original?.id ?: newId(), role = Role.Assistant, status = Generation.Sending,
-            remoteModel = original?.remoteModel ?: user.remoteModel,
-            model = original?.model ?: user.imageInvocation?.model ?: user.model,
-            parameters = original?.parameters ?: user.imageInvocation?.parameters ?: user.parameters,
+            remoteModel = if (image == null) original?.remoteModel ?: user.remoteModel else null,
+            model = image?.model ?: original?.model ?: user.model,
+            parameters = image?.parameters ?: original?.parameters ?: user.parameters,
             prompt = user.text, attachments = user.attachments, replyTo = user.id,
-            tool = original?.tool ?: user.imageInvocation?.let { "图片生成 · 自定义图片生成" }, createdAt = now())
+            tool = if (image != null && item.mode == Mode.Chat) "图片生成 · $CUSTOM_IMAGE_TOOL" else original?.tool,
+            createdAt = now())
         val messages = item.messages.filterNot { it.id == response.id }.toMutableList()
         messages.add(messages.indexOfFirst { it.id == user.id } + 1, response)
         touch(item.copy(messages = messages))

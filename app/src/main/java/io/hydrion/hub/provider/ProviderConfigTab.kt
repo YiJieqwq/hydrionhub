@@ -65,15 +65,8 @@ internal fun ProviderConfigTab(
             val endpoint = remember(provider.baseUrl) { runCatching { provider.deepSeekEndpoint() } }
             Text(endpoint.getOrElse { it.message ?: "服务地址无效" }, style = MaterialTheme.typography.bodySmall,
                 color = if (endpoint.isSuccess) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
-        } else if (provider.mode == Mode.Chat) {
-            GroupTitle("内置图片生成")
-            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                ManageSwitch("启用内置图片生成", Icons.Outlined.Image, provider.builtinImage) {
-                    onUpdate(provider.copy(builtinImage = it))
-                }
-            }
         }
-        if (provider.mode == Mode.Image || provider.builtinImage) {
+        if (provider.mode == Mode.Image) {
             TemplateField(provider.requestBody, sample, onChange = { onUpdate(provider.copy(requestBody = it)) })
         }
         if (existing) TextButton(onClick = onDelete, modifier = Modifier.align(Alignment.CenterHorizontally)) {

@@ -19,7 +19,6 @@ data class Provider(
     val baseUrl: String,
     val models: List<ProviderModel>,
     val requestBody: String = DEFAULT_BODY,
-    val builtinImage: Boolean = false,
     val enabled: Boolean = true
 )
 
@@ -29,15 +28,19 @@ data class ModelSelection(
     val available: Boolean = true
 )
 
+private fun ProviderModel.selectableMode(provider: Provider): Mode? =
+    typeFor(provider.mode).mode?.takeIf { it != Mode.Image || provider.mode == Mode.Image }
+
 data class ModelCatalog(
     val providers: List<Provider>,
     val defaults: Map<Mode, String> = emptyMap(),
     val active: Map<Mode, String> = emptyMap(),
     val overrides: Map<String, Map<String, String>> = emptyMap()
 ) {
-    fun entries(mode: Mode): List<Pair<ProviderModel, Provider>> = providers.filter { it.enabled }.flatMap { provider ->
-        provider.models.filter { it.typeFor(provider.mode).mode == mode }.map { it to provider }
-    }
+    fun entries(mode: Mode): List<Pair<ProviderModel, Provider>> =
+        providers.filter { it.enabled }.flatMap { provider ->
+            provider.models.filter { it.selectableMode(provider) == mode }.map { it to provider }
+        }
 
     fun models(mode: Mode): List<ProviderModel> = entries(mode).map { it.first }
 
@@ -71,7 +74,7 @@ data class ModelCatalog(
             if (it.id == provider.id) provider else it
         } else providers + provider
         val valid = requestedDefaults.filter { (mode, id) ->
-            provider.models.any { it.id == id && it.typeFor(provider.mode).mode == mode }
+            provider.models.any { it.id == id && it.selectableMode(provider) == mode }
         }
         val changed = valid.filter { (mode, id) -> defaults[mode] != id }.keys
         return copy(providers = updated, defaults = defaults + valid, active = active - changed).normalized()
@@ -81,7 +84,7 @@ data class ModelCatalog(
         val validModels = providers.flatMap { it.models }
         // A disabled provider keeps its preferences for the next time it is enabled.
         val declared = providers.flatMap { provider ->
-            provider.models.mapNotNull { model -> model.typeFor(provider.mode).mode?.let { it to model } }
+            provider.models.mapNotNull { model -> model.selectableMode(provider)?.let { it to model } }
         }.groupBy({ it.first }, { it.second })
         val validDefaults = declared.mapNotNull { (mode, entries) ->
             val saved = entries.find { it.id == defaults[mode] }
@@ -143,7 +146,7 @@ internal fun demoCatalog(): ModelCatalog = ModelCatalog(
         Provider("demo-chat", Mode.Chat, "本机语言模型", "OpenAI Compatible", "", listOf(
             ProviderModel("demo-reason", "Hydrion", supportedCapabilities(Mode.Chat)),
             ProviderModel("demo-quick", "Hydrion Mini")
-        ), builtinImage = true),
+        )),
         Provider("demo-image", Mode.Image, "本机图片模型", "OpenAI Images", "", listOf(
             ProviderModel("demo-canvas", "Hydrion Image", supportedCapabilities(Mode.Image))
         ))

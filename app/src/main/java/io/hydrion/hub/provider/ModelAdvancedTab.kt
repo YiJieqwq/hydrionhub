@@ -30,7 +30,6 @@ internal fun ModelAdvancedTab(
     budget: String,
     imageBudget: String,
     headers: List<HeaderDraft>,
-    imageModels: List<ProviderModel>,
     onProfile: (ModelProfile) -> Unit,
     onBudget: (String) -> Unit,
     onImageBudget: (String) -> Unit,
@@ -70,15 +69,6 @@ internal fun ModelAdvancedTab(
     }
     ModelGroup("内置工具") {
         ModelToggle("代码解释器", profile.codeInterpreter) { onProfile(profile.copy(codeInterpreter = it)) }
-        ModelToggle("图像生成", profile.builtinImage) { onProfile(profile.copy(builtinImage = it)) }
-        val options = buildList {
-            add("" to "自动")
-            if (profile.imageModelId.isNotEmpty() && imageModels.none { it.id == profile.imageModelId }) {
-                add(profile.imageModelId to "已不可用")
-            }
-            addAll(imageModels.map { it.id to it.name })
-        }
-        ModelChoice("图像模型", profile.imageModelId, options) { onProfile(profile.copy(imageModelId = it)) }
     }
     if (editingBudget) {
         BudgetDialog(imageBudget, budget, onDismiss = { editingBudget = false },

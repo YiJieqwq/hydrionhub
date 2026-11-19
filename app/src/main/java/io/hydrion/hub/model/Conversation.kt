@@ -23,11 +23,13 @@ data class Attachment(
 
 data class ImageInvocation(val model: String, val parameters: Map<String, String>)
 
+internal const val CUSTOM_IMAGE_TOOL = "自定义图片生成"
+
 data class Draft(
     val text: String = "",
     val attachments: List<Attachment> = emptyList(),
     val search: String = "模型内置搜索",
-    val imageTool: String = "自定义图片生成"
+    val imageTool: String = CUSTOM_IMAGE_TOOL
 )
 
 data class RemoteModel(val providerId: String, val modelId: String)

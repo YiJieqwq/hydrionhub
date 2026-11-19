@@ -29,15 +29,10 @@ class ProviderStore(context: Context) {
 
     fun selection(mode: Mode): ModelSelection = state.value.selection(mode)
 
-    /** A null result means that the selected language provider has its image tool turned off. */
-    fun builtinImagePreview(prompt: String): Result<String>? = renderImageRequest(Mode.Chat, prompt)
-
-    fun imagePreview(prompt: String): Result<String>? = renderImageRequest(Mode.Image, prompt)
-
-    private fun renderImageRequest(mode: Mode, prompt: String): Result<String>? {
+    fun imagePreview(prompt: String): Result<String>? {
         val current = state.value
-        val (model, provider) = current.imageTarget(builtin = mode == Mode.Chat) ?: return null
-        return runCatching { current.localRequest(model, prompt, provider.requestBody).body.toString(2) }
+        if (current.selectedEntry(Mode.Image) == null) return null
+        return runCatching { current.imageRequest(prompt).body.toString(2) }
     }
 
     fun configure(mode: Mode, modelId: String, parameters: Map<String, String>) {
@@ -88,7 +83,6 @@ internal fun encodeCatalog(catalog: ModelCatalog): JSONObject = JSONObject().app
             put("protocol", provider.protocol)
             put("baseUrl", provider.baseUrl)
             put("body", provider.requestBody)
-            put("builtinImage", provider.builtinImage)
             put("enabled", provider.enabled)
             put("models", JSONArray(provider.models.map { model ->
                 JSONObject().apply {
@@ -118,7 +112,7 @@ private fun decodeCatalog(json: JSONObject): ModelCatalog {
                         val choices = c.getJSONArray("choices")
                         Capability(c.getString("key"), c.getString("label"), (0 until choices.length()).map { choices.getString(it) })
                     }, m.optJSONObject("profile").readProfile())
-                }, p.optString("body", DEFAULT_BODY), p.optBoolean("builtinImage", false), p.optBoolean("enabled", true))
+                }, p.optString("body", DEFAULT_BODY), enabled = p.optBoolean("enabled", true))
         },
         defaults = json.modeMap("defaults"),
         active = json.modeMap("active"),

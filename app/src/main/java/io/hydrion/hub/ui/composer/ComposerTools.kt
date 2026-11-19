@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.ExpandMore
@@ -52,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.hydrion.hub.model.CUSTOM_IMAGE_TOOL
 import io.hydrion.hub.model.Draft
 import io.hydrion.hub.model.Mode
 
@@ -64,8 +64,7 @@ private val searchChoices = listOf(
     ToolChoice(Disabled, Icons.Outlined.Block),
 )
 private val imageChoices = listOf(
-    ToolChoice("自定义图片生成", Icons.Outlined.Palette),
-    ToolChoice("模型内置图片生成", Icons.Outlined.AutoAwesome),
+    ToolChoice(CUSTOM_IMAGE_TOOL, Icons.Outlined.Palette),
     ToolChoice(Disabled, Icons.Outlined.Block),
 )
 

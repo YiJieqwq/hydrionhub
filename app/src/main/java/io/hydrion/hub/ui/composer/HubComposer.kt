@@ -165,7 +165,8 @@ fun HubComposer(
     val rowGate by animateFloatAsState(if (hasContent) 1f else 0f,
         tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerDraftRow")
     val toolbar = maxOf(expansion, rowGate)
-    val canSend = modelAvailable && (draft.text.isNotBlank() || draft.attachments.isNotEmpty())
+    val canSend = (modelAvailable || state.current.mode == Mode.Image) &&
+        (draft.text.isNotBlank() || draft.attachments.isNotEmpty())
     val active = state.isGenerating
     val onAction: () -> Unit = {
         if (active) vm.stop() else if (canSend) {

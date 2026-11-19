@@ -55,14 +55,13 @@ class ModelCatalogTest {
         assertEquals("""{"p":"art: a\"\nb","n":2,"size":"1024x1024"}""", actual)
     }
 
-    @Test fun builtinImageTemplateReceivesTheSelectedModelAndCurrentPrompt() {
-        val model = ProviderModel("language", "Local Chat", listOf(Capability("style", "风格", listOf("夜景", "胶片"))))
+    @Test fun imageTemplateReceivesTheImageModelAndCurrentPrompt() {
+        val model = ProviderModel("render", "Local Image", listOf(Capability("style", "风格", listOf("夜景", "胶片"))))
         val sample = RequestTemplate.sample(model, parameters = mapOf("style" to "胶片"), prompt = "云海")
         assertEquals("云海", sample["prompt"])
-        assertEquals("Local Chat", sample["model"])
+        assertEquals("Local Image", sample["model"])
         assertEquals("胶片", sample["style"])
         assertEquals(1, sample["n"])
-        assertTrue(demoCatalog().providers.first { it.mode == Mode.Chat }.builtinImage)
     }
 
     @Test fun rejectsInvalidEscapesAndLiteralControlCharactersInJsonText() {

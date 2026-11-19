@@ -2,6 +2,7 @@ package io.hydrion.hub.provider
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.model.Mode
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,15 +34,26 @@ class ProfilePersistenceTest {
             dialect = "example", levels = listOf("High", "Max"), defaultLevel = "Max",
             allowDisabling = true, sampling = "default", reasoningReplay = "history", replayField = "summary",
             budget = 4096, imageBudget = 512, headers = mapOf("X-Key" to "secret-for-test"),
-            requestBody = """{"nested":{"value":1}}""", imageLinks = true, codeInterpreter = true, builtinImage = true,
-            imageModelId = "demo-canvas")
+            requestBody = """{"nested":{"value":1}}""", imageLinks = true, codeInterpreter = true)
         val original = demoCatalog()
         val p = original.providers.first()
         val model = p.models.first().copy(profile = profile)
         val catalog = original.withProvider(p.copy(models = listOf(model)), mapOf(Mode.Chat to model.id))
         val serialized = encodeCatalog(catalog).toString()
         assertFalse(serialized.contains("secret-for-test"))
-        val restored = decodeCatalog(serialized).selectedModel(Mode.Chat)!!
+        val oldCatalog = JSONObject(serialized)
+        val oldProvider = oldCatalog.getJSONArray("providers").getJSONObject(0)
+        oldProvider.put("builtinImage", true)
+        oldProvider.getJSONArray("models").getJSONObject(0).getJSONObject("profile")
+            .put("builtinImage", true).put("imageModelId", "retired-target")
+        val migrated = decodeCatalog(oldCatalog.toString())
+        val rewritten = encodeCatalog(migrated).getJSONArray("providers").getJSONObject(0)
+        assertFalse(rewritten.has("builtinImage"))
+        val storedProfile = rewritten.getJSONArray("models").getJSONObject(0).getJSONObject("profile")
+        assertFalse(storedProfile.has("builtinImage"))
+        assertFalse(storedProfile.has("imageModelId"))
+        assertEquals(catalog.selectedEntry(Mode.Image), migrated.selectedEntry(Mode.Image))
+        val restored = migrated.selectedModel(Mode.Chat)!!
         assertEquals(profile.copy(headers = mapOf("X-Key" to "")), restored.profile)
         val request = catalog.localRequest(model, "hello")
         assertEquals("local-v2", request.body.getString("model"))
@@ -52,7 +64,7 @@ class ProfilePersistenceTest {
 
     @Test fun budgetsConstrainLocalRequestsAfterJsonOverrides() {
         val catalog = demoCatalog()
-        val (base, provider) = catalog.imageTarget(false)!!
+        val (base, provider) = catalog.selectedEntry(Mode.Image)!!
         val limited = base.copy(profile = ModelProfile(type = ModelType.Image, budget = 1, imageBudget = 3,
             requestBody = """{"n":99}"""))
         val local = catalog.localRequest(limited, "image", provider.requestBody, parentImageLimit = 2)
@@ -64,10 +76,15 @@ class ProfilePersistenceTest {
 
     @Test fun imageRequestAppliesAdvancedBodyAfterProviderTemplate() {
         val catalog = demoCatalog()
-        val (base, provider) = catalog.imageTarget(false)!!
+        val (base, provider) = catalog.selectedEntry(Mode.Image)!!
         val model = base.copy(profile = ModelProfile(type = ModelType.Image, externalId = "raster-v2",
             requestBody = """{"size":"1536x1024","n":3,"nested":{"label":"{{literal}}"}}"""))
-        val local = catalog.localRequest(model, "云", provider.requestBody)
+        val selectedProvider = provider.copy(id = "custom-image", models = listOf(model.copy(id = "custom-render")),
+            requestBody = """{"model":"{{model}}","prompt":"{{prompt}}","source":"selected-provider"}""")
+        val configured = catalog.withProvider(selectedProvider, mapOf(Mode.Image to "custom-render"))
+        val local = configured.imageRequest("云")
+        assertEquals("selected-provider", local.body.getString("source"))
+        assertEquals("云", local.body.getString("prompt"))
         assertEquals("raster-v2", local.body.getString("model"))
         assertEquals("1536x1024", local.parameters["size"])
         assertEquals("3", local.parameters["n"])

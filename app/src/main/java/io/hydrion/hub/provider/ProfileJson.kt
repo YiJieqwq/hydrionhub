@@ -12,7 +12,7 @@ internal fun ModelProfile.toStoredJson(): JSONObject = JSONObject()
     .put("reasoningReplay", reasoningReplay).put("replayField", replayField)
     .put("budget", budget).put("imageBudget", imageBudget).put("headerNames", JSONArray(headers.keys))
     .put("requestBody", requestBody).put("imageLinks", imageLinks).put("codeInterpreter", codeInterpreter)
-    .put("builtinImage", builtinImage).put("imageModelId", imageModelId).put("contextWindowTokens", contextWindowTokens)
+    .put("contextWindowTokens", contextWindowTokens)
 
 internal fun JSONObject?.readProfile(): ModelProfile {
     if (this == null) return ModelProfile()
@@ -32,8 +32,7 @@ internal fun JSONObject?.readProfile(): ModelProfile {
         imageBudget = if (isNull("imageBudget")) null else optInt("imageBudget"),
         headers = strings("headerNames").associateWith { "" },
         requestBody = optString("requestBody"), imageLinks = optBoolean("imageLinks"),
-        codeInterpreter = optBoolean("codeInterpreter"), builtinImage = optBoolean("builtinImage"),
-        imageModelId = optString("imageModelId"),
+        codeInterpreter = optBoolean("codeInterpreter"),
         contextWindowTokens = optString("contextWindowTokens").toIntOrNull()?.takeIf { it > 0 }
     )
 }

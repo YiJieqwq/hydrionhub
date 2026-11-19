@@ -40,7 +40,7 @@ class SettingsSearchTest {
         search().assertIsNotFocused()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
         screen.onNodeWithContentDescription("退出搜索").assertDoesNotExist()
-        screen.onNode(row("语言模型供应商")).assertExists()
+        screen.onNode(row("聊天模型")).assertExists()
     }
 
     @Test fun filtersChineseAndEnglishAndExitsWithClearOrBack() {
@@ -51,13 +51,18 @@ class SettingsSearchTest {
         screen.onNodeWithContentDescription("退出搜索").assertIsDisplayed()
 
         search().performTextReplacement("image")
-        screen.onNode(row("图片模型供应商")).assertIsDisplayed()
-        screen.onNode(row("语言模型供应商")).assertDoesNotExist()
+        screen.onNode(row("图像生成模型")).assertIsDisplayed()
+        screen.onNode(row("聊天模型")).assertDoesNotExist()
         screen.onNode(row("消息样式")).assertDoesNotExist()
+
+        search().performTextReplacement("图片模型供应商")
+        screen.onNode(row("图像生成模型")).assertIsDisplayed()
+        search().performTextReplacement("语言模型供应商")
+        screen.onNode(row("聊天模型")).assertIsDisplayed()
 
         search().performTextReplacement("关于")
         screen.onNode(row("关于 HydrionHub")).assertIsDisplayed()
-        screen.onNode(row("图片模型供应商")).assertDoesNotExist()
+        screen.onNode(row("图像生成模型")).assertDoesNotExist()
 
         search().performTextReplacement("no-such-setting-008")
         screen.onNodeWithText("没有匹配的设置").assertIsDisplayed()
@@ -94,7 +99,8 @@ class SettingsSearchTest {
         assertTrue("末项底部 ${rowBounds.bottom} 应位于搜索框顶部 ${searchBounds.top} 之上",
             rowBounds.bottom <= searchBounds.top)
 
-        revealRow("图片模型供应商").performClick()
+        revealRow("图像生成模型").performClick()
+        screen.onNodeWithText("图像生成模型供应商").assertIsDisplayed()
         screen.onNodeWithContentDescription("添加供应商").assertIsDisplayed()
         screen.onNodeWithContentDescription("返回").performClick()
         search().assertIsDisplayed()

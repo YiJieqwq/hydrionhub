@@ -27,7 +27,7 @@ import io.hydrion.hub.model.Mode
 @Composable
 internal fun ModelEditor(
     mode: Mode, initial: ProviderModel, exists: Boolean, isDefault: Boolean,
-    otherModels: List<ProviderModel>, imageModels: List<ProviderModel> = emptyList(),
+    otherModels: List<ProviderModel>,
     onBack: () -> Unit, onSave: (ProviderModel, Boolean) -> Unit, onDelete: () -> Unit
 ) {
     val owner = viewModel<ModelFormOwner>()
@@ -84,7 +84,7 @@ internal fun ModelEditor(
                 ModelPage.Basic -> ModelBasicTab(draft)
                 ModelPage.Reasoning -> ModelReasoningTab(draft.profile) { draft.profile = it; error = null }
                 ModelPage.Advanced -> {
-                    ModelAdvancedTab(draft.profile, draft.budget, draft.imageBudget, draft.headers, imageModels,
+                    ModelAdvancedTab(draft.profile, draft.budget, draft.imageBudget, draft.headers,
                         onProfile = { draft.profile = it; error = null }, onBudget = { draft.budget = it },
                         onImageBudget = { draft.imageBudget = it }, onHeaders = { draft.headers = it })
                     ConfigurableParameters(draft)

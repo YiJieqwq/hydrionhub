@@ -8,7 +8,8 @@ import io.hydrion.hub.model.deepSeekKeyIssue
 import io.hydrion.hub.model.selectedTool
 import io.hydrion.hub.provider.ProviderStore
 import io.hydrion.hub.provider.DEEPSEEK_PROVIDER_ID
-import io.hydrion.hub.provider.imageTarget
+import io.hydrion.hub.provider.IMAGE_MODEL_REQUIRED
+import io.hydrion.hub.provider.imageRequest
 import io.hydrion.hub.provider.inputIssue
 import io.hydrion.hub.provider.localRequest
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +20,8 @@ internal suspend fun sendDraft(vm: HubViewModel, providers: ProviderStore): Stri
     val before = vm.state.value
     val mode = before.current.mode
     val catalog = providers.catalog.value
-    val (model, provider) = catalog.selectedEntry(mode) ?: return "请在设置中启用供应商并添加模型。"
+    val (model, provider) = catalog.selectedEntry(mode)
+        ?: return if (mode == Mode.Image) IMAGE_MODEL_REQUIRED else "请在设置中启用供应商并添加模型。"
     model.inputIssue(before.draft)?.let { return it }
     if (mode == Mode.Chat && provider.id == DEEPSEEK_PROVIDER_ID) {
         deepSeekKeyIssue(model, providers.sessionKey(provider.id))?.let { return it }
@@ -28,29 +30,21 @@ internal suspend fun sendDraft(vm: HubViewModel, providers: ProviderStore): Stri
         return null
     }
     val tool = selectedTool(mode, before.draft)
-    val usesImages = mode == Mode.Image || tool?.startsWith("图片生成") == true
-    val builtin = mode == Mode.Chat && before.draft.imageTool == "模型内置图片生成"
-
-    if (mode == Mode.Chat && model.profile.type != null && tool != null && "tools" !in model.profile.abilities &&
-        !(usesImages && builtin && model.profile.builtinImage)) return "当前模型未启用工具能力，请调整模型或工具箱设置。"
-
-    val imageTarget = if (usesImages) catalog.imageTarget(builtin)
-        ?: return if (builtin) "请启用内置图片生成并选择可用的图片模型。" else "请启用图片供应商并选择图片模型。"
-    else null
+    val imageTool = tool?.startsWith("图片生成") == true
+    if (imageTool && catalog.selectedEntry(Mode.Image) == null) return IMAGE_MODEL_REQUIRED
+    if (tool != null && model.profile.type != null && "tools" !in model.profile.abilities)
+        return "当前模型未启用工具能力，请调整模型或工具箱设置。"
     val prepared = withContext(Dispatchers.Default) {
         runCatching {
-            val request = if (mode == Mode.Image && imageTarget != null)
-                catalog.localRequest(model, before.draft.text, imageTarget.second.requestBody)
-            else catalog.localRequest(model, before.draft.text,
-                requests = if (imageTarget != null && !builtin) 2 else 1)
+            val prompt = before.draft.text
+            val request = if (mode == Mode.Image) catalog.imageRequest(prompt)
+                else catalog.localRequest(model, prompt, requests = if (imageTool) 2 else 1)
             val image = when {
-                imageTarget == null -> null
-                mode == Mode.Image -> ImageInvocation(request.model, request.parameters)
-                else -> catalog.localRequest(imageTarget.first, before.draft.text, imageTarget.second.requestBody,
-                    parentImageLimit = model.profile.imageBudget)
-                    .let { ImageInvocation(it.model, it.parameters) }
+                mode == Mode.Image -> request
+                imageTool -> catalog.imageRequest(prompt, parentImageLimit = model.profile.imageBudget)
+                else -> null
             }
-            request to image
+            request to image?.let { ImageInvocation(it.model, it.parameters) }
         }
     }
     val (request, image) = prepared.getOrElse { return "本地请求未发送：${it.message.orEmpty()}" }

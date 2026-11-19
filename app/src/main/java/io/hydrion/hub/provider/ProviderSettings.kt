@@ -26,7 +26,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.hydrion.hub.model.Mode
 import java.util.UUID
 
-private fun category(mode: Mode) = if (mode == Mode.Chat) "语言模型供应商" else "图片模型供应商"
+private fun category(mode: Mode) = if (mode == Mode.Chat) "聊天模型供应商" else "图像生成模型供应商"
 
 @Composable
 fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {

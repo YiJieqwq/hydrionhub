@@ -40,8 +40,8 @@ import io.hydrion.hub.ui.theme.capsuleEdge
 
 internal enum class SettingsEntry(val title: String, val terms: String) {
     About("关于 HydrionHub", "关于 应用 版本 about version 氢离子"),
-    Language("语言模型供应商", "聊天 对话 配置 chat provider reasoning 设置"),
-    Image("图片模型供应商", "生图 绘图 image provider 设置"),
+    Language("聊天模型", "语言模型供应商 聊天模型供应商 对话 配置 chat provider reasoning 设置"),
+    Image("图像生成模型", "图片模型供应商 图像生成模型供应商 生图 绘图 image provider 设置"),
     Style("消息样式", "外观与主题 字色 气泡 样式 配色 消息 颜色 appearance style theme"),
     Data("数据管理", "存储 本机 历史 数据 storage history")
 }

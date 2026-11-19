@@ -12,16 +12,11 @@ internal class LocalModelRequest(
     val url: String = ""
 )
 
-internal fun ModelCatalog.imageTarget(builtin: Boolean): Pair<ProviderModel, Provider>? {
-    fun selected(mode: Mode): Pair<ProviderModel, Provider>? {
-        val id = selectedModel(mode)?.id ?: return null
-        return entries(mode).find { it.first.id == id }
-    }
-    if (!builtin) return selected(Mode.Image)
-    val chat = selected(Mode.Chat) ?: return null
-    if (!chat.second.builtinImage && !chat.first.profile.builtinImage) return null
-    val imageId = chat.first.profile.imageModelId
-    return if (imageId.isBlank() || imageId.equals("Auto", true)) chat else entries(Mode.Image).find { it.first.id == imageId }
+internal const val IMAGE_MODEL_REQUIRED = "没有可用的图像生成模型。请前往「设置 → 图像生成模型」，启用供应商并选择模型。"
+
+internal fun ModelCatalog.imageRequest(prompt: String, parentImageLimit: Int? = null): LocalModelRequest {
+    val (model, provider) = requireNotNull(selectedEntry(Mode.Image)) { IMAGE_MODEL_REQUIRED }
+    return localRequest(model, prompt, provider.requestBody, parentImageLimit = parentImageLimit)
 }
 
 /** Assemble the same local input for preview and simulation. Only safe scalar fields reach history. */

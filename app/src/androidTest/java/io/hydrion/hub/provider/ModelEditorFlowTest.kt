@@ -32,7 +32,7 @@ class ModelEditorFlowTest {
     @Test fun editsThreePagesThenCommitsModelAndProviderSeparately() {
         ui.onNodeWithContentDescription("打开侧栏").performClick()
         ui.onNodeWithText("设置").performClick()
-        ui.onNodeWithText("语言模型供应商").performClick()
+        ui.onNodeWithText("聊天模型").performClick()
         ui.onNodeWithContentDescription("添加供应商").performClick()
         ui.onNodeWithContentDescription("供应商名称").performTextReplacement(providerName)
         tab("模型").performClick()
@@ -43,6 +43,9 @@ class ModelEditorFlowTest {
         ui.onNodeWithText("启用推理").performSemanticsAction(SemanticsActions.OnClick)
         ui.onNodeWithText("允许关闭推理").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         tab("高级").performClick()
+        ui.onNodeWithText("图像生成").assertDoesNotExist()
+        ui.onNodeWithText("图像模型").assertDoesNotExist()
+        ui.onNodeWithText("远程图片链接").assertExists()
         ui.onNodeWithText("代码解释器").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
         ui.onNodeWithContentDescription("保存模型").performClick()
 

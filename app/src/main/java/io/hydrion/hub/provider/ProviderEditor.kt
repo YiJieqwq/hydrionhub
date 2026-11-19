@@ -25,7 +25,6 @@ import java.net.URI
 
 @Composable
 internal fun ProviderEditor(store: ProviderStore, edit: ProviderDraft, onBack: () -> Unit) {
-    val catalog by store.catalog.collectAsState()
     val draft = edit.provider
     val nestedModel = edit.editingModel
     val configScroll = rememberScrollState()
@@ -58,8 +57,6 @@ internal fun ProviderEditor(store: ProviderStore, edit: ProviderDraft, onBack: (
                 Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                     ModelEditor(draft.mode, nestedModel, draft.models.any { it.id == nestedModel.id },
                         isDefault = nestedModel.id in edit.defaults.values, otherModels = draft.models,
-                        imageModels = catalog.entries(Mode.Image).filterNot { it.second.id == draft.id }.map { it.first } +
-                            draft.models.filter { it.typeFor(draft.mode) == ModelType.Image },
                         onBack = { edit.editingModel = null },
                         onSave = edit::finishModel,
                         onDelete = {
@@ -113,7 +110,7 @@ private fun validateProvider(provider: Provider, sample: Map<String, Any>): Stri
             return "请输入有效的 HTTP 或 HTTPS Base URL"
         }
     }
-    return if (provider.mode == Mode.Image || provider.builtinImage) {
+    return if (provider.mode == Mode.Image) {
         RequestTemplate.preview(provider.requestBody, sample).exceptionOrNull()?.let { "请求体有误：${it.message.orEmpty()}" }
     } else null
 }

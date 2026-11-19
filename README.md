@@ -4,7 +4,7 @@ HydrionHub 是用 Kotlin 和 Jetpack Compose 编写的 Android 多模型客户�
 
 ## 使用 DeepSeek
 
-在「设置 → 语言模型供应商 → DeepSeek」输入 API Key 并保存，然后在聊天输入框的模型选择器里选 DeepSeek。密钥只在本次运行中保留。Flash 支持文字和图片，V4 Pro 支持文字。对话通过 HTTPS 请求 `/responses`，可查看流式思考和正文。停止生成会保留已收到的内容，重新生成历史回复会沿用该条回复的模型。
+在「设置 → 聊天模型 → DeepSeek」输入 API Key 并保存，然后在聊天输入框的模型选择器里选 DeepSeek。密钥只在本次运行中保留。Flash 支持文字和图片，V4 Pro 支持文字。对话通过 HTTPS 请求 `/responses`，可查看流式思考和正文。停止生成会保留已收到的内容，重新生成历史回复会沿用该条回复的模型。
 
 顶栏显示接口最近一次返回的 token 总数。用量环低于 80% 为蓝色，达到 80% 变红。DeepSeek 的上下文窗口默认是 1,000,000 tokens，可在对应模型的「编辑模型 → 基础 → 上下文窗口」修改。DeepSeek 蓝鲸图标来自 Lobe Icons，MIT 许可随应用附带。[Lobe Icons](https://github.com/lobehub/lobe-icons)
 

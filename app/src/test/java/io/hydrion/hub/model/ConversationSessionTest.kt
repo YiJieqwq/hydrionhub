@@ -40,9 +40,9 @@ class ConversationSessionTest {
         assertEquals(1, screen().history.size)
     }
 
-    @Test fun customImageToolKeepsBothModelSelectionsWhenRetried() = runBlocking {
+    @Test fun retryFromUserAfterDeletingImageReplyUsesCurrentImageModelAndOriginalChatBudget() = runBlocking {
         val session = ConversationSession(this, FakeGenerationRepository {}, {})
-        val chatParameters = mapOf("effort" to "High")
+        val chatParameters = mapOf("effort" to "High", "image_budget" to "3")
         val image = ImageInvocation("studio", mapOf("size" to "1536x1024", "n" to "2"))
         session.setDraft("画一幅山水画")
         session.send("writer", chatParameters, null, null, image)
@@ -54,13 +54,66 @@ class ConversationSessionTest {
         assertEquals(image.parameters, result.parameters)
         assertEquals(2, result.imageKeys.size)
         session.deleteMessage(result.id)
-        session.regenerate(user.id)
+        val selected = ImageInvocation("new studio", mapOf("n" to "1", "quality" to "high"))
+        session.regenerate(user.id) { prompt, budget ->
+            assertEquals(user.text, prompt)
+            assertEquals(3, budget)
+            selected
+        }
         yield()
         val retry = session.state.value.current.messages.last()
-        assertEquals("studio", retry.model)
-        assertEquals(image.parameters, retry.parameters)
-        assertEquals(2, retry.imageKeys.size)
+        assertEquals(user, session.state.value.current.messages.first())
+        assertEquals(selected.model, retry.model)
+        assertEquals(selected.parameters, retry.parameters)
+        assertEquals(1, retry.imageKeys.size)
         assertTrue(retry.tool.orEmpty().contains("自定义图片生成"))
+    }
+
+    @Test fun retryOfLegacyBuiltinImageKeepsHistoryOnConfigurationErrorThenUsesImageModel() = runBlocking {
+        val errors = mutableListOf<Pair<String, String>>()
+        val session = ConversationSession(this, FakeGenerationRepository {}, {},
+            onGenerationError = { id, detail -> errors += id to detail })
+        val oldChat = RemoteModel("legacy-provider", "legacy-chat")
+        val user = Message(role = Role.User, text = "画一朵花", model = "writer", remoteModel = oldChat)
+        val reply = Message(role = Role.Assistant, replyTo = user.id, model = "writer", remoteModel = oldChat,
+            tool = "图片生成 · 模型内置图片生成", imageKeys = listOf("saved-image"))
+        val item = Conversation(messages = listOf(user, reply))
+        val saved = SavedWorkspace(listOf(item))
+        session.restore(saved)
+        session.openConversation(item.id)
+
+        val detail = "请先配置图像生成模型。"
+        session.regenerate(reply.id) { _, _ -> throw IllegalArgumentException(detail) }
+        assertEquals(listOf(item.id to detail), errors)
+        assertFalse(session.state.value.isGenerating)
+        assertEquals(saved, session.snapshot())
+
+        session.regenerate(reply.id) { _, _ -> ImageInvocation("illustrator", mapOf("n" to "2")) }
+        yield()
+        val retried = session.state.value.current.messages.last()
+        assertEquals(reply.id, retried.id)
+        assertEquals("illustrator", retried.model)
+        assertEquals(null, retried.remoteModel)
+        assertEquals("图片生成 · 自定义图片生成", retried.tool)
+        assertEquals(2, retried.imageKeys.size)
+    }
+
+    @Test fun imageModeRetryUsesCurrentImageModelsBudget() = runBlocking {
+        val session = ConversationSession(this, FakeGenerationRepository {}, {})
+        session.setMode(Mode.Image)
+        session.setDraft("花园")
+        session.send("old studio", mapOf("image_budget" to "1"), null, null)
+        yield()
+        val reply = session.state.value.current.messages.last()
+        session.regenerate(reply.id) { prompt, parentLimit ->
+            assertEquals("花园", prompt)
+            assertEquals(null, parentLimit)
+            ImageInvocation("current image model", mapOf("n" to "2"))
+        }
+        yield()
+        val retried = session.state.value.current.messages.last()
+        assertEquals("current image model", retried.model)
+        assertEquals(2, retried.imageKeys.size)
     }
 
     @Test fun stopCancelsTheRequestAndPartialReplyRemainsStopped() = runBlocking {
@@ -90,8 +143,9 @@ class ConversationSessionTest {
         val user = session.state.value.current.messages.first()
         val error = session.state.value.current.messages.last()
         assertEquals(Generation.Error, error.status)
-        session.regenerate(error.id)
+        session.regenerate(error.id) { _, _ -> throw AssertionError("A chat retry must keep its original model") }
         yield()
+        assertEquals("chat", session.state.value.current.messages.last().model)
         assertEquals(Generation.Completed, session.state.value.current.messages.last().status)
         session.editMessage(user.id, "代码")
         session.regenerate(user.id)

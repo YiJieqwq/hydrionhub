@@ -26,8 +26,6 @@ data class ModelProfile(
     val requestBody: String = "",
     val imageLinks: Boolean = false,
     val codeInterpreter: Boolean = false,
-    val builtinImage: Boolean = false,
-    val imageModelId: String = "",
     val contextWindowTokens: Int? = null
 )
 

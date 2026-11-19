@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.hydrion.hub.provider.ProviderStore
 import io.hydrion.hub.provider.deepSeekImageSources
+import io.hydrion.hub.provider.imageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -89,7 +90,10 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteMessage(id: String) = session.deleteMessage(id)
     fun regenerate(id: String) {
         clearError(state.value.current.id)
-        session.regenerate(id)
+        session.regenerate(id) { prompt, parentImageLimit ->
+            val request = providers.catalog.value.imageRequest(prompt, parentImageLimit)
+            ImageInvocation(request.model, request.parameters)
+        }
     }
     fun preparePrompt(id: String) = session.preparePrompt(id)
 

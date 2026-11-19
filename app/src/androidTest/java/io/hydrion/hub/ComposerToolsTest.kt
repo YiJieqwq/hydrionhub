@@ -59,11 +59,12 @@ class ComposerToolsTest {
         screen.onNode(hasText("网络搜索") and hasText("禁用")).performClick()
 
         screen.onNode(hasText("图片生成") and hasText("自定义图片生成")).performClick()
+        screen.onNodeWithText("模型内置图片生成").assertDoesNotExist()
         choice("自定义图片生成").assertIsSelected()
-        choice("禁用").performClick()
-        enabledCount(0).assertIsDisplayed()
-        choice("模型内置图片生成").performClick().assertIsSelected()
+        choice("禁用").performClick().assertIsSelected()
         choice("自定义图片生成").assertIsNotSelected()
+        enabledCount(0).assertIsDisplayed()
+        choice("自定义图片生成").performClick().assertIsSelected()
         enabledCount(1).assertIsDisplayed()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         screen.onNodeWithText("Tools").assertDoesNotExist()
@@ -71,8 +72,8 @@ class ComposerToolsTest {
         openTools()
         enabledCount(1).assertIsDisplayed()
         choice("禁用").assertIsSelected()
-        screen.onNode(hasText("图片生成") and hasText("模型内置图片生成")).performClick()
-        choice("模型内置图片生成").assertIsSelected()
+        screen.onNode(hasText("图片生成") and hasText("自定义图片生成")).performClick()
+        choice("自定义图片生成").assertIsSelected()
     }
 }
 
