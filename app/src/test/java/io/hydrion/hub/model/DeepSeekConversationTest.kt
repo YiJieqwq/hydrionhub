@@ -1,6 +1,8 @@
 package io.hydrion.hub.model
 
 import io.hydrion.hub.provider.LocalModelRequest
+import io.hydrion.hub.provider.Provider
+import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.provider.deepSeekProvider
 import io.hydrion.hub.provider.demoCatalog
 import io.hydrion.hub.provider.withDeepSeekPreset
@@ -39,7 +41,7 @@ class DeepSeekConversationTest {
     @Test fun followsUpAndRetriesHistoricalPromptWithItsOriginalModel() = runBlocking {
         val requests = mutableListOf<LocalModelRequest>()
         var catalog = demoCatalog().withDeepSeekPreset().copy(active = mapOf(Mode.Chat to flash.id))
-        val repository = ChatGenerationRepository({ catalog }, { "unit-test-placeholder" }, { emptyMap() }) { request, reply ->
+        val repository = ChatGenerationRepository({ catalog }, { "unit-test-placeholder" }, { _, _ -> emptyMap() }) { request, reply ->
             requests += request
             flowOf(reply.copy(text = "answer ${requests.size}", status = Generation.Completed, totalTokens = 45L))
         }
@@ -72,7 +74,7 @@ class DeepSeekConversationTest {
     @Test fun stoppingKeepsPartialOutputAndCancelsTheOriginalStream() = runBlocking {
         val cancelled = CompletableDeferred<Unit>()
         val repository = ChatGenerationRepository({ demoCatalog().withDeepSeekPreset() },
-            { "unit-test-placeholder" }, { emptyMap() }) { _, reply ->
+            { "unit-test-placeholder" }, { _, _ -> emptyMap() }) { _, reply ->
             flow {
                 try {
                     emit(reply.copy(text = "partial", thought = "thinking", status = Generation.Generating))
@@ -94,11 +96,54 @@ class DeepSeekConversationTest {
         assertEquals(stopped, session.snapshot().history.single().messages.last())
     }
 
+    @Test fun configuredResponsesRouteUsesItsOwnKeyAndModelOnRetry() = runBlocking {
+        val openModel = ProviderModel("open-model", "OpenAI test model")
+        val open = Provider("my-openai", Mode.Chat, "OpenAI", "OpenAI Responses",
+            "https://api.openai.com/v1", listOf(openModel))
+        val openRoute = RemoteModel(open.id, openModel.id)
+        var catalog = demoCatalog().withDeepSeekPreset().withProvider(open, emptyMap())
+        val sent = mutableListOf<LocalModelRequest>()
+        val keys = mutableListOf<String>()
+        val repository = ChatGenerationRepository({ catalog }, { id ->
+            keys += id
+            "fixture-for-$id"
+        }, { _, _ -> emptyMap() }) { prepared, reply ->
+            sent += prepared
+            flowOf(reply.copy(text = "received", status = Generation.Completed))
+        }
+        val session = ConversationSession(this, repository, {})
+        session.setDraft("hello")
+        session.send(openModel.name, mapOf("model" to openModel.name), null, null, remoteModel = openRoute)
+        val first = session.finished()
+        assertEquals(openRoute, first.remoteModel)
+        assertEquals("https://api.openai.com/v1/responses", sent.single().url)
+        assertEquals("Bearer fixture-for-my-openai", sent.single().headers["Authorization"])
+        assertFalse(sent.single().body.getBoolean("store"))
+
+        catalog = catalog.copy(active = mapOf(Mode.Chat to flash.id))
+        session.regenerate(first.id)
+        assertEquals(Generation.Completed, session.finished().status)
+        assertEquals(listOf(open.id, open.id), keys)
+        assertEquals(listOf("hello"), sent.last().transcript())
+
+        catalog = catalog.withProvider(open.copy(models = listOf(openModel.copy(name = "another-model-id"))), emptyMap())
+        session.regenerate(first.id)
+        assertTrue(session.finished().error.orEmpty().contains("模型 ID"))
+        assertEquals(2, keys.size)
+        assertEquals(2, sent.size)
+
+        catalog = catalog.withProvider(open.copy(protocol = "OpenAI Compatible"), emptyMap())
+        session.regenerate(first.id)
+        assertEquals(Generation.Error, session.finished().status)
+        assertEquals(2, keys.size)
+        assertEquals(2, sent.size)
+    }
+
     @Test fun reportsFailedStreamAndMissingSessionKeyOnRetry() = runBlocking {
         val errors = mutableListOf<Pair<String, String>>()
         var key = "unit-test-placeholder"
         var calls = 0
-        val repository = ChatGenerationRepository({ demoCatalog().withDeepSeekPreset() }, { key }, { emptyMap() }) { _, reply ->
+        val repository = ChatGenerationRepository({ demoCatalog().withDeepSeekPreset() }, { key }, { _, _ -> emptyMap() }) { _, reply ->
             calls++
             flow {
                 emit(reply.copy(text = "partial", status = Generation.Generating))

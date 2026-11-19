@@ -29,7 +29,7 @@ import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.provider.ConfigureSheet
-import io.hydrion.hub.provider.DEEPSEEK_PROVIDER_ID
+import io.hydrion.hub.provider.usesResponsesApi
 import io.hydrion.hub.provider.ProviderSettings
 import io.hydrion.hub.ui.chrome.Header
 import io.hydrion.hub.ui.chrome.contextUsage
@@ -155,7 +155,7 @@ private fun Workspace(vm: HubViewModel) {
                                 else selection.label
                                 HubComposer(vm, state, chipLabel, selection.available,
                                     fast = current.mode == Mode.Chat && selection.parameters["speed"] == "Fast",
-                                    toolsAvailable = selectedEntry?.second?.id != DEEPSEEK_PROVIDER_ID,
+                                    toolsAvailable = selectedEntry?.second?.usesResponsesApi() != true,
                                     onConfigure = { focus.clearFocus(); configure = true },
                                     onSend = {
                                         scope.launch {

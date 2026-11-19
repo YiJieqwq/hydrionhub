@@ -4,7 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.hydrion.hub.provider.ProviderStore
-import io.hydrion.hub.provider.deepSeekImageSources
+import io.hydrion.hub.provider.responsesImageSources
 import io.hydrion.hub.provider.imageRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -23,7 +23,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     private var changedDuringLoad = false
     internal val providers = ProviderStore(app)
     private val generation = ChatGenerationRepository({ providers.catalog.value }, providers::sessionKey,
-        app.contentResolver::deepSeekImageSources)
+        app.contentResolver::responsesImageSources)
     private val mutableErrors = MutableStateFlow<Map<String, String>>(emptyMap())
     internal val errors = mutableErrors.asStateFlow()
     private val session = ConversationSession(viewModelScope, generation,

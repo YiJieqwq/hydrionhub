@@ -142,6 +142,9 @@ class DeepSeekResponsesTransportTest {
     @Test fun distinguishesMissingUsageFromZeroAndFallsBackToTheComponentSum() = runBlocking {
         val usages = listOf(
             Triple("", null, null),
+            Triple(""","usage":null""", null, null),
+            Triple(""","usage":{}""", null, null),
+            Triple(""","usage":{"input_tokens":-2,"output_tokens":"unknown"}""", null, null),
             Triple(""","usage":{"input_tokens":7}""", TokenUsage(inputTokens = 7), null),
             Triple(""","usage":{"output_tokens":11}""", TokenUsage(outputTokens = 11), null),
             Triple(""","usage":{"input_tokens":9223372036854775807,"output_tokens":1}""",

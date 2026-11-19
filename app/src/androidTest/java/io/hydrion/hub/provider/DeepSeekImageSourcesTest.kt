@@ -26,7 +26,7 @@ class DeepSeekImageSourcesTest {
             val uri = FileProvider.getUriForFile(context, context.packageName + ".images", file)
             val picker = Attachment("photo", "photo.png", uri = uri.toString(), mimeType = "image/png")
             val generated = Attachment("mock", "scene.png", imageKey = "landscape", width = 32, height = 24)
-            val resolved = context.contentResolver.deepSeekImageSources(listOf(picker, generated, picker))
+            val resolved = context.contentResolver.responsesImageSources(listOf(picker, generated, picker), deepSeekProvider)
             assertEquals("data:image/png;base64,AQID", resolved.getValue(picker))
             val png = Base64.decode(resolved.getValue(generated).substringAfter(','), Base64.DEFAULT)
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -45,7 +45,7 @@ class DeepSeekImageSourcesTest {
             requestBody = """{"instructions":"Brief","max_output_tokens":80,"temperature":0.2,"stream":false,"input":"old","model":"old"}"""))
         val catalog = ModelCatalog(listOf(provider))
         val prompt = listOf(Message(role = Role.User, text = "Hi"))
-        val body = catalog.deepSeekRequest(provider, model, prompt, "key").body
+        val body = catalog.responsesRequest(provider, model, prompt, "key").body
         assertEquals("Brief", body.getString("instructions"))
         assertEquals(80, body.getInt("max_output_tokens"))
         assertFalse(body.has("temperature"))
@@ -53,6 +53,26 @@ class DeepSeekImageSourcesTest {
         assertEquals(base.externalModelId, body.getString("model"))
         assertEquals("Hi", body.getJSONArray("input").getJSONObject(0).getString("content"))
         val tools = base.copy(profile = base.profile.copy(requestBody = """{"tools":[{"type":"function"}]}"""))
-        assertTrue(runCatching { catalog.deepSeekRequest(provider, tools, prompt, "key") }.isFailure)
+        assertTrue(runCatching { catalog.responsesRequest(provider, tools, prompt, "key") }.isFailure)
+    }
+
+    @Test fun openAiCustomBodyCannotStartBackgroundToolsOrUseAStoredConversation() {
+        val provider = deepSeekProvider.copy(id = "example-responses", baseUrl = "https://example.test/v1")
+        val base = provider.models.first()
+        val catalog = ModelCatalog(listOf(provider))
+        val history = listOf(Message(role = Role.User, text = "local turn"))
+        fun body(template: String) = catalog.responsesRequest(provider,
+            base.copy(profile = base.profile.copy(requestBody = template)), history, "fixture").body
+
+        val request = body("""{"store":true,"stream":false,"input":"old","max_output_tokens":64}""")
+        assertFalse(request.getBoolean("store"))
+        assertTrue(request.getBoolean("stream"))
+        assertEquals(64, request.getInt("max_output_tokens"))
+        assertEquals("local turn", request.getJSONArray("input").getJSONObject(0).getString("content"))
+        for (unsupported in listOf("""{"background":true}""", """{"tools":[{"type":"web_search"}]}""",
+            """{"tool_choice":"required"}""", """{"previous_response_id":"resp-old"}""",
+            """{"conversation":"conv-old"}""", """{"prompt":{"id":"pmpt-old"}}""")) {
+            assertTrue(unsupported, runCatching { body(unsupported) }.exceptionOrNull() is IllegalArgumentException)
+        }
     }
 }

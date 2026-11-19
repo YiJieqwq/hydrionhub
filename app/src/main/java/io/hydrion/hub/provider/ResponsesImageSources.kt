@@ -15,10 +15,12 @@ import java.net.URI
 private val imageTypes = setOf("image/png", "image/jpeg", "image/gif", "image/webp")
 private val inlineImageTypes = imageTypes.mapTo(mutableSetOf()) { "$it;base64" }
 // The request, its encoded image strings and the UTF-8 upload can coexist in the app heap.
-internal fun deepSeekImageBudget(): Int = minOf(64L * 1024 * 1024, Runtime.getRuntime().maxMemory() / 8).toInt()
+internal fun responsesImageBudget(): Int = minOf(64L * 1024 * 1024, Runtime.getRuntime().maxMemory() / 8).toInt()
 private const val MAX_IMAGE_BYTES = 32 * 1024 * 1024
 private const val MAX_INLINE_SIZE = ((MAX_IMAGE_BYTES + 2) / 3) * 4
 internal const val MAX_DEEPSEEK_IMAGES = 600
+internal val Provider.responsesImageLimit: Int
+    get() = if (id == DEEPSEEK_PROVIDER_ID) MAX_DEEPSEEK_IMAGES else 1500
 
 private fun Attachment.imageType(): String {
     if (imageKey != null) return "image/png"
@@ -33,7 +35,7 @@ private fun Attachment.imageType(): String {
     }
 }
 
-internal fun validateDeepSeekImage(file: Attachment, source: String, imageLinks: Boolean) {
+internal fun validateResponsesImage(file: Attachment, source: String, imageLinks: Boolean) {
     if (!source.startsWith("data:")) {
         require(file.imageType() in imageTypes) { "附件「${file.name}」须是 PNG、JPEG、GIF 或 WebP 图片。" }
         require(imageLinks) { "当前模型未启用远程图像链接。" }
@@ -73,16 +75,18 @@ private class LimitedImageBuffer(private val limit: Int) : ByteArrayOutputStream
 }
 
 /** Resolve only explicitly selected content URIs or local generated references; network URLs stay references. Call on IO. */
-internal suspend fun ContentResolver.deepSeekImageSources(attachments: List<Attachment>): Map<Attachment, String> {
-    require(attachments.size <= MAX_DEEPSEEK_IMAGES) { "每次 DeepSeek 请求最多可包含 600 张图片。" }
-    var remaining = deepSeekImageBudget()
+internal suspend fun ContentResolver.responsesImageSources(
+    attachments: List<Attachment>, provider: Provider
+): Map<Attachment, String> {
+    require(attachments.size <= provider.responsesImageLimit) { "每次请求最多可包含 ${provider.responsesImageLimit} 张图片。" }
+    var remaining = responsesImageBudget()
     val result = mutableMapOf<Attachment, String>()
     for (file in attachments.distinct()) {
         currentCoroutineContext().ensureActive()
         val uri = file.uri?.let(Uri::parse)
         val source = if (file.imageKey != null || uri?.scheme == ContentResolver.SCHEME_CONTENT) {
             val mime = file.imageType().ifEmpty { getType(requireNotNull(uri))?.substringBefore(';')?.trim()?.lowercase().orEmpty() }
-            require(mime in imageTypes) { "DeepSeek 支持 PNG、JPEG、GIF 和 WebP 图片，无法加入附件「${file.name}」。" }
+            require(mime in imageTypes) { "当前支持 PNG、JPEG、GIF 和 WebP 图片，无法加入附件「${file.name}」。" }
             val prefix = "data:$mime;base64,"
             val buffer = LimitedImageBuffer(minOf(remaining, MAX_INLINE_SIZE + prefix.length))
             buffer.write(prefix.toByteArray(Charsets.US_ASCII))

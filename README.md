@@ -6,7 +6,13 @@ HydrionHub 是用 Kotlin 和 Jetpack Compose 编写的 Android 多模型客户�
 
 在「设置 → 聊天模型 → DeepSeek」输入 API Key 并保存，然后在聊天输入框的模型选择器里选 DeepSeek。密钥只在本次运行中保留。Flash 支持文字和图片，V4 Pro 支持文字。对话通过 HTTPS 请求 `/responses`，可查看流式思考和正文。停止生成会保留已收到的内容，重新生成历史回复会沿用该条回复的模型。
 
-顶栏显示接口最近一次返回的 token 总数。用量环低于 80% 为蓝色，达到 80% 变红。DeepSeek 的上下文窗口默认是 1,000,000 tokens，可在对应模型的「编辑模型 → 基础 → 上下文窗口」修改。DeepSeek 蓝鲸图标来自 Lobe Icons，MIT 许可随应用附带。[Lobe Icons](https://github.com/lobehub/lobe-icons)
+在线对话按当前会话、供应商和模型取最近一次已结束请求的用量。优先使用接口报告的总数；仅在输入和输出计数都存在时才可相加。用量缺失时显示未知。DeepSeek 的上下文窗口默认是 1,000,000 tokens，可在对应模型的「编辑模型 → 基础 → 上下文窗口」修改。DeepSeek 蓝鲸图标来自 Lobe Icons，MIT 许可随应用附带。[Lobe Icons](https://github.com/lobehub/lobe-icons)
+
+## 使用 OpenAI Responses
+
+在「设置 → 聊天模型」添加供应商，将 API 协议填写为 `OpenAI Responses`，Base URL 填写 `https://api.openai.com/v1`。输入本次运行使用的 API Key，并在「模型」页添加你的 API 账号可调用的模型 ID。保存后，在聊天输入框选择该模型即可发送。选择支持视觉的模型时，应在模型配置中启用图片输入。
+
+客户端通过 `POST /v1/responses` 发送流式请求，每轮使用本机保存的对话历史，并发送 `store: false`。本机 Hydrion 仍是默认模型。
 
 ## 运行
 
@@ -25,7 +31,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 2. 在 Chat 发送「写一段 Kotlin 代码」可查看流式回复、思考和代码块。点回复上方的「思考过程」可展开模拟思考记录。回复下方可直接复制或重新生成，用户消息旁可复制、编辑。用「搜索」或「画一幅」开头试用两个模拟工具。在生成期间可停止，输入 `/error` 可试验失败和重新生成。
 3. 在 Image 打开 Configure，选择张数和尺寸后发送提示词。可翻看缩略图、查看大图、保存、复制或将某张图加入下一条请求作为参考。
 4. 打开侧栏可搜索、切换、置顶、重命名或删除会话。侧栏底部的设置可管理语言和图片供应商。在「配置」页修改名称、启用状态、地址和 API Key，在「模型」页手动添加模型或搜索本地示例目录。两个页签共用草稿，点击顶部「保存」后生效。API Key 仅在本次运行中保留。
-5. 模型可分别声明支持的能力，Configure 会据此显示选项。图片请求体支持 JSON 编辑、模板变量和本地预览，语言供应商可启用内置生图模板。
+5. 模型可分别声明支持的能力，Configure 会据此显示选项。图片生成由图像生成模型配置，支持 JSON 请求体、模板变量和本地预览。
 6. 打开「设置 → 消息样式」可切换纯色、磨砂玻璃和主题默认样式。选择浅色或深色，再选用户或助手，可分别修改背景、边框和文字颜色。预览和已有会话使用同一套渲染，设置实时保存。助手正文气泡默认关闭。
 7. 在「供应商 → 模型」点击一个模型，进入基础、推理和高级编辑页。顶部勾选择保留这次模型编辑，返回供应商后再点「保存」写入。模型的请求 ID 和显示名可分别修改。Chat 与 Image 按模型类型选用，Embedding 仅供配置。
 8. 当前会话标题可点按重命名。右上角更多菜单中的查找支持上一处、下一处和命中高亮。
@@ -38,7 +44,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | 顶栏与侧栏 | `ui/chrome`、`ui/sidebar` | 空会话模式选择、会话信息、全文查找和历史管理 |
 | 输入框 | `ui/composer` | 折叠与编辑状态、附件、工具箱和发送/停止 |
 | 消息列表 | `ui/messages` | 按稳定 ID 延迟渲染，Chat 展示 Markdown 子集、思考和工具记录。Image 展示可交互的结果卡片 |
-| 会话与生成 | `model` | ConversationSession 更新状态，ChatGenerationRepository 按请求选择本机模拟或 DeepSeek SSE 数据流。历史文件由后台线程原子写入 |
+| 会话与生成 | `model` | ConversationSession 更新状态，ChatGenerationRepository 按请求选择本机模拟或 DeepSeek、OpenAI 的 Responses 事件流。历史文件由后台线程原子写入 |
 | 模型与供应商 | `provider` | 供应商、模型和能力声明、Configure、配置编辑、JSON 模板与本地保存 |
 | 主题 | `ui/theme` | 纯黑背景、中性灰胶囊控件、字号层级、低对比描边与 H⁺ 标志 |
 

@@ -7,11 +7,12 @@ import io.hydrion.hub.model.Role
 import io.hydrion.hub.model.TokenUsage
 import io.hydrion.hub.model.isActive
 import io.hydrion.hub.provider.CONTEXT_WINDOW_PARAMETER
-import io.hydrion.hub.provider.DEEPSEEK_PROVIDER_ID
 import io.hydrion.hub.provider.Provider
 import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.provider.contextWindowTokens
 import io.hydrion.hub.provider.defaultContextWindowTokens
+import io.hydrion.hub.provider.externalModelId
+import io.hydrion.hub.provider.usesResponsesApi
 import java.util.Locale
 
 internal data class ContextUsage(
@@ -39,10 +40,13 @@ internal fun contextUsage(conversation: Conversation, selected: Pair<ProviderMod
     if (conversation.mode == Mode.Image) return ContextUsage(0, window, estimated = true)
 
     val route = selected?.let { (model, provider) -> RemoteModel(provider.id, model.id) } ?: fallback?.remoteModel
-    if (route != null && (route.providerId == DEEPSEEK_PROVIDER_ID || messages.any { it.remoteModel == route })) {
-        // Keep the previous result during streaming. A terminal response without counts supersedes it.
+    val expectsReport = selected?.second?.usesResponsesApi() ?: (route != null)
+    if (expectsReport && route != null) {
+        val externalId = selected?.first?.externalModelId
+        // A terminal response without counts supersedes older readings for that model.
         val latest = messages.asReversed().asSequence()
             .filter { it.role == Role.Assistant && it.remoteModel == route && !it.status.isActive }
+            .filter { externalId == null || it.parameters["model"] == null || it.parameters["model"] == externalId }
             .maxByOrNull { it.createdAt }
         val usage = latest?.reportedUsage
         return ContextUsage(usage?.contextTokens, window, usage = usage)

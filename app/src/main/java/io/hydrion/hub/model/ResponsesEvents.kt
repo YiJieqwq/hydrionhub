@@ -79,13 +79,13 @@ private fun BufferedReader.sseEvents(): Sequence<Pair<String, String>> = sequenc
     }
 }
 
-private fun JSONObject.tokenUsage(): TokenUsage {
+private fun JSONObject.tokenUsage(): TokenUsage? {
     fun JSONObject.count(key: String) = opt(key)?.toString()?.toLongOrNull()?.takeIf { it >= 0L }
     return TokenUsage(
         inputTokens = count("input_tokens"), outputTokens = count("output_tokens"), totalTokens = count("total_tokens"),
         cachedInputTokens = optJSONObject("input_tokens_details")?.count("cached_tokens"),
         reasoningTokens = optJSONObject("output_tokens_details")?.count("reasoning_tokens")
-    )
+    ).takeUnless { it == TokenUsage() }
 }
 
 /** Full .done parts and output snapshots replace deltas at the same indices. */

@@ -135,4 +135,16 @@ class ContextUsageTest {
         assertNull(estimate.usage)
         assertEquals("71 tokens", contextUsage(history, flash to deepSeekProvider).label)
     }
+
+    @Test fun switchingToUnmeasuredResponsesProviderHasUnknownUsage() {
+        val openAI = deepSeekProvider.copy(id = "my-openai", baseUrl = "https://api.openai.com/v1")
+        val history = Conversation(messages = listOf(reply(71)))
+        val reading = contextUsage(history, flash to openAI)
+        assertNull(reading.tokens)
+        assertNull(reading.usage)
+        assertFalse(reading.estimated)
+        val edited = flash.copy(profile = flash.profile.copy(externalId = "replacement-id"))
+        val oldTurn = reply(71).copy(parameters = mapOf("model" to flash.profile.externalId))
+        assertNull(contextUsage(Conversation(messages = listOf(oldTurn)), edited to deepSeekProvider).tokens)
+    }
 }

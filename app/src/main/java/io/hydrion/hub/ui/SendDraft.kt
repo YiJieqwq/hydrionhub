@@ -4,14 +4,16 @@ import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.ImageInvocation
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
-import io.hydrion.hub.model.deepSeekKeyIssue
+import io.hydrion.hub.model.responsesConfigIssue
 import io.hydrion.hub.model.selectedTool
 import io.hydrion.hub.provider.ProviderStore
-import io.hydrion.hub.provider.DEEPSEEK_PROVIDER_ID
 import io.hydrion.hub.provider.IMAGE_MODEL_REQUIRED
+import io.hydrion.hub.provider.externalModelId
 import io.hydrion.hub.provider.imageRequest
 import io.hydrion.hub.provider.inputIssue
 import io.hydrion.hub.provider.localRequest
+import io.hydrion.hub.provider.needsOpenAiResponsesProtocol
+import io.hydrion.hub.provider.usesResponsesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -23,10 +25,14 @@ internal suspend fun sendDraft(vm: HubViewModel, providers: ProviderStore): Stri
     val (model, provider) = catalog.selectedEntry(mode)
         ?: return if (mode == Mode.Image) IMAGE_MODEL_REQUIRED else "请在设置中启用供应商并添加模型。"
     model.inputIssue(before.draft)?.let { return it }
-    if (mode == Mode.Chat && provider.id == DEEPSEEK_PROVIDER_ID) {
-        deepSeekKeyIssue(model, providers.sessionKey(provider.id))?.let { return it }
+    if (provider.needsOpenAiResponsesProtocol()) {
+        return "请在该聊天模型供应商的「API 协议」中填写 OpenAI Responses，再发送到 OpenAI。"
+    }
+    if (mode == Mode.Chat && provider.usesResponsesApi()) {
+        provider.responsesConfigIssue(model, providers.sessionKey(provider.id))?.let { return it }
         val selection = catalog.selection(mode)
-        vm.send(selection.label, selection.parameters, remoteModel = RemoteModel(provider.id, model.id))
+        vm.send(selection.label, selection.parameters + ("model" to model.externalModelId),
+            remoteModel = RemoteModel(provider.id, model.id))
         return null
     }
     val tool = selectedTool(mode, before.draft)
