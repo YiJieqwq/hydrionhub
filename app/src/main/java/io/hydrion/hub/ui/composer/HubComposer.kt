@@ -122,7 +122,8 @@ fun HubComposer(
         keyboard?.hide()
     }
     val hiding = imeStart > 0 && imeEnd == 0
-    val hiddenAfterEditing = sawKeyboard && !imeVisible && ime == 0 && imeEnd == 0
+    val imeActive = imeVisible || ime > 0 || imeEnd > 0
+    val hiddenAfterEditing = sawKeyboard && !imeActive
     SideEffect {
         previousImeFrame = imeFrame
         if (focused && (imeVisible || ime > 0)) sawKeyboard = true
@@ -130,12 +131,14 @@ fun HubComposer(
     }
     // Some keyboards consume Back themselves. A hardware keyboard has no IME
     // height, so clear focus only after a software keyboard actually appeared.
-    LaunchedEffect(hiddenAfterEditing, showTools) {
-        if (hiddenAfterEditing && !showTools && focused) focusManager.clearFocus()
+    LaunchedEffect(hiddenAfterEditing, showTools, windowFocused) {
+        if (hiddenAfterEditing && windowFocused && !showTools && focused) focusManager.clearFocus()
     }
     BackHandler(enabled = focused && !showTools) { collapse() }
+    // A system overlay can take window focus while the editor still owns a visible IME.
+    val editing = focused && !showTools && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
     val editGate by animateFloatAsState(
-        if (focused && windowFocused && !hiddenAfterEditing) 1f else 0f,
+        if (editing) 1f else 0f,
         tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerFocus"
     )
     val imeFraction = imeFrame.fraction ?: if (ime == 0 && sawHideAnimation) 0f else 1f

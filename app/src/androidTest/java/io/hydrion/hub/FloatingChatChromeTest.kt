@@ -4,8 +4,14 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import android.util.Log
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Rect as ComposeRect
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -14,6 +20,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.model.HubViewModel
+import io.hydrion.hub.ui.HydrionApp
 import io.hydrion.hub.ui.messages.CardMaterial
 import io.hydrion.hub.ui.messages.MessageCardStyle
 import io.hydrion.hub.ui.messages.MessageStyleStore
@@ -70,6 +77,43 @@ class FloatingChatChromeTest {
         assertDp("expanded right margin", 12.25f, panel.right - expanded.right)
         val shellBottom = screen.onNodeWithTag("composer-capsule", true).fetchSemanticsNode().boundsInWindow.bottom
         assertDp("space above IME", 12.25f, keyboardTop - shellBottom)
+    }
+
+    @Test fun visibleImeKeepsEmptyComposerExpandedAcrossWindowFocusLoss() {
+        val overlay = mutableStateOf(false)
+        screen.runOnUiThread {
+            screen.activity.setContent {
+                val actual = LocalWindowInfo.current
+                val window = remember(actual) {
+                    object : WindowInfo by actual {
+                        override val isWindowFocused: Boolean
+                            get() = !overlay.value && actual.isWindowFocused
+                    }
+                }
+                CompositionLocalProvider(LocalWindowInfo provides window) { HydrionApp() }
+            }
+        }
+        val input = screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction())
+        val view = screen.activity.window.decorView
+        fun imeHeight() = screen.runOnUiThread {
+            ViewCompat.getRootWindowInsets(view)?.getInsets(WindowInsetsCompat.Type.ime())?.bottom ?: 0
+        }
+        input.performClick()
+        screen.waitUntil(20_000) {
+            imeHeight() > 80 * density && abs(bounds("composer-capsule").height / density - 94.25f) < 1.5f
+        }
+        screen.waitForIdle()
+        val expanded = bounds("composer-capsule")
+        val keyboard = imeHeight()
+        for (covered in listOf(true, false)) {
+            screen.runOnUiThread { overlay.value = covered }
+            screen.mainClock.advanceTimeBy(160)
+            screen.waitForIdle()
+            input.assertIsFocused()
+            assertEquals(keyboard, imeHeight())
+            assertEquals(expanded, bounds("composer-capsule"))
+            screen.onNodeWithContentDescription("打开工具箱").assertIsDisplayed()
+        }
     }
 
     @Test fun composerRendersAnIntermediateToolbarFrameOnTheComposeClock() {
