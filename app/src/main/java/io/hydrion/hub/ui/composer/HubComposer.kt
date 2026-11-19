@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.imeAnimationSource
 import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -85,6 +86,7 @@ import io.hydrion.hub.ui.theme.capsuleEdge
 
 private const val ComposerTransitionMillis = 33
 private val ComposerSecondary = Color(0xFFAFAFAF)
+private val ToolbarGlyphGapReduction = 3.dp
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -215,10 +217,11 @@ fun HubComposer(
                                     .padding(top = lerp(5.dp, 16.dp, toolbar), bottom = 4.dp),
                                     contentAlignment = Alignment.CenterStart) {
                                     if (draft.text.isEmpty()) {
+                                        val isChat = state.current.mode == Mode.Chat
                                         Text(
-                                            if (state.current.mode == Mode.Chat) "Chat with AI" else "描述想生成的图片",
+                                            if (isChat) "Chat with AI" else "描述想生成的图片",
                                             color = HubStyle.ComposerHint,
-                                            style = editorTextStyle,
+                                            style = if (isChat) editorTextStyle.copy(fontSize = 16.sp) else editorTextStyle,
                                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                                         )
                                     }
@@ -315,7 +318,8 @@ private fun PlusGlyph() {
 
 @Composable
 private fun ToolGlyph() {
-    Canvas(Modifier.size(17.dp)) {
+    // Bring the glyphs closer to the attachment icon inside their existing hit areas.
+    Canvas(Modifier.offset(x = -ToolbarGlyphGapReduction).size(17.dp)) {
         val stroke = 1.6.dp.toPx()
         val margin = stroke / 2
         fun slider(row: Float, thumb: Float) {
@@ -332,7 +336,7 @@ private fun ToolGlyph() {
 
 @Composable
 private fun TerminalGlyph() {
-    Canvas(Modifier.size(17.dp)) {
+    Canvas(Modifier.offset(x = -ToolbarGlyphGapReduction * 2).size(17.dp)) {
         fun point(x: Float, y: Float) = Offset(x.dp.toPx(), y.dp.toPx())
         val stroke = 1.8.dp.toPx()
         val ink = ComposerSecondary
