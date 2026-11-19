@@ -37,7 +37,7 @@ internal fun Header(
     onRename: () -> Unit, onPin: () -> Unit, onFind: () -> Unit, onDelete: () -> Unit
 ) {
     BoxWithConstraints(
-        Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().testTag("floating-header").padding(horizontal = 14.dp, vertical = 6.dp),
         contentAlignment = Alignment.CenterStart
     ) {
         if (locked) {
@@ -101,7 +101,7 @@ private fun ConversationChip(
 ) {
     val colors = MaterialTheme.colorScheme
     Column(
-        Modifier.widthIn(max = 290.dp).capsuleEdge().clip(CircleShape).background(colors.surfaceContainerHigh)
+        Modifier.widthIn(max = 290.dp).testTag("conversation-chip").capsuleEdge().clip(CircleShape).background(colors.surfaceContainerHigh)
             .clickable(role = Role.Button, onClickLabel = "重命名会话", onClick = onRename)
             .semantics { stateDescription = "模式已锁定" }
             .heightIn(min = 44.dp).padding(horizontal = 16.dp, vertical = 4.dp),

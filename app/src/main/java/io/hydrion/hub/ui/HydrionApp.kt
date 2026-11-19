@@ -114,53 +114,66 @@ private fun Workspace(vm: HubViewModel) {
                 )
             }
         ) {
-            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
-                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Top))
-                .navigationBarsPadding().imePadding()) {
-                Column(Modifier.align(Alignment.TopCenter).widthIn(max = 900.dp).fillMaxSize()) {
-                    val selectedEntry = remember(catalog, current.mode) { catalog.selectedEntry(current.mode) }
-                    val usage = contextUsage(current, selectedEntry?.first)
-                    Header(
-                        mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
-                        contextUsage = usage,
-                        onMode = vm::setMode, onNew = ::newChat,
-                        onDrawer = { focus.clearFocus(); scope.launch { drawer.open() } },
-                        onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },
-                        onFind = { finding = true }, onDelete = { deleteId = current.id }
-                    )
-                    if (finding) FindBar(query, { query = it }, index, hits.size,
-                        previous = { if (hits.isNotEmpty()) matchIndex = (index - 1 + hits.size) % hits.size },
-                        next = { if (hits.isNotEmpty()) matchIndex = (index + 1) % hits.size },
-                        onClose = { finding = false; query = ""; focus.clearFocus() })
+            val selectedEntry = remember(catalog, current.mode) { catalog.selectedEntry(current.mode) }
+            Box(
+                Modifier.fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                    .imePadding(),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                Scaffold(
+                    modifier = Modifier.widthIn(max = 900.dp).fillMaxSize(),
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                    topBar = {
+                        Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
+                            Header(
+                                mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
+                                contextUsage = contextUsage(current, selectedEntry?.first),
+                                onMode = vm::setMode, onNew = ::newChat,
+                                onDrawer = { focus.clearFocus(); scope.launch { drawer.open() } },
+                                onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },
+                                onFind = { finding = true }, onDelete = { deleteId = current.id }
+                            )
+                            if (finding) FindBar(query, { query = it }, index, hits.size,
+                                previous = { if (hits.isNotEmpty()) matchIndex = (index - 1 + hits.size) % hits.size },
+                                next = { if (hits.isNotEmpty()) matchIndex = (index + 1) % hits.size },
+                                onClose = { finding = false; query = ""; focus.clearFocus() })
+                        }
+                    },
+                    bottomBar = {
+                        Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))) {
+                            key(current.id) {
+                                errors[current.id]?.let { detail -> ComposerError(detail) { vm.clearError(current.id) } }
+                                val chipLabel = if (current.mode == Mode.Chat)
+                                    listOfNotNull(selection.label, selection.parameters["effort"]).joinToString(" ")
+                                else selection.label
+                                HubComposer(vm, state, chipLabel, selection.available,
+                                    fast = current.mode == Mode.Chat && selection.parameters["speed"] == "Fast",
+                                    toolsAvailable = selectedEntry?.second?.id != DEEPSEEK_PROVIDER_ID,
+                                    onConfigure = { focus.clearFocus(); configure = true },
+                                    onSend = {
+                                        scope.launch {
+                                            sendDraft(vm, providers)?.let { vm.reportError(current.id, it) }
+                                        }
+                                    })
+                            }
+                        }
+                    },
+                    snackbarHost = { SnackbarHost(snackbar) }
+                ) { bars ->
                     if (current.messages.isEmpty()) {
                         RecentConversations(
                             history = state.history, mode = current.mode,
                             visible = !state.modeLocked && state.draft.text.isBlank() && state.draft.attachments.isEmpty(),
                             onOpen = { id -> focus.clearFocus(); vm.openConversation(id) },
-                            modifier = Modifier.weight(1f).fillMaxWidth()
+                            modifier = Modifier.fillMaxSize().padding(bars)
                         )
                     } else {
                         timelines.SaveableStateProvider(current.id) {
-                            MessageList(vm, state, if (finding) query else "", index, Modifier.weight(1f).fillMaxWidth())
+                            MessageList(vm, state, if (finding) query else "", index, floatingBars = bars)
                         }
                     }
-                    key(current.id) {
-                        errors[current.id]?.let { detail -> ComposerError(detail) { vm.clearError(current.id) } }
-                        val chipLabel = if (current.mode == Mode.Chat)
-                            listOfNotNull(selection.label, selection.parameters["effort"]).joinToString(" ")
-                        else selection.label
-                        HubComposer(vm, state, chipLabel, selection.available,
-                            fast = current.mode == Mode.Chat && selection.parameters["speed"] == "Fast",
-                            toolsAvailable = selectedEntry?.second?.id != DEEPSEEK_PROVIDER_ID,
-                            onConfigure = { focus.clearFocus(); configure = true },
-                            onSend = {
-                                scope.launch {
-                                    sendDraft(vm, providers)?.let { vm.reportError(current.id, it) }
-                                }
-                            })
-                    }
                 }
-                SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 88.dp))
             }
         }
     }
@@ -234,7 +247,12 @@ private fun RecentConversations(
 @Composable
 private fun FindBar(query: String, onQuery: (String) -> Unit, index: Int, count: Int,
                     previous: () -> Unit, next: () -> Unit, onClose: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.large)
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         OutlinedTextField(query, onQuery, Modifier.weight(1f), placeholder = { Text("查找聊天内容") }, singleLine = true)
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             if (query.isNotBlank()) Text(if (count == 0) "0/0" else "${index + 1}/$count",

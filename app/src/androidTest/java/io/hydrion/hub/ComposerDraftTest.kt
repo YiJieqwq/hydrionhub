@@ -6,6 +6,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -14,6 +16,7 @@ import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.provider.deepSeekProvider
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -41,6 +44,7 @@ class ComposerDraftTest {
                 vm.providers.configure(Mode.Chat, deepSeekProvider.models.first().id, emptyMap())
                 vm.setDraft("draft")
             }
+            screen.onNodeWithContentDescription("打开工具箱").assertIsNotEnabled().assertGlyphGray("DeepSeek 工具箱", 175)
             screen.onNodeWithContentDescription("发送消息").performClick()
             screen.onNodeWithTag("composer-error").assertIsDisplayed()
             screen.onNodeWithText("API Key", substring = true).assertIsDisplayed()
@@ -73,6 +77,19 @@ class ComposerDraftTest {
         screen.onNodeWithContentDescription("打开工具箱").assertIsDisplayed()
         screen.onNodeWithContentDescription("配置模型").assertIsDisplayed()
         assertTrue(screen.onNode(input).fetchSemanticsNode().size.width < editingWidth)
+        val density = screen.activity.resources.displayMetrics.density
+        val view = screen.activity.window.decorView
+        screen.waitUntil(15_000) {
+            screen.runOnUiThread { !ViewCompat.getRootWindowInsets(view)!!.isVisible(WindowInsetsCompat.Type.ime()) }
+        }
+        val shell = screen.onNodeWithTag("composer-capsule", true).fetchSemanticsNode().boundsInRoot
+        val panel = screen.onNodeWithTag("floating-header", true).fetchSemanticsNode().boundsInRoot
+        val rootBottom = screen.onRoot().fetchSemanticsNode().boundsInRoot.bottom
+        val nav = screen.runOnIdle { ViewCompat.getRootWindowInsets(view)!!.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom }
+        assertEquals("draft left margin", 20f, (shell.left - panel.left) / density, 1.5f)
+        assertEquals("draft right margin", 20f, (panel.right - shell.right) / density, 1.5f)
+        assertEquals("single-line draft height", 88f, shell.height / density, 2f)
+        assertEquals("draft clearance above navigation", 6f, (rootBottom - shell.bottom - nav) / density, 1.5f)
 
         screen.onNode(input).performClick().performTextInput("中")
         screen.onNode(input).assertTextContains("继续编辑中")

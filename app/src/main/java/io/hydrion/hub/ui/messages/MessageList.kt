@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.model.*
 import io.hydrion.hub.R
@@ -64,7 +65,8 @@ fun MessageList(
     state: HubState,
     searchQuery: String,
     matchIndex: Int,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    floatingBars: PaddingValues = PaddingValues(0.dp)
 ) {
     val messages = state.current.messages
     val needle = searchQuery.trim()
@@ -85,13 +87,24 @@ fun MessageList(
         }
     }
     LaunchedEffect(messages.lastOrNull(), messages.size, needle, followBottom) {
-        if (followBottom && needle.isEmpty() && messages.isNotEmpty() && !list.isScrollInProgress) {
-            list.requestScrollToItem(messages.size) // Anchor at the tail even when the last message exceeds one screen.
+        if (!followBottom || needle.isNotEmpty() || messages.isEmpty()) return@LaunchedEffect
+        // Resizing the keyboard, attachments or error banner can move the visible bottom without adding a message.
+        snapshotFlow { list.layoutInfo.viewportSize.height - list.layoutInfo.afterContentPadding }.collect {
+            if (!list.isScrollInProgress) list.requestScrollToItem(messages.size)
         }
     }
-    MessageCanvas(LocalMessageStyle.current, modifier.fillMaxWidth()) {
+    // Read Scaffold's measured bars during LazyColumn measurement, including every IME frame.
+    val padding = remember(floatingBars) {
+        object : PaddingValues {
+            override fun calculateLeftPadding(layoutDirection: LayoutDirection) = 16.dp
+            override fun calculateRightPadding(layoutDirection: LayoutDirection) = 16.dp
+            override fun calculateTopPadding() = floatingBars.calculateTopPadding() + 12.dp
+            override fun calculateBottomPadding() = floatingBars.calculateBottomPadding() + 12.dp
+        }
+    }
+    MessageCanvas(LocalMessageStyle.current, modifier.fillMaxSize()) {
         LazyColumn(
-            state = list, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            state = list, modifier = Modifier.fillMaxSize().testTag("message-timeline"), contentPadding = padding,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             itemsIndexed(messages, key = { _, msg -> msg.id }, contentType = { _, msg -> msg.role }) { index, msg ->
@@ -100,7 +113,7 @@ fun MessageList(
                     .clip(RoundedCornerShape(14.dp))
                     .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .7f), RoundedCornerShape(14.dp))
                     .padding(6.dp) else Modifier
-                Box(itemModifier.fillMaxWidth()) {
+                Box(itemModifier.fillMaxWidth().testTag("message-turn-${msg.id}")) {
                     if (msg.role == Role.User) {
                         val hasReply = messages.getOrNull(index + 1)?.replyTo == msg.id
                         UserTurn(msg, state.current.mode, needle, vm, state.isGenerating, hasReply)

@@ -1,18 +1,27 @@
 package io.hydrion.hub
 
+import android.graphics.Color
 import android.view.KeyEvent
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.click
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlin.math.abs
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,9 +31,14 @@ class ComposerToolsTest {
     @get:Rule
     val screen = createAndroidComposeRule<MainActivity>()
 
-    private fun openTools() {
+    private fun openTools(checkColors: Boolean = false) {
         screen.onNodeWithContentDescription("消息输入框").performClick()
-        screen.onNodeWithContentDescription("打开工具箱").performClick()
+        if (checkColors) {
+            screen.onNodeWithContentDescription("添加附件").assertGlyphGray("添加附件", 255)
+            screen.onNodeWithContentDescription("打开工具箱").assertGlyphGray("打开工具箱", 175)
+            screen.onNodeWithContentDescription("工作区终端").assertGlyphGray("工作区终端", 175)
+        }
+        screen.onNodeWithContentDescription("打开工具箱").assertIsEnabled().performTouchInput { click(center) }
         screen.onNodeWithText("Tools").assertIsDisplayed()
     }
 
@@ -36,7 +50,7 @@ class ComposerToolsTest {
 
     @Test
     fun independentlySelectToolsAndKeepChoicesAfterDismissal() {
-        openTools()
+        openTools(checkColors = true)
         enabledCount(2).assertIsDisplayed()
         choice("模型内置搜索").assertIsSelected()
         choice("禁用").performClick().assertIsSelected()
@@ -60,4 +74,20 @@ class ComposerToolsTest {
         screen.onNode(hasText("图片生成") and hasText("模型内置图片生成")).performClick()
         choice("模型内置图片生成").assertIsSelected()
     }
+}
+
+internal fun SemanticsNodeInteraction.assertGlyphGray(label: String, expectedGray: Int) {
+    val image = captureToImage().asAndroidBitmap()
+    var solidPixels = 0
+    var brightest = 0
+    for (y in image.height / 4 until 3 * image.height / 4) {
+        for (x in image.width / 4 until 3 * image.width / 4) {
+            val color = image.getPixel(x, y)
+            val channels = listOf(Color.red(color), Color.green(color), Color.blue(color))
+            if (channels.all { abs(it - expectedGray) <= 2 }) solidPixels++
+            brightest = maxOf(brightest, channels.max())
+        }
+    }
+    assertTrue("$label has $solidPixels solid stroke pixels, brightest channel $brightest; expected $expectedGray",
+        solidPixels >= 2 && abs(brightest - expectedGray) <= 2)
 }

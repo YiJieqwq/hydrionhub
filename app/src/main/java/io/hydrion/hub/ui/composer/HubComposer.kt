@@ -2,22 +2,30 @@ package io.hydrion.hub.ui.composer
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imeAnimationSource
+import androidx.compose.foundation.layout.imeAnimationTarget
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -25,13 +33,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.ArrowUpward
-import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -39,28 +45,34 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubState
 import io.hydrion.hub.model.HubViewModel
@@ -69,10 +81,11 @@ import io.hydrion.hub.ui.messages.AttachmentPicture
 import io.hydrion.hub.ui.messages.MockPicture
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.capsuleEdge
-import kotlinx.coroutines.delay
 
-private const val ComposerMotionMillis = 33
+private const val ComposerTransitionMillis = 33
+private val ComposerSecondary = Color(0xFFAFAFAF)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HubComposer(
     vm: HubViewModel,
@@ -88,12 +101,16 @@ fun HubComposer(
     val colors = MaterialTheme.colorScheme
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    val inputFocus = remember { FocusRequester() }
+    val density = LocalDensity.current
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    val imeVisible = WindowInsets.isImeVisible
+    val nav = WindowInsets.navigationBars.getBottom(density)
+    val ime = (WindowInsets.ime.getBottom(density) - nav).coerceAtLeast(0)
+    val imeStart = (WindowInsets.imeAnimationSource.getBottom(density) - nav).coerceAtLeast(0)
+    val imeEnd = (WindowInsets.imeAnimationTarget.getBottom(density) - nav).coerceAtLeast(0)
     var focused by remember { mutableStateOf(false) }
-    var preparingIme by remember(state.current.id) { mutableStateOf(false) }
-    val expanded = focused || preparingIme
-    var wasImeVisible by remember(state.current.id) { mutableStateOf(false) }
+    var sawKeyboard by remember { mutableStateOf(false) }
+    var sawHideAnimation by remember { mutableStateOf(false) }
     var showTools by remember(state.current.id) { mutableStateOf(false) }
     var importError by remember(state.current.id) { mutableStateOf<String?>(null) }
     val pick = rememberAttachmentPicker(vm) { importError = it }
@@ -101,29 +118,32 @@ fun HubComposer(
     fun collapse() {
         focusManager.clearFocus()
         keyboard?.hide()
-        preparingIme = false
     }
-    // Let the compact shell finish opening before requesting an input connection.
-    // From there the parent follows Android IME insets with no additional translation.
-    LaunchedEffect(preparingIme) {
-        if (preparingIme) {
-            withFrameNanos { }
-            delay(ComposerMotionMillis.toLong())
-            inputFocus.requestFocus()
-            keyboard?.show()
-            preparingIme = false
-        }
+    val hiding = imeStart > 0 && imeEnd == 0
+    val hiddenAfterEditing = sawKeyboard && !imeVisible && ime == 0 && imeEnd == 0
+    SideEffect {
+        if (focused && (imeVisible || ime > 0)) sawKeyboard = true
+        if (hiding && ime > 0) sawHideAnimation = true
     }
-    // Some IMEs consume the first system-back event. Observe their dismissal as well.
-    LaunchedEffect(imeVisible, showTools) {
-        if (!imeVisible && wasImeVisible && focused && !showTools) focusManager.clearFocus()
-        wasImeVisible = imeVisible
+    // Some keyboards consume Back themselves. A hardware keyboard has no IME
+    // height, so clear focus only after a software keyboard actually appeared.
+    LaunchedEffect(hiddenAfterEditing, showTools) {
+        if (hiddenAfterEditing && !showTools && focused) focusManager.clearFocus()
     }
-    BackHandler(enabled = expanded && !showTools) { collapse() }
+    BackHandler(enabled = focused && !showTools) { collapse() }
+    val editGate by animateFloatAsState(
+        if (focused && windowFocused && !hiddenAfterEditing) 1f else 0f,
+        tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerFocus"
+    )
+    val imeProgress = composerImeProgress(ime, imeStart, imeEnd)
+    val imeFraction = imeProgress ?: if (ime == 0 && sawHideAnimation) 0f else 1f
+    val expansion = minOf(editGate, imeFraction)
 
     val draft = state.draft
     val hasContent = draft.text.isNotEmpty() || draft.attachments.isNotEmpty()
-    val toolbarVisible = expanded || hasContent
+    val rowGate by animateFloatAsState(if (hasContent) 1f else 0f,
+        tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerDraftRow")
+    val toolbar = maxOf(expansion, rowGate)
     val canSend = modelAvailable && (draft.text.isNotBlank() || draft.attachments.isNotEmpty())
     val active = state.isGenerating
     val onAction: () -> Unit = {
@@ -132,16 +152,14 @@ fun HubComposer(
             onSend()
         }
     }
-    val sideInset by animateDpAsState(
-        targetValue = when {
-            expanded -> 9.dp
-            hasContent -> 20.dp
-            else -> 30.dp
-        },
-        animationSpec = tween(ComposerMotionMillis, easing = LinearEasing),
-        label = "composerSideInset",
-    )
-    Column(modifier.fillMaxWidth().padding(start = sideInset, end = sideInset, top = 4.dp, bottom = 6.dp)) {
+    val sideInset = lerp(35.dp, 20.dp, toolbar) - 7.75.dp * expansion
+    // The host has already consumed max(IME, navigation bars). On gesture navigation
+    // the collapsed reference is measured from the physical edge, not the nav top.
+    val compactGap = (35.dp - with(density) { nav.toDp() }).coerceAtLeast(8.dp)
+    val bottomGap = lerp(compactGap, 6.dp, toolbar) + 6.25.dp * expansion
+    val editorMinHeight = lerp(49.25.dp, 40.dp, toolbar) + 6.5.dp * expansion
+    val controlRowHeight = 47.75.dp
+    Column(modifier.fillMaxWidth().padding(start = sideInset, end = sideInset, bottom = bottomGap)) {
         importError?.let { error ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(error, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = colors.error)
@@ -150,16 +168,13 @@ fun HubComposer(
                 }
             }
         }
-        val shape = RoundedCornerShape(27.dp)
+        val shape = if (expansion == 0f) CircleShape else RoundedCornerShape(24.dp)
         Surface(
-            modifier = Modifier.fillMaxWidth().capsuleEdge(shape),
+            modifier = Modifier.fillMaxWidth().testTag("composer-capsule").border(0.66.dp, HubStyle.ComposerBorder, shape),
             shape = shape,
             color = colors.surfaceContainerHigh,
         ) {
-            Column(
-                Modifier.animateContentSize(tween(ComposerMotionMillis, easing = LinearEasing))
-                    .padding(horizontal = if (expanded) 5.dp else 3.dp, vertical = if (expanded) 3.dp else 0.dp)
-            ) {
+            Column {
                 if (draft.attachments.isNotEmpty()) {
                     LazyRow(
                         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
@@ -171,82 +186,80 @@ fun HubComposer(
                         }
                     }
                 }
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (!toolbarVisible) AddButton(pick)
-                    Box(Modifier.weight(1f)) {
+                Box(Modifier.fillMaxWidth()) {
+                    Column {
                         BasicTextField(
                             value = draft.text,
                             onValueChange = vm::setDraft,
-                            modifier = Modifier.fillMaxWidth().focusRequester(inputFocus).onFocusChanged { focused = it.isFocused }
-                                .semantics { contentDescription = "消息输入框" },
+                            modifier = Modifier.fillMaxWidth().padding(
+                                start = lerp(49.dp, 15.dp, toolbar), end = lerp(49.dp, 16.dp, toolbar)
+                            ).onFocusChanged {
+                                if (it.isFocused && !focused) {
+                                    sawKeyboard = false
+                                    sawHideAnimation = false
+                                }
+                                focused = it.isFocused
+                            }.semantics { contentDescription = "消息输入框" },
                             textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
                             cursorBrush = SolidColor(colors.primary),
-                            maxLines = if (toolbarVisible) 5 else 1,
+                            maxLines = if (hasContent || focused) 5 else 1,
                             decorationBox = { editor ->
-                                Box(
-                                    Modifier.fillMaxWidth().heightIn(min = if (hasContent && !expanded) 40.dp else 46.dp)
-                                        .padding(
-                                            start = if (toolbarVisible) 14.dp else 2.dp, end = 8.dp,
-                                            top = if (expanded) 8.dp else 4.dp, bottom = 4.dp,
-                                        ),
-                                    contentAlignment = Alignment.CenterStart,
-                                ) {
+                                Box(Modifier.fillMaxWidth().heightIn(min = editorMinHeight)
+                                    .padding(vertical = 4.dp), contentAlignment = Alignment.CenterStart) {
                                     if (draft.text.isEmpty()) {
                                         Text(
                                             if (state.current.mode == Mode.Chat) "Chat with AI" else "描述想生成的图片",
                                             color = HubStyle.ComposerHint,
                                             style = MaterialTheme.typography.bodyLarge,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis,
                                         )
                                     }
                                     editor()
                                 }
                             },
                         )
-                        if (!toolbarVisible) {
-                            Box(Modifier.matchParentSize().pointerInput(Unit) {
-                                detectTapGestures { preparingIme = true }
-                            })
-                        }
+                        Spacer(Modifier.height(controlRowHeight * toolbar))
                     }
-                    if (!toolbarVisible) SendButton(active, canSend, onAction)
-                }
-                if (toolbarVisible) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        AddButton(pick)
-                        IconButton(onClick = {
-                            showTools = true
-                            keyboard?.hide()
-                        }, enabled = toolsAvailable) {
-                            Icon(Icons.Outlined.Tune, "打开工具箱", Modifier.size(21.dp),
-                                tint = colors.onSurface.copy(alpha = if (toolsAvailable) 1f else 0.38f))
-                        }
-                        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                            Row(
-                                Modifier.clip(CircleShape).clickable(role = Role.Button) {
-                                    collapse()
-                                    onConfigure()
-                                }.heightIn(min = 44.dp).padding(start = 6.dp, end = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (fast) Icon(Icons.Outlined.Bolt, "快速", Modifier.size(15.dp), tint = colors.onSurface)
-                                Text(
-                                    modelLabel,
-                                    Modifier.weight(1f, fill = false),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = colors.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Icon(Icons.Outlined.KeyboardArrowDown, "配置模型", Modifier.size(15.dp),
-                                    tint = colors.onSurfaceVariant)
+                    Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(lerp(editorMinHeight, controlRowHeight, toolbar))
+                        .padding(horizontal = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ComposerIconButton("添加附件", onClick = pick) { PlusGlyph() }
+                        if (toolbar > 0f) {
+                            val interactive = toolbar >= 0.6f
+                            val reveal = Modifier.graphicsLayer {
+                                alpha = toolbar
+                                translationX = -8.dp.toPx() * (1f - toolbar)
+                            }.then(if (interactive) Modifier else Modifier.clearAndSetSemantics { })
+                            Row(reveal, verticalAlignment = Alignment.CenterVertically) {
+                                ComposerIconButton("打开工具箱", onClick = {
+                                    showTools = true
+                                    keyboard?.hide()
+                                }, enabled = interactive && toolsAvailable) {
+                                    ToolGlyph()
+                                }
+                                Box(Modifier.width(42.dp).height(48.dp).clearAndSetSemantics {
+                                    contentDescription = "工作区终端"
+                                    role = Role.Button
+                                    disabled()
+                                }, contentAlignment = Alignment.Center) { TerminalGlyph() }
                             }
-                        }
+                            Box(Modifier.weight(1f).then(reveal), contentAlignment = Alignment.CenterEnd) {
+                                Row(
+                                    Modifier.clip(CircleShape).clickable(enabled = interactive, role = Role.Button) {
+                                        collapse()
+                                        onConfigure()
+                                    }.heightIn(min = 44.dp).padding(horizontal = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    if (fast) Icon(Icons.Outlined.Bolt, "快速", Modifier.size(15.dp), tint = colors.onSurface)
+                                    Text(modelLabel, Modifier.weight(1f, fill = false),
+                                        style = MaterialTheme.typography.labelLarge, color = colors.onSurface,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Icon(Icons.Outlined.KeyboardArrowDown, "配置模型", Modifier.size(15.dp),
+                                        tint = colors.onSurfaceVariant)
+                                }
+                            }
+                        } else Spacer(Modifier.weight(1f))
                         SendButton(active, canSend, onAction)
                     }
                 }
@@ -275,9 +288,49 @@ fun HubComposer(
 }
 
 @Composable
-private fun AddButton(onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
-        Icon(Icons.Outlined.Add, "添加附件", Modifier.size(24.dp), tint = MaterialTheme.colorScheme.onSurface)
+private fun ComposerIconButton(label: String, onClick: () -> Unit, enabled: Boolean = true,
+                               glyph: @Composable () -> Unit) {
+    Box(Modifier.width(42.dp).height(48.dp).clip(CircleShape)
+        .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        .semantics { contentDescription = label }, contentAlignment = Alignment.Center) { glyph() }
+}
+
+@Composable
+private fun PlusGlyph() {
+    Canvas(Modifier.size(17.dp)) {
+        val stroke = 1.8.dp.toPx()
+        val r = size.minDimension / 2 - stroke / 2
+        drawLine(Color.White, Offset(center.x - r, center.y), Offset(center.x + r, center.y), stroke, StrokeCap.Round)
+        drawLine(Color.White, Offset(center.x, center.y - r), Offset(center.x, center.y + r), stroke, StrokeCap.Round)
+    }
+}
+
+@Composable
+private fun ToolGlyph() {
+    Canvas(Modifier.size(17.dp)) {
+        val stroke = 1.6.dp.toPx()
+        val margin = stroke / 2
+        fun slider(row: Float, thumb: Float) {
+            val y = row.dp.toPx()
+            val x = thumb.dp.toPx()
+            drawLine(ComposerSecondary, Offset(margin, y), Offset(size.width - margin, y), stroke, StrokeCap.Round)
+            drawLine(ComposerSecondary, Offset(x, y - 1.8.dp.toPx()), Offset(x, y + 1.8.dp.toPx()), stroke, StrokeCap.Round)
+        }
+        slider(3f, 11f)
+        slider(8.5f, 5f)
+        slider(14f, 10f)
+    }
+}
+
+@Composable
+private fun TerminalGlyph() {
+    Canvas(Modifier.size(17.dp)) {
+        fun point(x: Float, y: Float) = Offset(x.dp.toPx(), y.dp.toPx())
+        val stroke = 1.8.dp.toPx()
+        val ink = ComposerSecondary
+        drawLine(ink, point(1f, 3.5f), point(6f, 8.5f), stroke, StrokeCap.Round)
+        drawLine(ink, point(6f, 8.5f), point(1f, 13.5f), stroke, StrokeCap.Round)
+        drawLine(ink, point(8f, 13.5f), point(16f, 13.5f), stroke, StrokeCap.Round)
     }
 }
 
@@ -285,18 +338,17 @@ private fun AddButton(onClick: () -> Unit) {
 private fun SendButton(generating: Boolean, canSend: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val enabled = generating || canSend
-    IconButton(onClick = onClick, enabled = enabled) {
-        val fill = if (enabled) colors.primary else colors.surfaceContainerHighest
-        val ink = if (enabled) colors.onPrimary else colors.onSurfaceVariant
-        Box(Modifier.size(36.dp).capsuleEdge().background(fill, CircleShape), contentAlignment = Alignment.Center) {
-            if (generating) {
-                Box(
-                    Modifier.size(13.dp).background(ink, RoundedCornerShape(3.dp))
-                        .semantics { contentDescription = "停止生成" },
-                )
-            } else {
-                Icon(Icons.Outlined.ArrowUpward, "发送消息", Modifier.size(22.dp), tint = ink)
-            }
+    ComposerIconButton(if (generating) "停止生成" else "发送消息", onClick, enabled) {
+        val fill = when {
+            generating -> Color.White
+            canSend -> colors.primary
+            else -> colors.surfaceContainerHighest
+        }
+        Box(Modifier.size(32.dp).then(if (generating) Modifier else Modifier.capsuleEdge())
+            .background(fill, CircleShape), contentAlignment = Alignment.Center) {
+            if (generating) Box(Modifier.size(11.dp).background(Color.Black, RoundedCornerShape(1.25.dp)))
+            else Icon(Icons.Outlined.ArrowUpward, null, Modifier.size(20.dp),
+                tint = if (canSend) colors.onPrimary else colors.onSurfaceVariant)
         }
     }
 }

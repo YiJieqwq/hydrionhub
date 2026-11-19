@@ -153,7 +153,8 @@ private fun ToolGroup(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Icon(choice.icon, null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
+                    Icon(choice.icon, null, Modifier.size(20.dp),
+                        tint = if (choice.label == Disabled) colors.onSurface.copy(alpha = .38f) else colors.onSurfaceVariant)
                     Text(choice.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     RadioButton(selected = checked, onClick = null,
                         colors = RadioButtonDefaults.colors(selectedColor = colors.onSurface, unselectedColor = colors.outline))
