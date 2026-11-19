@@ -111,6 +111,8 @@ fun HubComposer(
     var focused by remember { mutableStateOf(false) }
     var sawKeyboard by remember { mutableStateOf(false) }
     var sawHideAnimation by remember { mutableStateOf(false) }
+    var previousImeFrame by remember { mutableStateOf<ComposerImeFrame?>(null) }
+    val imeFrame = nextComposerImeFrame(previousImeFrame, ime, imeStart, imeEnd)
     var showTools by remember(state.current.id) { mutableStateOf(false) }
     var importError by remember(state.current.id) { mutableStateOf<String?>(null) }
     val pick = rememberAttachmentPicker(vm) { importError = it }
@@ -122,6 +124,7 @@ fun HubComposer(
     val hiding = imeStart > 0 && imeEnd == 0
     val hiddenAfterEditing = sawKeyboard && !imeVisible && ime == 0 && imeEnd == 0
     SideEffect {
+        previousImeFrame = imeFrame
         if (focused && (imeVisible || ime > 0)) sawKeyboard = true
         if (hiding && ime > 0) sawHideAnimation = true
     }
@@ -135,8 +138,7 @@ fun HubComposer(
         if (focused && windowFocused && !hiddenAfterEditing) 1f else 0f,
         tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerFocus"
     )
-    val imeProgress = composerImeProgress(ime, imeStart, imeEnd)
-    val imeFraction = imeProgress ?: if (ime == 0 && sawHideAnimation) 0f else 1f
+    val imeFraction = imeFrame.fraction ?: if (ime == 0 && sawHideAnimation) 0f else 1f
     val expansion = minOf(editGate, imeFraction)
 
     val draft = state.draft
