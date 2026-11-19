@@ -40,7 +40,7 @@ class DeepSeekConversationTest {
 
     @Test fun followsUpAndRetriesHistoricalPromptWithItsOriginalModel() = runBlocking {
         val requests = mutableListOf<LocalModelRequest>()
-        var catalog = demoCatalog().withDeepSeekPreset().copy(active = mapOf(Mode.Chat to flash.id))
+        var catalog = demoCatalog().withDeepSeekPreset().copy(active = mapOf(Mode.Chat to route))
         val repository = ChatGenerationRepository({ catalog }, { "unit-test-placeholder" }, { _, _ -> emptyMap() }) { _, request, reply ->
             requests += request
             flowOf(reply.copy(text = "answer ${requests.size}", status = Generation.Completed, totalTokens = 45L))
@@ -57,7 +57,7 @@ class DeepSeekConversationTest {
         val snapshot = session.snapshot()
         assertFalse(snapshot.toString().contains("unit-test-placeholder"))
 
-        catalog = catalog.copy(active = mapOf(Mode.Chat to "demo-reason"))
+        catalog = catalog.copy(active = mapOf(Mode.Chat to RemoteModel("demo-chat", "demo-reason")))
         val reopened = ConversationSession(this, repository, {})
         reopened.restore(snapshot)
         reopened.openConversation(session.state.value.current.id)
@@ -120,7 +120,7 @@ class DeepSeekConversationTest {
         assertEquals("Bearer fixture-for-my-openai", sent.single().headers["Authorization"])
         assertFalse(sent.single().body.getBoolean("store"))
 
-        catalog = catalog.copy(active = mapOf(Mode.Chat to flash.id))
+        catalog = catalog.copy(active = mapOf(Mode.Chat to route))
         session.regenerate(first.id)
         assertEquals(Generation.Completed, session.finished().status)
         assertEquals(listOf(open.id, open.id), keys)

@@ -13,6 +13,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.model.Generation
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.provider.route
 import java.io.BufferedWriter
 import java.net.InetAddress
 import java.net.Socket
@@ -64,7 +65,7 @@ class DeepSeekLoopbackTest {
         val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
         val providers = vm.providers
         val catalog = providers.catalog.value
-        val previousSelection = requireNotNull(catalog.selectedModel(Mode.Chat))
+        val previousSelection = requireNotNull(catalog.selectedEntry(Mode.Chat)).route
         val deepSeek = catalog.providers.single { it.id == "deepseek" }
         val received = mutableListOf<JSONObject>()
         val serverFailure = AtomicReference<Throwable?>()
@@ -163,7 +164,7 @@ class DeepSeekLoopbackTest {
             screen.runOnIdle {
                 if (chat.isNotEmpty()) vm.deleteConversation(chat)
                 providers.save(deepSeek, "", null)
-                providers.configure(Mode.Chat, previousSelection.id, catalog.overrides[previousSelection.id].orEmpty())
+                providers.configure(Mode.Chat, previousSelection, catalog.overrides[previousSelection].orEmpty())
             }
         }
     }

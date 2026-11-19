@@ -45,7 +45,7 @@ internal suspend fun sendDraft(vm: HubViewModel, providers: ProviderStore): Stri
         runCatching {
             val prompt = before.draft.text
             val request = if (mode == Mode.Image) catalog.imageRequest(prompt)
-                else catalog.localRequest(model, prompt, requests = if (imageTool) 2 else 1)
+                else catalog.localRequest(model, prompt, requests = if (imageTool) 2 else 1, provider = provider)
             val image = when {
                 mode == Mode.Image -> request
                 imageTool -> catalog.imageRequest(prompt, parentImageLimit = model.profile.imageBudget)

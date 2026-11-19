@@ -14,7 +14,7 @@ internal fun ModelCatalog.responsesRequest(
     model: ProviderModel,
     history: List<Message>,
     apiKey: String,
-    selected: Map<String, String> = parameters(model),
+    selected: Map<String, String> = parameters(model, provider),
     attachmentData: (Attachment) -> String = { it.uri.orEmpty() }
 ): LocalModelRequest {
     val protocol = requireNotNull(provider.chatProtocol()) { "请选择 Responses 协议。" }

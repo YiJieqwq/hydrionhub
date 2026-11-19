@@ -10,7 +10,7 @@ internal fun ModelCatalog.chatCompletionsRequest(
     model: ProviderModel,
     history: List<Message>,
     apiKey: String,
-    selected: Map<String, String> = parameters(model),
+    selected: Map<String, String> = parameters(model, provider),
     attachmentData: (Attachment) -> String = { it.uri.orEmpty() }
 ): LocalModelRequest {
     val protocol = ChatProtocol.ChatCompletionsHttp

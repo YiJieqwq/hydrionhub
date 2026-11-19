@@ -1,7 +1,13 @@
 package io.hydrion.hub.provider
 
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.SharedPreferences
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.model.RemoteModel
+import java.util.UUID
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -10,7 +16,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ProfilePersistenceTest {
     @Test fun legacyCatalogGainsDeepSeekOnceAndKeepsUserSettings() {
-        val old = demoCatalog().copy(active = mapOf(Mode.Chat to "demo-quick"))
+        val old = demoCatalog().copy(active = mapOf(Mode.Chat to RemoteModel("demo-chat", "demo-quick")))
         val legacy = encodeCatalog(old).apply { remove("formatVersion") }
         val migrated = decodeCatalog(legacy.toString())
         assertEquals("demo-quick", migrated.selectedModel(Mode.Chat)?.id)
@@ -22,6 +28,117 @@ class ProfilePersistenceTest {
         assertEquals(12_345, m.copy(profile = profile.toStoredJson().readProfile()).contextWindowTokens)
         val oldProfile = profile.toStoredJson().apply { remove("contextWindowTokens") }.readProfile()
         assertEquals(1_000_000, m.copy(profile = oldProfile).contextWindowTokens)
+    }
+
+    @Test fun readsLegacyIdCollisionsOnceAndRoundTripsDisabledScopedOverrides() {
+        val first = deepSeekProvider.copy(id = "one", enabled = false)
+        val second = first.copy(id = "two", enabled = true)
+        val model = first.models.first()
+        val legacy = encodeCatalog(ModelCatalog(listOf(first, second))).apply {
+            put("formatVersion", 4)
+            put("active", JSONObject().put("Chat", model.id))
+            put("defaults", JSONObject().put("Chat", model.id))
+            put("overrides", JSONObject().put(model.id, JSONObject().put("effort", "High")))
+        }
+        val migrated = decodeCatalog(legacy.toString())
+        val routeTwo = RemoteModel(second.id, model.id)
+        val routeOne = RemoteModel(first.id, model.id)
+        assertEquals(routeTwo, migrated.active[Mode.Chat])
+        assertEquals(routeTwo, migrated.defaults[Mode.Chat])
+        assertEquals("High", migrated.overrides[routeTwo]?.get("effort"))
+        assertNull(migrated.overrides[routeOne])
+        val off = migrated.copy(providers = listOf(first, second.copy(models = second.models.map { it.copy(enabled = false) })),
+            overrides = migrated.overrides + (routeOne to mapOf("effort" to "Max"))).normalized()
+        val saved = decodeCatalog(encodeCatalog(off).toString())
+        assertEquals(off, saved)
+        assertNull(saved.selectedEntry(Mode.Chat))
+        val on = saved.copy(providers = listOf(first.copy(enabled = true), second)).normalized()
+        assertEquals(routeTwo, on.selectedEntry(Mode.Chat)?.route)
+        assertEquals("High", on.selection(Mode.Chat).parameters["effort"])
+        assertEquals("Max", on.parameters(first.models.first(), first)["effort"])
+    }
+
+    @Test fun preparesImagesForTheSelectedProviderWithValidatedWireFields() {
+        val image = demoCatalog().selectedModel(Mode.Image)!!.copy(profile = ModelProfile(
+            type = ModelType.Image, externalId = "gpt-image-1.5", imageBudget = 2,
+            headers = mapOf("X-Image-Request" to "fixture"), requestBody = """{"n":3}"""))
+        val p = Provider("images-a", Mode.Image, "A", "OpenAI Images", "https://api.openai.com", listOf(image))
+        val b = p.copy(id = "images-b", baseUrl = "https://images.example/prefix/images/generations",
+            models = listOf(image.copy(profile = image.profile.copy(headers = mapOf("X-B" to "fixture")))))
+        val catalog = ModelCatalog(listOf(p, b), active = mapOf(Mode.Image to RemoteModel(b.id, image.id)))
+        val result = catalog.prepareImageGeneration("a \"quote\"")
+        assertEquals("https://images.example/prefix/images/generations", result.url)
+        assertEquals("a \"quote\"", result.body.getString("prompt"))
+        assertEquals("gpt-image-1.5", result.body.getString("model"))
+        assertEquals(2, result.body.getInt("n"))
+        assertEquals("auto", result.body.getString("quality"))
+        assertFalse(result.body.has("input_modalities"))
+        assertFalse(result.body.has("abilities"))
+        assertEquals(mapOf("X-B" to "fixture"), result.headers)
+        assertFalse(result.parameters.containsValue("fixture"))
+        assertEquals("https://api.openai.com/v1/images/generations", p.imageEndpoint())
+        for (bad in listOf("http://example.com", "https://user@example.com", "https://example.com/path?query=x")) {
+            assertTrue(runCatching { p.copy(baseUrl = bad).imageEndpoint() }.isFailure)
+        }
+        assertTrue(runCatching { catalog.prepareImageGeneration("  ") }.isFailure)
+        assertEquals("", catalog.imageRequest("  ").url)
+    }
+
+    @Test fun wirePreparationConvertsDimensionsRejectsUnsupportedFieldsAndKeepsTheMockTemplate() {
+        val (model, owner) = demoCatalog().selectedEntry(Mode.Image)!!
+        fun catalog(extra: String, id: String = "gpt-image-1.5", width: Int = 1536): ModelCatalog {
+            val profile = ModelProfile(type = ModelType.Image, externalId = id, requestBody = extra)
+            val template = """{"prompt":"{{prompt}}","width":$width,"height":1024,"aspect":"3:2","quality":"High"}"""
+            return ModelCatalog(listOf(owner.copy(baseUrl = "https://example.test/v1",
+                requestBody = template, models = listOf(model.copy(profile = profile)))))
+        }
+        val valid = catalog("{}")
+        val wire = valid.prepareImageGeneration("a lake")
+        assertEquals("1536x1024", wire.body.getString("size"))
+        assertEquals("high", wire.body.getString("quality"))
+        assertEquals(setOf("model", "prompt", "n", "size", "quality"), wire.body.keys().asSequence().toSet())
+        assertEquals("1600x1024", catalog("{}", "gpt-image-2", 1600).prepareImageGeneration("lake").body.getString("size"))
+        assertTrue(runCatching { catalog("{}", "gpt-image-2.6-flare", 1600).prepareImageGeneration("lake") }.isFailure)
+        assertTrue(runCatching { catalog("{}", "gpt-image-2-future", 1600).prepareImageGeneration("lake") }.isFailure)
+        for (extra in listOf("""{"size":"1024x1024"}""", """{"quality":"max"}""", """{"tool":"local"}""")) {
+            val configured = catalog(extra)
+            assertTrue(runCatching { configured.prepareImageGeneration("a lake") }.isFailure)
+            assertEquals("", configured.imageRequest("a lake").url)
+        }
+    }
+
+    @Test fun unsupportedFutureFileIsPreservedAndCredentialsStayWithTheirProviderForThisRun() {
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = "provider-fixture-" + UUID.randomUUID()
+        val fixture = object : ContextWrapper(app) {
+            override fun getApplicationContext(): Context = this
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences = app.getSharedPreferences(file, mode)
+        }
+        val prefs = fixture.getSharedPreferences("catalog", Context.MODE_PRIVATE)
+        try {
+            val (model, base) = demoCatalog().selectedEntry(Mode.Image)!!
+            val one = base.copy(id = "p1", baseUrl = "https://first.example/v1")
+            val two = base.copy(id = "p2", baseUrl = "https://second.example/v1")
+            val origin = encodeCatalog(ModelCatalog(listOf(one, two))).put("formatVersion", 99)
+                .put("futureSetting", "preserve-me").toString()
+            prefs.edit().putString("catalog", origin).commit()
+            val store = ProviderStore(fixture)
+            store.save(one, "local-test-one", null)
+            store.save(two, "local-test-two", null)
+            store.configure(Mode.Image, RemoteModel(two.id, model.id), mapOf("quality" to "High"))
+            val prepared = store.prepareImageGeneration("scene")
+            assertEquals("https://second.example/v1/images/generations", prepared.url)
+            assertEquals("Bearer local-test-two", prepared.headers["Authorization"])
+            assertEquals("application/json", prepared.headers["Accept"])
+            assertEquals(origin, prefs.getString("catalog", null))
+            assertTrue(prefs.all.values.none { value -> value.toString().contains("local-test-") })
+            val restored = ProviderStore(fixture)
+            assertEquals(RemoteModel(two.id, model.id), restored.catalog.value.selectedEntry(Mode.Image)?.route)
+            assertEquals("", restored.sessionKey(two.id))
+            assertTrue(runCatching { restored.prepareImageGeneration("scene") }.isFailure)
+        } finally {
+            app.deleteSharedPreferences(file)
+        }
     }
 
     @Test fun loadsPreProfileCatalogAndRoundTripsNewSettingsWithoutHeaderValues() {

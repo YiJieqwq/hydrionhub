@@ -13,7 +13,8 @@ internal class ProviderNavigation : ViewModel() {
     fun open(provider: Provider, store: ProviderStore) {
         val catalog = store.catalog.value
         edit = ProviderDraft(provider, catalog.providers.any { it.id == provider.id },
-            catalog.defaults, store.sessionKey(provider.id))
+            catalog.defaults.filterValues { it.providerId == provider.id }.mapValues { it.value.modelId },
+            store.sessionKey(provider.id))
     }
 }
 

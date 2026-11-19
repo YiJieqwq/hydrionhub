@@ -1,6 +1,7 @@
 package io.hydrion.hub.provider
 
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.model.RemoteModel
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -8,7 +9,7 @@ class ModelCatalogTest {
     @Test fun parametersOnlyIncludeDeclaredChoices() {
         val model = ProviderModel("m", "任意名称", listOf(Capability("custom", "风格", listOf("墨色", "水彩"))))
         val provider = Provider("p", Mode.Image, "供应商", "custom", "", listOf(model))
-        val catalog = ModelCatalog(listOf(provider), overrides = mapOf("m" to mapOf("custom" to "已移除", "effort" to "High")))
+        val catalog = ModelCatalog(listOf(provider), overrides = mapOf(RemoteModel("p", "m") to mapOf("custom" to "已移除", "effort" to "High")))
         assertEquals(mapOf("custom" to "墨色"), catalog.selection(Mode.Image).parameters)
         assertFalse(catalog.selection(Mode.Chat).available)
     }
@@ -18,14 +19,14 @@ class ModelCatalogTest {
         val remaining = catalog.providers.map { p ->
             if (p.mode == Mode.Chat) p.copy(models = p.models.drop(1)) else p
         }
-        val next = catalog.copy(providers = remaining, active = mapOf(Mode.Chat to "demo-reason")).normalized()
+        val next = catalog.copy(providers = remaining, active = mapOf(Mode.Chat to RemoteModel("demo-chat", "demo-reason"))).normalized()
         assertEquals("Hydrion Mini", next.selection(Mode.Chat).label)
         assertEquals(mapOf(CONTEXT_WINDOW_PARAMETER to "128000"), next.selection(Mode.Chat).parameters)
         assertEquals(catalog.selection(Mode.Image), next.selection(Mode.Image))
     }
 
     @Test fun disablingProviderFallsBackAndReenablingRestoresItsPreferredModel() {
-        val original = demoCatalog().copy(active = mapOf(Mode.Chat to "demo-quick"))
+        val original = demoCatalog().copy(active = mapOf(Mode.Chat to RemoteModel("demo-chat", "demo-quick")))
         val fallback = Provider("other", Mode.Chat, "备用", "local", "",
             listOf(ProviderModel("other-chat", "备用模型")))
         val disabled = original.copy(providers = original.providers.map {
@@ -38,6 +39,48 @@ class ModelCatalogTest {
         assertEquals(original.selection(Mode.Image), disabled.selection(Mode.Image))
         val restored = disabled.copy(providers = original.providers + fallback).normalized()
         assertEquals("Hydrion Mini", restored.selection(Mode.Chat).label)
+    }
+
+    @Test fun sameModelIdKeepsSelectionDefaultsAndCapabilitiesScopedToItsProvider() {
+        val a = ProviderModel("shared", "Shared", listOf(Capability("style", "Style", listOf("A1", "A2"))))
+        val b = a.copy(capabilities = listOf(Capability("style", "Style", listOf("B1", "B2"))))
+        val first = Provider("a", Mode.Chat, "Same", "custom", "", listOf(a))
+        val second = first.copy(id = "b", models = listOf(b))
+        val routeA = RemoteModel(first.id, a.id)
+        val routeB = RemoteModel(second.id, b.id)
+        val catalog = ModelCatalog(listOf(first, second), defaults = mapOf(Mode.Chat to routeA),
+            active = mapOf(Mode.Chat to routeB), overrides = mapOf(routeA to mapOf("style" to "A2"),
+                routeB to mapOf("style" to "B2"))).normalized()
+        assertEquals(second.id, catalog.selectedEntry(Mode.Chat)?.second?.id)
+        assertEquals("B2", catalog.selection(Mode.Chat).parameters["style"])
+        val disabled = catalog.copy(providers = listOf(second.copy(models = listOf(b.copy(enabled = false))), first)).normalized()
+        assertEquals(routeA, disabled.selectedEntry(Mode.Chat)?.route)
+        assertEquals("A2", disabled.selection(Mode.Chat).parameters["style"])
+        assertEquals(routeB, disabled.active[Mode.Chat])
+        assertEquals(catalog.overrides, disabled.overrides)
+        val disabledOwner = second.copy(enabled = false)
+        assertEquals(routeA, disabled.withProvider(disabledOwner, mapOf(Mode.Chat to b.id)).defaults[Mode.Chat])
+        val restored = disabled.copy(providers = listOf(second, first)).normalized()
+        assertEquals(routeB, restored.selectedEntry(Mode.Chat)?.route)
+        assertEquals(routeA, restored.defaultEntry(Mode.Chat)?.route)
+        val changedDefault = restored.withProvider(second, mapOf(Mode.Chat to b.id))
+        assertEquals(routeB, changedDefault.defaults[Mode.Chat])
+        assertNull(changedDefault.active[Mode.Chat])
+        assertEquals("B2", changedDefault.selection(Mode.Chat).parameters["style"])
+    }
+
+    @Test fun bothModesRequireAMatchingProviderAndUsableCapabilities() {
+        val crossChat = ProviderModel("chat", "Chat", profile = ModelProfile(type = ModelType.Chat))
+        val crossImage = ProviderModel("image", "Image", profile = ModelProfile(type = ModelType.Image))
+        val mixed = listOf(Provider("img", Mode.Image, "I", "OpenAI Images", "", listOf(crossChat)),
+            Provider("chat", Mode.Chat, "C", "local", "", listOf(crossImage)))
+        val catalog = ModelCatalog(mixed)
+        assertTrue(catalog.entries(Mode.Image).isEmpty())
+        assertTrue(catalog.entries(Mode.Chat).isEmpty())
+        assertEquals(2, catalog.normalized().providers.sumOf { it.models.size })
+        val malformed = crossChat.copy(capabilities = listOf(Capability("", "", listOf("x")),
+            Capability("style", "Style", listOf("", "A", "A", "B")), Capability("style", "Dup", listOf("C"))))
+        assertEquals(listOf(Capability("style", "Style", listOf("A", "B"))), malformed.configureCapabilities())
     }
 
     @Test fun changingImageSizeKeepsSupportedAspectInSync() {

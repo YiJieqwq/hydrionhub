@@ -1,6 +1,7 @@
 package io.hydrion.hub.provider
 
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.model.RemoteModel
 import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.Draft
 import org.junit.Assert.*
@@ -17,10 +18,10 @@ class ModelProfileTest {
     @Test fun onlyModelsFromAnImageProviderCanGenerateImages() {
         val misplaced = image.copy(id = "misplaced")
         val catalog = ModelCatalog(listOf(mixed.copy(models = listOf(legacy, misplaced, embed)), imageProvider),
-            defaults = mapOf(Mode.Image to misplaced.id), active = mapOf(Mode.Image to misplaced.id)).normalized()
+            defaults = mapOf(Mode.Image to RemoteModel(mixed.id, misplaced.id)), active = mapOf(Mode.Image to RemoteModel(mixed.id, misplaced.id))).normalized()
         assertEquals(listOf(legacy), catalog.models(Mode.Chat))
         assertEquals(listOf(image to imageProvider), catalog.entries(Mode.Image))
-        assertEquals(image.id, catalog.defaults[Mode.Image])
+        assertEquals(RemoteModel(imageProvider.id, image.id), catalog.defaults[Mode.Image])
         assertNull(catalog.active[Mode.Image])
         assertEquals("render-v1", catalog.selection(Mode.Image).parameters["model"])
         assertEquals("Paint", catalog.selection(Mode.Image).label)
@@ -29,7 +30,7 @@ class ModelProfileTest {
     @Test fun changingTypePrunesStaleSelectionAndCannotReplaceAnotherModesDefault() {
         val other = ProviderModel("other", "Other")
         val start = ModelCatalog(listOf(mixed.copy(models = listOf(legacy, other)), imageProvider),
-            defaults = mapOf(Mode.Chat to legacy.id, Mode.Image to image.id), active = mapOf(Mode.Chat to legacy.id))
+            defaults = mapOf(Mode.Chat to RemoteModel(mixed.id, legacy.id), Mode.Image to RemoteModel(imageProvider.id, image.id)), active = mapOf(Mode.Chat to RemoteModel(mixed.id, legacy.id)))
         val switched = legacy.copy(profile = ModelProfile(type = ModelType.Image))
         val changed = mixed.copy(models = listOf(switched, embed, other))
         val next = start.withProvider(changed, mapOf(Mode.Chat to switched.id))
@@ -37,7 +38,7 @@ class ModelProfileTest {
         assertEquals(image, next.defaultModel(Mode.Image))
         assertNull(next.active[Mode.Chat])
         val preferred = next.withProvider(changed, mapOf(Mode.Image to switched.id))
-        assertEquals(image.id, preferred.defaults[Mode.Image])
+        assertEquals(RemoteModel(imageProvider.id, image.id), preferred.defaults[Mode.Image])
         assertEquals(image, preferred.defaultModel(Mode.Image))
         assertEquals(other, preferred.defaultModel(Mode.Chat))
         assertEquals(preferred.defaults, preferred.withProvider(changed, mapOf(Mode.Chat to embed.id)).defaults)
@@ -74,7 +75,7 @@ class ModelProfileTest {
 
     @Test fun missingOrDisabledImageProviderReportsConfigurationError() {
         for (providers in listOf(listOf(mixed), listOf(mixed, imageProvider.copy(enabled = false)))) {
-            val catalog = ModelCatalog(providers, active = mapOf(Mode.Image to image.id))
+            val catalog = ModelCatalog(providers, active = mapOf(Mode.Image to RemoteModel(imageProvider.id, image.id)))
             assertFalse(catalog.selection(Mode.Image).available)
             assertEquals(IMAGE_MODEL_REQUIRED, runCatching { catalog.imageRequest("画一张图") }.exceptionOrNull()?.message)
         }

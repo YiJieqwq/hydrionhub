@@ -17,6 +17,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.model.RemoteModel
 
 @Composable
 fun modelLabel(store: ProviderStore, mode: Mode): String {
@@ -28,11 +29,11 @@ fun modelLabel(store: ProviderStore, mode: Mode): String {
 @Composable
 fun ConfigureSheet(store: ProviderStore, mode: Mode, onDismiss: () -> Unit) {
     val catalog by store.catalog.collectAsState()
-    val models = remember(catalog, mode) { catalog.entries(mode).map { (model, provider) -> model to provider.name } }
-    var id by remember(mode, catalog) { mutableStateOf(catalog.selectedModel(mode)?.id) }
-    val model = models.firstOrNull { it.first.id == id }?.first
-    var edits by remember(mode, catalog) { mutableStateOf(emptyMap<String, Map<String, String>>()) }
-    val values = model?.let { edits[it.id] ?: catalog.parameters(it) }.orEmpty()
+    val models = remember(catalog, mode) { catalog.entries(mode) }
+    var route by remember(mode, catalog) { mutableStateOf(catalog.selectedEntry(mode)?.route) }
+    val entry = models.firstOrNull { it.route == route }
+    var edits by remember(mode, catalog) { mutableStateOf(emptyMap<RemoteModel, Map<String, String>>()) }
+    val values = entry?.let { edits[it.route] ?: catalog.parameters(it.first, it.second) }.orEmpty()
     ModalBottomSheet(onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface,
@@ -43,24 +44,25 @@ fun ConfigureSheet(store: ProviderStore, mode: Mode, onDismiss: () -> Unit) {
                 Text("Configure", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
             }
-            if (model == null) item { Text("请在设置中启用供应商并添加模型。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (entry == null) item { Text("请在设置中启用供应商并添加模型。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             else {
+                val model = entry.first
                 item {
-                    ChoiceRow("Model", model.name, models.map { (m, provider) -> m.id to (m.name + " · " + provider) }, model.id) {
-                        id = it
+                    ChoiceRow("Model", model.name, models.map { it.route to (it.first.name + " · " + it.second.name) }, entry.route) {
+                        route = it
                     }
                 }
                 items(model.configureCapabilities(), key = { it.key }) { cap ->
                     val current = values[cap.key].orEmpty()
                     ChoiceRow(cap.label, current, cap.choices.map { it to it }, current) { choice ->
-                        edits = edits + (model.id to model.choose(values, cap.key, choice))
+                        edits = edits + (entry.route to model.choose(values, cap.key, choice))
                     }
                 }
                 item {
                     TextButton(onClick = {
-                        catalog.defaultModel(mode)?.let { default ->
-                            id = default.id
-                            edits = edits + (default.id to catalog.parameters(default, emptyMap()))
+                        catalog.defaultEntry(mode)?.let { default ->
+                            route = default.route
+                            edits = edits + (default.route to catalog.parameters(default.first, emptyMap()))
                         }
                     }) {
                         Text("Reset to default", color = MaterialTheme.colorScheme.primary)
@@ -69,7 +71,7 @@ fun ConfigureSheet(store: ProviderStore, mode: Mode, onDismiss: () -> Unit) {
             }
             item {
                 Button(onClick = {
-                    if (model != null) store.configure(mode, model.id, values)
+                    if (entry != null) store.configure(mode, entry.route, values)
                     onDismiss()
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onSurface,
@@ -80,7 +82,7 @@ fun ConfigureSheet(store: ProviderStore, mode: Mode, onDismiss: () -> Unit) {
 }
 
 @Composable
-internal fun ChoiceRow(label: String, value: String, options: List<Pair<String, String>>, selected: String, onPick: (String) -> Unit) {
+internal fun <T> ChoiceRow(label: String, value: String, options: List<Pair<T, String>>, selected: T, onPick: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant,

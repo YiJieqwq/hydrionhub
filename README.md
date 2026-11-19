@@ -20,6 +20,10 @@ HydrionHub 是用 Kotlin 和 Jetpack Compose 编写的 Android 多模型客户�
 
 OpenAI 的 Base URL 可填 `https://api.openai.com/v1`，DeepSeek 可填 `https://api.deepseek.com`。三种协议都使用本机保存的可见历史。WebSocket 每轮新建连接，断线保留已收到的内容，由用户决定是否重试。手动重试沿用原供应商、模型和协议。服务端报告的输入、输出、总用量以及可用的缓存和推理计数分别保存，缺失项保持未知。
 
+默认模型、当前选择和参数按供应商 ID 与模型 ID 一起保存。升级旧配置时，同名模型按旧选择器的顺序匹配一次。内置 DeepSeek 使用 Responses HTTP。若要用 DeepSeek 的 Chat Completions，可以另建聊天供应商，使用同一官方地址并在该供应商下填写 API Key。
+
+图像模式和聊天中的模拟生图都使用单独选择的图像模型。后端的 `prepareImageGeneration` 可以从显式配置的 `OpenAI Images` 供应商准备 `/images/generations` 请求，校验模型、提示词、张数、尺寸和质量。现有图片入口继续生成本地示例图。
+
 ## 运行
 
 需要 JDK 17、Android SDK Platform 35 和 Android SDK Build-Tools 34.0.0。安装目标为 Android 8.0（API 26）及以上。

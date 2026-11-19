@@ -1,6 +1,7 @@
 package io.hydrion.hub.provider
 
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.model.RemoteModel
 
 data class Capability(val key: String, val label: String, val choices: List<String>)
 
@@ -8,7 +9,8 @@ data class ProviderModel(
     val id: String,
     val name: String,
     val capabilities: List<Capability> = emptyList(),
-    val profile: ModelProfile = ModelProfile()
+    val profile: ModelProfile = ModelProfile(),
+    val enabled: Boolean = true
 )
 
 data class Provider(
@@ -29,35 +31,50 @@ data class ModelSelection(
 )
 
 private fun ProviderModel.selectableMode(provider: Provider): Mode? =
-    typeFor(provider.mode).mode?.takeIf { it != Mode.Image || provider.mode == Mode.Image }
+    typeFor(provider.mode).mode?.takeIf { it == provider.mode }
+
+internal val Pair<ProviderModel, Provider>.route: RemoteModel
+    get() = RemoteModel(second.id, first.id)
 
 data class ModelCatalog(
     val providers: List<Provider>,
-    val defaults: Map<Mode, String> = emptyMap(),
-    val active: Map<Mode, String> = emptyMap(),
-    val overrides: Map<String, Map<String, String>> = emptyMap()
+    val defaults: Map<Mode, RemoteModel> = emptyMap(),
+    val active: Map<Mode, RemoteModel> = emptyMap(),
+    val overrides: Map<RemoteModel, Map<String, String>> = emptyMap()
 ) {
     fun entries(mode: Mode): List<Pair<ProviderModel, Provider>> =
-        providers.filter { it.enabled }.flatMap { provider ->
-            provider.models.filter { it.selectableMode(provider) == mode }.map { it to provider }
+        providers.filter { it.enabled && it.mode == mode }.flatMap { provider ->
+            provider.models.filter { it.enabled && it.selectableMode(provider) == mode }.map { it to provider }
         }
 
     fun models(mode: Mode): List<ProviderModel> = entries(mode).map { it.first }
 
-    fun defaultModel(mode: Mode): ProviderModel? {
-        val options = models(mode)
-        return options.find { it.id == defaults[mode] } ?: options.firstOrNull()
+    fun defaultEntry(mode: Mode): Pair<ProviderModel, Provider>? {
+        val available = entries(mode)
+        return available.find { it.route == defaults[mode] } ?: available.firstOrNull()
     }
+
+    fun defaultModel(mode: Mode): ProviderModel? = defaultEntry(mode)?.first
 
     fun selectedEntry(mode: Mode): Pair<ProviderModel, Provider>? {
         val available = entries(mode)
-        return available.find { it.first.id == active[mode] } ?: available.find { it.first.id == defaults[mode] }
+        return available.find { it.route == active[mode] } ?: available.find { it.route == defaults[mode] }
             ?: available.firstOrNull()
     }
 
     fun selectedModel(mode: Mode): ProviderModel? = selectedEntry(mode)?.first
 
-    fun parameters(model: ProviderModel, values: Map<String, String> = overrides[model.id].orEmpty()): Map<String, String> =
+    internal fun ownerOf(model: ProviderModel): Provider? =
+        providers.filter { p -> p.models.any { it === model } }.singleOrNull()
+            ?: providers.filter { p -> p.models.any { it.id == model.id } }.singleOrNull()
+
+    fun parameters(model: ProviderModel): Map<String, String> =
+        ownerOf(model)?.let { parameters(model, it) } ?: parameters(model, emptyMap())
+
+    fun parameters(model: ProviderModel, provider: Provider): Map<String, String> =
+        parameters(model, overrides[RemoteModel(provider.id, model.id)].orEmpty())
+
+    fun parameters(model: ProviderModel, values: Map<String, String>): Map<String, String> =
         model.configureCapabilities().mapNotNull { cap ->
             cap.choices.firstOrNull()?.let { fallback ->
                 cap.key to (values[cap.key]?.takeIf { it in cap.choices } ?: fallback)
@@ -65,8 +82,8 @@ data class ModelCatalog(
         }.toMap()
 
     fun selection(mode: Mode): ModelSelection {
-        val model = selectedModel(mode) ?: return ModelSelection("无可用模型", emptyMap(), false)
-        return ModelSelection(model.name, model.requestParameters(parameters(model), mode))
+        val (model, owner) = selectedEntry(mode) ?: return ModelSelection("无可用模型", emptyMap(), false)
+        return ModelSelection(model.name, model.requestParameters(parameters(model, owner), mode))
     }
 
     fun withProvider(provider: Provider, requestedDefaults: Map<Mode, String>): ModelCatalog {
@@ -74,25 +91,28 @@ data class ModelCatalog(
             if (it.id == provider.id) provider else it
         } else providers + provider
         val valid = requestedDefaults.filter { (mode, id) ->
-            provider.models.any { it.id == id && it.selectableMode(provider) == mode }
-        }
-        val changed = valid.filter { (mode, id) -> defaults[mode] != id }.keys
+            provider.models.any { it.id == id && it.selectableMode(provider) == mode &&
+                (provider.enabled && it.enabled || defaults[mode] == RemoteModel(provider.id, id)) }
+        }.mapValues { (_, id) -> RemoteModel(provider.id, id) }
+        val changed = valid.filter { (mode, route) -> defaults[mode] != route }.keys
         return copy(providers = updated, defaults = defaults + valid, active = active - changed).normalized()
     }
 
     fun normalized(): ModelCatalog {
-        val validModels = providers.flatMap { it.models }
-        // A disabled provider keeps its preferences for the next time it is enabled.
-        val declared = providers.flatMap { provider ->
-            provider.models.mapNotNull { model -> model.selectableMode(provider)?.let { it to model } }
-        }.groupBy({ it.first }, { it.second })
-        val validDefaults = declared.mapNotNull { (mode, entries) ->
-            val saved = entries.find { it.id == defaults[mode] }
-            (saved ?: defaultModel(mode))?.let { mode to it.id }
+        // Disabled providers keep their route and parameter preferences until re-enabled.
+        val declared = providers.flatMap { p -> p.models.map { m -> RemoteModel(p.id, m.id) to (m to p) } }.toMap()
+        fun belongs(mode: Mode, route: RemoteModel) = declared[route]?.let { (m, p) ->
+            m.selectableMode(p) == mode
+        } == true
+        val validDefaults = Mode.entries.mapNotNull { mode ->
+            val route = defaults[mode]?.takeIf { belongs(mode, it) } ?: entries(mode).firstOrNull()?.route
+            route?.let { mode to it }
         }.toMap()
-        val validActive = active.filter { (mode, id) -> declared[mode].orEmpty().any { it.id == id } }
-        val validOverrides = validModels.filter { it.id in overrides }.associate { it.id to parameters(it) }
-        return copy(defaults = validDefaults, active = validActive, overrides = validOverrides)
+        val validOverrides = overrides.mapNotNull { (route, values) ->
+            declared[route]?.let { (m, _) -> route to parameters(m, values) }
+        }.toMap()
+        return copy(defaults = validDefaults, active = active.filter { (mode, route) -> belongs(mode, route) },
+            overrides = validOverrides)
     }
 }
 

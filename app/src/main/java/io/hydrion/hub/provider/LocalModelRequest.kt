@@ -16,7 +16,7 @@ internal const val IMAGE_MODEL_REQUIRED = "没有可用的图像生成模型。�
 
 internal fun ModelCatalog.imageRequest(prompt: String, parentImageLimit: Int? = null): LocalModelRequest {
     val (model, provider) = requireNotNull(selectedEntry(Mode.Image)) { IMAGE_MODEL_REQUIRED }
-    return localRequest(model, prompt, provider.requestBody, parentImageLimit = parentImageLimit)
+    return localRequest(model, prompt, provider.requestBody, parentImageLimit = parentImageLimit, provider = provider)
 }
 
 /** Assemble the same local input for preview and simulation. Only safe scalar fields reach history. */
@@ -25,11 +25,14 @@ internal fun ModelCatalog.localRequest(
     prompt: String,
     imageTemplate: String? = null,
     requests: Int = 1,
-    parentImageLimit: Int? = null
+    parentImageLimit: Int? = null,
+    provider: Provider? = ownerOf(model)
 ): LocalModelRequest {
+    require(requests > 0) { "请求次数必须是正整数。" }
     require(model.profile.budget?.let { requests <= it } != false) { "本次发送需要 $requests 次模拟请求，超过模型的请求预算。" }
-    val mode = model.profile.type?.mode ?: providers.firstOrNull { p -> p.models.any { it.id == model.id } }?.mode
-    val options = model.requestParameters(parameters(model), mode)
+    val mode = model.profile.type?.mode ?: provider?.mode
+    val values = provider?.let { parameters(model, it) } ?: parameters(model, emptyMap())
+    val options = model.requestParameters(values, mode)
     val sample = RequestTemplate.sample(model, parameters = options, prompt = prompt)
     val body = if (imageTemplate == null) {
         JSONObject(options - CONTEXT_WINDOW_PARAMETER).put("model", model.externalModelId).put("prompt", prompt)

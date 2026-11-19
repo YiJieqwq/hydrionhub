@@ -54,10 +54,14 @@ internal fun ProviderModel.inputIssue(draft: Draft): String? {
 
 /** The old Effort capability remains the source of truth for catalogs without a type declaration. */
 internal fun ProviderModel.configureCapabilities(): List<Capability> {
-    if (profile.type == null) return capabilities
-    val rest = capabilities.filterNot { it.key == "effort" }
+    val available = capabilities.filter { it.key.isNotBlank() }.mapNotNull { capability ->
+        val choices = capability.choices.filter(String::isNotBlank).distinct()
+        if (choices.isEmpty()) null else capability.copy(choices = choices)
+    }.distinctBy { it.key }
+    if (profile.type == null) return available
+    val rest = available.filterNot { it.key == "effort" }
     if (profile.type != ModelType.Chat || "reasoning" !in profile.abilities) return rest
-    val levels = profile.levels.ifEmpty { capabilities.find { it.key == "effort" }?.choices.orEmpty() }
+    val levels = profile.levels.filter(String::isNotBlank).ifEmpty { available.find { it.key == "effort" }?.choices.orEmpty() }
     val choices = buildList {
         add("Auto")
         addAll(levels.filterNot { it == "Auto" || it == "Off" })
