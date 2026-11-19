@@ -42,8 +42,12 @@ class RemoteHistoryTest {
                 image.messages.first().imageInvocation)
             assertEquals("图片生成 · 模型内置图片生成", image.messages.last().tool)
             assertEquals(listOf("old-result"), image.messages.last().imageKeys)
-            history.save(loaded)
-            assertEquals(loaded, HistoryFile(context).load())
+            val invocation = ImageInvocation("Illustrator", mapOf("model" to "gpt-image-2", "n" to "1"),
+                RemoteModel("official-images", "illustrator"))
+            val updated = loaded.copy(history = listOf(image.copy(messages = image.messages +
+                Message(role = Role.Assistant, imageInvocation = invocation, imageKeys = listOf("saved-result")))))
+            history.save(updated)
+            assertEquals(updated, HistoryFile(context).load())
         } finally {
             directory.deleteRecursively()
         }

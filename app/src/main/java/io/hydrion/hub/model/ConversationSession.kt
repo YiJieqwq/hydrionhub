@@ -153,7 +153,7 @@ internal class ConversationSession(
             imageInvocation = image?.copy(parameters = image.parameters.toMap()))
         val response = Message(role = Role.Assistant, status = Generation.Sending, prompt = prompt,
             model = image?.model ?: model, parameters = user.imageInvocation?.parameters ?: user.parameters,
-            replyTo = user.id, createdAt = now(), remoteModel = remoteModel,
+            replyTo = user.id, createdAt = now(), remoteModel = remoteModel, imageInvocation = user.imageInvocation,
             attachments = draft.attachments, tool = if (remoteModel == null) selectedTool(s.current.mode, draft) else null)
         val title = if (!s.modeLocked && s.current.title == "新会话")
             prompt.ifBlank { draft.attachments.first().name }.lineSequence().first().take(32) else s.current.title
@@ -229,7 +229,8 @@ internal class ConversationSession(
         save()
     }
 
-    fun regenerate(id: String, resolveImage: (String, Int?) -> ImageInvocation = { _, _ ->
+    fun regenerate(id: String, validateImage: (ImageInvocation, String, List<Attachment>) -> Unit = { _, _, _ -> },
+                   resolveImage: (String, Int?) -> ImageInvocation = { _, _ ->
         throw IllegalArgumentException(IMAGE_MODEL_REQUIRED)
     }) {
         val item = screen.current
@@ -242,7 +243,10 @@ internal class ConversationSession(
         val image = if (needsImage) {
             val parentLimit = if (item.mode == Mode.Chat) user.parameters["image_budget"]?.toIntOrNull() else null
             try {
-                resolveImage(user.text, parentLimit)
+                val previous = original?.imageInvocation ?: user.imageInvocation
+                val invocation = previous?.takeIf { it.remoteModel != null } ?: resolveImage(user.text, parentLimit)
+                validateImage(invocation, user.text, user.attachments)
+                invocation
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -254,7 +258,8 @@ internal class ConversationSession(
             remoteModel = if (image == null) original?.remoteModel ?: user.remoteModel else null,
             model = image?.model ?: original?.model ?: user.model,
             parameters = image?.parameters ?: original?.parameters ?: user.parameters,
-            prompt = user.text, attachments = user.attachments, replyTo = user.id,
+            prompt = user.text, attachments = user.attachments, replyTo = user.id, imageInvocation = image,
+            imageKeys = if (original != null && image?.remoteModel != null && original.imageInvocation == image) original.imageKeys else emptyList(),
             tool = if (image != null && item.mode == Mode.Chat) "图片生成 · $CUSTOM_IMAGE_TOOL" else original?.tool,
             createdAt = now())
         val messages = item.messages.filterNot { it.id == response.id }.toMutableList()

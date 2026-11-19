@@ -10,6 +10,40 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConversationSessionTest {
+    @Test fun retryOfAnOnlineImageUsesItsRecordedRouteAndKeepsThePreviousResultOnFailure() = runBlocking {
+        val saved = ImageInvocation("Studio", mapOf("model" to "gpt-image-2", "n" to "1"), RemoteModel("images", "studio"))
+        val user = Message(role = Role.User, text = "mountain", imageInvocation = saved)
+        val reply = Message(role = Role.Assistant, imageInvocation = saved, imageKeys = listOf("previous"), replyTo = user.id)
+        val conversation = Conversation(mode = Mode.Image, messages = listOf(user, reply))
+        val calls = mutableListOf<ImageInvocation>()
+        val repository = object : GenerationRepository {
+            override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>) =
+                kotlinx.coroutines.flow.flow<Message> {
+                    calls += requireNotNull(request.imageInvocation)
+                    check(retry)
+                    throw java.io.IOException("transfer interrupted")
+                }
+        }
+        val session = ConversationSession(this, repository, {})
+        session.restore(SavedWorkspace(listOf(conversation)))
+        session.openConversation(conversation.id)
+        session.editMessage(user.id, "new mountain")
+        session.regenerate(reply.id, validateImage = { _, _, _ -> error("disabled provider") }) { _, _ ->
+            error("must not use current selection")
+        }
+        assertEquals(reply, session.state.value.current.messages.last())
+        session.regenerate(reply.id, validateImage = { image, prompt, _ ->
+            assertEquals(saved, image)
+            assertEquals("new mountain", prompt)
+        }) { _, _ -> error("must not use current selection") }
+        yield()
+        assertEquals(listOf(saved), calls)
+        val failed = session.state.value.current.messages.last()
+        assertEquals(Generation.Error, failed.status)
+        assertEquals(listOf("previous"), failed.imageKeys)
+        assertEquals("transfer interrupted", failed.error)
+    }
+
     @Test fun environmentStaysWithItsConversationThroughSwitchSaveAndUnbind() = runBlocking {
         val session = ConversationSession(this, FakeGenerationRepository {}, {})
         val original = Conversation()

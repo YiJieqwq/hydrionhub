@@ -21,7 +21,11 @@ data class Attachment(
     val height: Int? = null
 )
 
-data class ImageInvocation(val model: String, val parameters: Map<String, String>)
+data class ImageInvocation(
+    val model: String,
+    val parameters: Map<String, String>,
+    val remoteModel: RemoteModel? = null
+)
 
 internal const val CUSTOM_IMAGE_TOOL = "自定义图片生成"
 
