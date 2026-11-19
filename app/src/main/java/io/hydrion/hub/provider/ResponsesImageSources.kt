@@ -20,7 +20,7 @@ private const val MAX_IMAGE_BYTES = 32 * 1024 * 1024
 private const val MAX_INLINE_SIZE = ((MAX_IMAGE_BYTES + 2) / 3) * 4
 internal const val MAX_DEEPSEEK_IMAGES = 600
 internal val Provider.responsesImageLimit: Int
-    get() = if (id == DEEPSEEK_PROVIDER_ID) MAX_DEEPSEEK_IMAGES else 1500
+    get() = if (usesDeepSeekDialect()) MAX_DEEPSEEK_IMAGES else 1500
 
 private fun Attachment.imageType(): String {
     if (imageKey != null) return "image/png"

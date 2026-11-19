@@ -75,4 +75,23 @@ class DeepSeekImageSourcesTest {
             assertTrue(unsupported, runCatching { body(unsupported) }.exceptionOrNull() is IllegalArgumentException)
         }
     }
+
+    @Test fun chatCompletionsProtectsMessagesAndUsageFromCustomFields() {
+        val provider = deepSeekProvider.copy(id = "configured-chat", baseUrl = "https://example.test/v1",
+            protocol = ChatProtocol.ChatCompletionsHttp.label)
+        val model = provider.models.first()
+        val catalog = ModelCatalog(listOf(provider))
+        val transcript = listOf(Message(role = Role.User, text = "current message"))
+        fun body(template: String) = catalog.chatCompletionsRequest(provider,
+            model.copy(profile = model.profile.copy(requestBody = template)), transcript, "fixture").body
+        val result = body("""{"messages":[],"stream":false,"store":true,"stream_options":{"include_usage":false}}""")
+        assertEquals("current message", result.getJSONArray("messages").getJSONObject(0).getString("content"))
+        assertTrue(result.getBoolean("stream"))
+        assertFalse(result.getBoolean("store"))
+        assertTrue(result.getJSONObject("stream_options").getBoolean("include_usage"))
+        for (unsupported in listOf("""{"tools":[{"type":"function"}]}""", """{"web_search_options":{}}""",
+            """{"functions":[{"name":"hidden"}]}""", """{"background":true}""", """{"modalities":["audio"]}""")) {
+            assertTrue(unsupported, runCatching { body(unsupported) }.exceptionOrNull() is IllegalArgumentException)
+        }
+    }
 }

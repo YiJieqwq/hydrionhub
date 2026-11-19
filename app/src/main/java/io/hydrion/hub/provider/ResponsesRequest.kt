@@ -7,45 +7,6 @@ import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.Role
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.URI
-
-internal fun Provider.usesResponsesApi(): Boolean = mode == Mode.Chat && id != "demo-chat" &&
-    (id == DEEPSEEK_PROVIDER_ID || protocol.trim().equals("OpenAI Responses", ignoreCase = true))
-
-internal fun Provider.needsOpenAiResponsesProtocol(): Boolean {
-    if (mode != Mode.Chat || id == "demo-chat" || usesResponsesApi()) return false
-    val host = runCatching { URI(baseUrl.trim()).host?.trimEnd('.') }.getOrNull()
-    return host.equals("api.openai.com", ignoreCase = true)
-}
-
-internal fun Provider.responsesEndpoint(): String {
-    require(usesResponsesApi()) { "请选择使用 OpenAI Responses 协议的聊天模型供应商。" }
-    val deepSeek = id == DEEPSEEK_PROVIDER_ID
-    val base = baseUrl.trim().ifEmpty { if (deepSeek) DEEPSEEK_BASE_URL else "" }
-    require(base.isNotEmpty()) { "请填写该 Responses 供应商的 HTTPS Base URL。" }
-    val uri = runCatching { URI(base) }.getOrNull()
-    require(uri != null && uri.scheme.equals("https", true) && uri.host != null &&
-        uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null &&
-        (uri.port == -1 || uri.port in 1..65535) && uri.path.split('/').none { it == "." || it == ".." }) {
-        "服务地址须是有效的 HTTPS 地址，且不含凭据、查询参数或片段。"
-    }
-    val host = uri.host.trimEnd('.')
-    require(!deepSeek || !host.equals("api.openai.com", true)) {
-        "请为 OpenAI 官方服务单独配置 Responses 供应商和 API Key。"
-    }
-    val path = uri.rawPath.orEmpty().trimEnd('/').removeSuffix("/responses").removeSuffix("/chat/completions").trimEnd('/')
-    val prefix = when {
-        host.equals("api.deepseek.com", true) && path == "/v1" -> ""
-        host.equals("api.openai.com", true) && path.isEmpty() -> "/v1"
-        else -> path
-    }
-    return "https://${uri.rawAuthority}$prefix/responses"
-}
-
-internal fun Provider.deepSeekEndpoint(): String {
-    require(id == DEEPSEEK_PROVIDER_ID) { "请选择 DeepSeek 聊天模型供应商。" }
-    return responsesEndpoint()
-}
 
 /** The caller supplies the visible transcript through the user turn being answered, including on retry. */
 internal fun ModelCatalog.responsesRequest(
@@ -56,15 +17,23 @@ internal fun ModelCatalog.responsesRequest(
     selected: Map<String, String> = parameters(model),
     attachmentData: (Attachment) -> String = { it.uri.orEmpty() }
 ): LocalModelRequest {
-    val url = provider.responsesEndpoint()
+    val protocol = requireNotNull(provider.chatProtocol()) { "请选择 Responses 协议。" }
+    require(protocol == ChatProtocol.ResponsesHttp || protocol == ChatProtocol.ResponsesWebSocket) {
+        "请选择 Responses 协议。"
+    }
+    val url = provider.chatEndpoint()
     require(model.typeFor(provider.mode) == ModelType.Chat) { "请选择聊天模型。" }
     require((model.profile.budget ?: 1) > 0) { "当前模型的请求预算不足。" }
-    val deepSeek = provider.id == DEEPSEEK_PROVIDER_ID
-    val headers = responsesHeaders(model.profile.headers, apiKey, if (deepSeek) "DeepSeek" else "Responses")
+    val deepSeek = provider.usesDeepSeekDialect()
+    val headers = chatHeaders(model.profile.headers, apiKey, if (deepSeek) "DeepSeek" else "Responses")
     val options = model.requestParameters(selected, Mode.Chat)
     val body = model.responsesBody(options, deepSeek)
-    body.put("model", model.externalModelId).put("stream", true)
-    body.put("input", responsesInput(history.responsesHistory(), model, provider, attachmentData))
+    body.put("model", model.externalModelId)
+    if (protocol == ChatProtocol.ResponsesWebSocket) {
+        body.remove("stream")
+        body.remove("background")
+    } else body.put("stream", true)
+    body.put("input", chatTranscript(history.responsesHistory(), model, provider, protocol, attachmentData))
     return LocalModelRequest(model.name, headers, body, options, url)
 }
 
@@ -86,11 +55,18 @@ internal fun List<Message>.responsesHistory(): List<Message> {
     return filter { it.id !in excluded || it == current }
 }
 
-private fun responsesInput(
-    history: List<Message>, model: ProviderModel, provider: Provider, attachmentData: (Attachment) -> String
+internal fun chatTranscript(
+    history: List<Message>, model: ProviderModel, provider: Provider, protocol: ChatProtocol,
+    attachmentData: (Attachment) -> String
 ): JSONArray {
-    val deepSeek = provider.id == DEEPSEEK_PROVIDER_ID
+    val deepSeek = provider.usesDeepSeekDialect()
+    val completions = protocol == ChatProtocol.ChatCompletionsHttp
     val input = JSONArray()
+    fun addMessage(role: String, content: Any) {
+        val item = JSONObject().put("role", role).put("content", content)
+        if (!completions) item.put("type", "message")
+        input.put(item)
+    }
     val lastReply = history.lastOrNull { it.role == Role.Assistant }
     var remaining = responsesImageBudget()
     var imageCount = 0
@@ -98,18 +74,19 @@ private fun responsesInput(
         if (message.role == Role.Assistant) {
             // Assistant.attachments mirrors the user's input for editing and retry. Only imageKeys are generated images.
             require(message.imageKeys.isEmpty() && message.tool.isNullOrBlank()) {
-                "历史消息含有工具结果或生成的图像，当前 Responses 接入无法回放。请新建对话。"
+                "历史消息含有工具结果或生成的图像，当前聊天协议无法回放。请新建对话。"
             }
             val replay = when (model.profile.reasoningReplay) {
                 "none" -> false
                 "last" -> message == lastReply
                 else -> true
             }
-            if (deepSeek && replay && message.remoteModel?.providerId == DEEPSEEK_PROVIDER_ID && message.thought.isNotBlank()) {
+            if (!completions && provider.id == DEEPSEEK_PROVIDER_ID && replay &&
+                message.remoteModel?.providerId == provider.id && message.thought.isNotBlank()) {
                 val parts = JSONArray().put(JSONObject().put("type", "reasoning_text").put("text", message.thought))
                 input.put(JSONObject().put("type", "reasoning").put("content", parts))
             }
-            input.put(JSONObject().put("type", "message").put("role", "assistant").put("content", message.text))
+            addMessage("assistant", message.text)
             continue
         }
         require(message.text.isNotBlank() || message.attachments.isNotEmpty()) { "请输入消息或添加图片。" }
@@ -121,22 +98,27 @@ private fun responsesInput(
                 "当前模型仅支持文本输入，请选择支持图像输入的聊天模型。"
             }
             val parts = JSONArray()
-            if (message.text.isNotBlank()) parts.put(JSONObject().put("type", "input_text").put("text", message.text))
+            if (message.text.isNotBlank()) {
+                parts.put(JSONObject().put("type", if (completions) "text" else "input_text").put("text", message.text))
+            }
             for (file in message.attachments) {
                 val source = attachmentData(file)
                 require(source.length <= remaining) { "图片总量过大，无法组装本轮请求。" }
                 remaining -= source.length
                 validateResponsesImage(file, source, model.profile.imageLinks)
-                parts.put(JSONObject().put("type", "input_image").put("image_url", source).put("detail", "auto"))
+                val part = if (completions) JSONObject().put("type", "image_url")
+                    .put("image_url", JSONObject().put("url", source).put("detail", "auto"))
+                else JSONObject().put("type", "input_image").put("image_url", source).put("detail", "auto")
+                parts.put(part)
             }
             parts
         }
-        input.put(JSONObject().put("type", "message").put("role", "user").put("content", content))
+        addMessage("user", content)
     }
     return input
 }
 
-private fun ProviderModel.responsesBody(options: Map<String, String>, deepSeek: Boolean): JSONObject {
+internal fun ProviderModel.chatBaseBody(deepSeek: Boolean): JSONObject {
     val body = if (profile.requestBody.isBlank()) JSONObject() else {
         JSONObject(RequestTemplate.preview(profile.requestBody, null).getOrElse {
             throw IllegalArgumentException("模型的自定义请求体须为有效的 JSON 对象。")
@@ -144,17 +126,23 @@ private fun ProviderModel.responsesBody(options: Map<String, String>, deepSeek: 
     }
     require(!profile.codeInterpreter && (!body.has("tools") || body.optJSONArray("tools")?.length() == 0) &&
         (!body.has("tool_choice") || body.optString("tool_choice") in setOf("auto", "none"))) {
-        "当前 Responses 接入支持对话与推理，请关闭模型的工具配置。"
+        "当前接入仅支持对话与推理，请关闭模型的工具配置。"
     }
     require(body.isNull("previous_response_id") && body.isNull("conversation")) {
         "当前使用本机会话历史，请移除自定义请求体中的服务端会话参数。"
     }
     require(body.isNull("background") || body.opt("background") == false) { "请关闭后台生成。" }
-    if (!deepSeek) {
-        require(body.isNull("prompt")) { "当前使用本机会话历史，请移除托管提示词。" }
-        body.put("store", false)
+    require(body.isNull("prompt")) { "当前使用本机会话历史，请移除托管提示词。" }
+    if (deepSeek) body.remove("store") else body.put("store", false)
+    if (profile.sampling == "never/strip") {
+        body.remove("temperature")
+        body.remove("top_p")
     }
-    val effort = when (val level = options["effort"]?.lowercase()) {
+    return body
+}
+
+internal fun reasoningEffort(options: Map<String, String>, deepSeek: Boolean): String? =
+    when (val level = options["effort"]?.lowercase()) {
         "auto", null -> if (deepSeek && options["reasoning_enabled"] == "false") "none" else null
         "off", "none" -> "none"
         "minimal" -> if (deepSeek) "low" else "minimal"
@@ -163,21 +151,21 @@ private fun ProviderModel.responsesBody(options: Map<String, String>, deepSeek: 
         "low", "high", "max" -> level
         else -> throw IllegalArgumentException("不支持当前推理档位。")
     }
+
+private fun ProviderModel.responsesBody(options: Map<String, String>, deepSeek: Boolean): JSONObject {
+    val body = chatBaseBody(deepSeek)
+    val effort = reasoningEffort(options, deepSeek)
     val reasoning = body.optJSONObject("reasoning") ?: JSONObject()
     if (effort != null) reasoning.put("effort", effort)
     if (!deepSeek && "reasoning" in profile.abilities && reasoning.optString("effort") != "none" &&
         !reasoning.has("summary")) reasoning.put("summary", "auto")
     if (reasoning.length() > 0) body.put("reasoning", reasoning)
-    if (profile.sampling == "never/strip") {
-        body.remove("temperature")
-        body.remove("top_p")
-    }
     return body
 }
 
 private val reservedHeaders = setOf("host", "content-length", "transfer-encoding", "connection", "upgrade", "proxy-authorization")
 
-private fun responsesHeaders(custom: Map<String, String>, apiKey: String, service: String): Map<String, String> {
+internal fun chatHeaders(custom: Map<String, String>, apiKey: String, service: String): Map<String, String> {
     val headers = mutableMapOf("Content-Type" to "application/json", "Accept" to "text/event-stream")
     for ((name, value) in custom) {
         if (value.isEmpty()) continue // Persisted header names have no values after restarting the app.

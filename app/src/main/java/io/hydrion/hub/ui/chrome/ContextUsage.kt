@@ -12,7 +12,7 @@ import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.provider.contextWindowTokens
 import io.hydrion.hub.provider.defaultContextWindowTokens
 import io.hydrion.hub.provider.externalModelId
-import io.hydrion.hub.provider.usesResponsesApi
+import io.hydrion.hub.provider.chatProtocol
 import java.util.Locale
 
 internal data class ContextUsage(
@@ -40,7 +40,7 @@ internal fun contextUsage(conversation: Conversation, selected: Pair<ProviderMod
     if (conversation.mode == Mode.Image) return ContextUsage(0, window, estimated = true)
 
     val route = selected?.let { (model, provider) -> RemoteModel(provider.id, model.id) } ?: fallback?.remoteModel
-    val expectsReport = selected?.second?.usesResponsesApi() ?: (route != null)
+    val expectsReport = if (selected == null) route != null else selected.second.chatProtocol() != null
     if (expectsReport && route != null) {
         val externalId = selected?.first?.externalModelId
         // A terminal response without counts supersedes older readings for that model.

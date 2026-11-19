@@ -20,30 +20,30 @@ class ResponsesRequestTest {
 
     @Test fun onlyExplicitChatProvidersUseAnIntentionalHttpsDestination() {
         val local = demoCatalog().providers.first()
-        assertTrue(provider.copy(protocol = "OpenAI Compatible").needsOpenAiResponsesProtocol())
-        assertFalse(provider.needsOpenAiResponsesProtocol())
-        assertFalse(local.copy(baseUrl = provider.baseUrl).needsOpenAiResponsesProtocol())
-        assertFalse(provider.copy(protocol = "local", baseUrl = "https://api.openai.com.example.test").needsOpenAiResponsesProtocol())
+        assertNotNull(provider.copy(protocol = "OpenAI Compatible").chatProtocolIssue())
+        assertNull(provider.chatProtocolIssue())
+        assertNull(local.copy(baseUrl = provider.baseUrl).chatProtocolIssue())
+        assertNull(provider.copy(protocol = "local", baseUrl = "https://api.openai.com.example.test").chatProtocolIssue())
         for (offline in listOf(local, local.copy(protocol = provider.protocol, baseUrl = provider.baseUrl),
             provider.copy(protocol = "OpenAI Compatible"), provider.copy(mode = Mode.Image))) {
-            assertFalse(offline.usesResponsesApi())
+            assertNull(offline.chatProtocol())
             assertTrue(runCatching { catalog.responsesRequest(offline, model, listOf(user), "fixture") }.isFailure)
         }
         for (path in listOf("", "/", "/v1/", "/responses/", "/v1/responses", "/v1/chat/completions")) {
             val openAi = provider.copy(baseUrl = "https://api.openai.com$path")
-            assertTrue(openAi.usesResponsesApi())
-            assertEquals("https://api.openai.com/v1/responses", openAi.responsesEndpoint())
+            assertEquals(ChatProtocol.ResponsesHttp, openAi.chatProtocol())
+            assertEquals("https://api.openai.com/v1/responses", openAi.chatEndpoint())
         }
         val proxy = "https://proxy.example.test:8443/tenant/v1"
-        assertEquals("$proxy/responses", provider.copy(baseUrl = proxy).responsesEndpoint())
-        assertEquals("https://api.deepseek.com/responses", deepSeekProvider.copy(baseUrl = "").responsesEndpoint())
+        assertEquals("$proxy/responses", provider.copy(baseUrl = proxy).chatEndpoint())
+        assertEquals("https://api.deepseek.com/responses", deepSeekProvider.copy(baseUrl = "").chatEndpoint())
         assertTrue(runCatching {
             catalog.responsesRequest(deepSeekProvider.copy(baseUrl = "https://API.OPENAI.COM./v1"),
                 deepSeekProvider.models.first(), listOf(user), "deepseek-fixture")
         }.isFailure)
         for (invalid in listOf("", "http://example.test/v1", "https://user@example.test/v1",
             "https://example.test/v1?param=1", "https://example.test/v1#fragment", "https://example.test/v1/../x")) {
-            assertTrue(runCatching { provider.copy(baseUrl = invalid).responsesEndpoint() }.isFailure)
+            assertTrue(runCatching { provider.copy(baseUrl = invalid).chatEndpoint() }.isFailure)
         }
     }
 

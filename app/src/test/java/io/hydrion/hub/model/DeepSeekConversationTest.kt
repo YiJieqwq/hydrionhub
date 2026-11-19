@@ -41,7 +41,7 @@ class DeepSeekConversationTest {
     @Test fun followsUpAndRetriesHistoricalPromptWithItsOriginalModel() = runBlocking {
         val requests = mutableListOf<LocalModelRequest>()
         var catalog = demoCatalog().withDeepSeekPreset().copy(active = mapOf(Mode.Chat to flash.id))
-        val repository = ChatGenerationRepository({ catalog }, { "unit-test-placeholder" }, { _, _ -> emptyMap() }) { request, reply ->
+        val repository = ChatGenerationRepository({ catalog }, { "unit-test-placeholder" }, { _, _ -> emptyMap() }) { _, request, reply ->
             requests += request
             flowOf(reply.copy(text = "answer ${requests.size}", status = Generation.Completed, totalTokens = 45L))
         }
@@ -74,7 +74,7 @@ class DeepSeekConversationTest {
     @Test fun stoppingKeepsPartialOutputAndCancelsTheOriginalStream() = runBlocking {
         val cancelled = CompletableDeferred<Unit>()
         val repository = ChatGenerationRepository({ demoCatalog().withDeepSeekPreset() },
-            { "unit-test-placeholder" }, { _, _ -> emptyMap() }) { _, reply ->
+            { "unit-test-placeholder" }, { _, _ -> emptyMap() }) { _, _, reply ->
             flow {
                 try {
                     emit(reply.copy(text = "partial", thought = "thinking", status = Generation.Generating))
@@ -107,7 +107,7 @@ class DeepSeekConversationTest {
         val repository = ChatGenerationRepository({ catalog }, { id ->
             keys += id
             "fixture-for-$id"
-        }, { _, _ -> emptyMap() }) { prepared, reply ->
+        }, { _, _ -> emptyMap() }) { _, prepared, reply ->
             sent += prepared
             flowOf(reply.copy(text = "received", status = Generation.Completed))
         }
@@ -143,7 +143,7 @@ class DeepSeekConversationTest {
         val errors = mutableListOf<Pair<String, String>>()
         var key = "unit-test-placeholder"
         var calls = 0
-        val repository = ChatGenerationRepository({ demoCatalog().withDeepSeekPreset() }, { key }, { _, _ -> emptyMap() }) { _, reply ->
+        val repository = ChatGenerationRepository({ demoCatalog().withDeepSeekPreset() }, { key }, { _, _ -> emptyMap() }) { _, _, reply ->
             calls++
             flow {
                 emit(reply.copy(text = "partial", status = Generation.Generating))

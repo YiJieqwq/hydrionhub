@@ -8,11 +8,17 @@ HydrionHub 是用 Kotlin 和 Jetpack Compose 编写的 Android 多模型客户�
 
 在线对话按当前会话、供应商和模型取最近一次已结束请求的用量。优先使用接口报告的总数；仅在输入和输出计数都存在时才可相加。用量缺失时显示未知。DeepSeek 的上下文窗口默认是 1,000,000 tokens，可在对应模型的「编辑模型 → 基础 → 上下文窗口」修改。DeepSeek 蓝鲸图标来自 Lobe Icons，MIT 许可随应用附带。[Lobe Icons](https://github.com/lobehub/lobe-icons)
 
-## 使用 OpenAI Responses
+## 聊天协议
 
-在「设置 → 聊天模型」添加供应商，将 API 协议填写为 `OpenAI Responses`，Base URL 填写 `https://api.openai.com/v1`。输入本次运行使用的 API Key，并在「模型」页添加你的 API 账号可调用的模型 ID。保存后，在聊天输入框选择该模型即可发送。选择支持视觉的模型时，应在模型配置中启用图片输入。
+在「设置 → 聊天模型」添加供应商，填写协议、Base URL 和本次运行使用的 API Key。在「模型」页添加账号可调用的模型 ID，然后从聊天输入框选择它。图片输入还需要模型本身支持视觉，并在模型配置中启用。
 
-客户端通过 `POST /v1/responses` 发送流式请求，每轮使用本机保存的对话历史，并发送 `store: false`。本机 Hydrion 仍是默认模型。
+| 供应商协议字段 | 传输 | 服务地址 |
+| --- | --- | --- |
+| `OpenAI Chat Completions` | HTTP POST，SSE | OpenAI、DeepSeek 或明确支持该协议的 HTTPS 服务 |
+| `OpenAI Responses` | HTTP POST，SSE | OpenAI、DeepSeek 或明确支持该协议的 HTTPS 服务 |
+| `OpenAI Responses WebSocket` | WebSocket，每轮一次 `response.create` | 仅 OpenAI 官方 `wss://api.openai.com/v1/responses` |
+
+OpenAI 的 Base URL 可填 `https://api.openai.com/v1`，DeepSeek 可填 `https://api.deepseek.com`。三种协议都使用本机保存的可见历史。WebSocket 每轮新建连接，断线保留已收到的内容，由用户决定是否重试。手动重试沿用原供应商、模型和协议。服务端报告的输入、输出、总用量以及可用的缓存和推理计数分别保存，缺失项保持未知。
 
 ## 运行
 
@@ -44,7 +50,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 | 顶栏与侧栏 | `ui/chrome`、`ui/sidebar` | 空会话模式选择、会话信息、全文查找和历史管理 |
 | 输入框 | `ui/composer` | 折叠与编辑状态、附件、工具箱和发送/停止 |
 | 消息列表 | `ui/messages` | 按稳定 ID 延迟渲染，Chat 展示 Markdown 子集、思考和工具记录。Image 展示可交互的结果卡片 |
-| 会话与生成 | `model` | ConversationSession 更新状态，ChatGenerationRepository 按请求选择本机模拟或 DeepSeek、OpenAI 的 Responses 事件流。历史文件由后台线程原子写入 |
+| 会话与生成 | `model` | ConversationSession 更新状态，ChatGenerationRepository 按已保存的供应商、模型和协议选择本机模拟或流式传输。历史文件由后台线程原子写入 |
 | 模型与供应商 | `provider` | 供应商、模型和能力声明、Configure、配置编辑、JSON 模板与本地保存 |
 | 主题 | `ui/theme` | 纯黑背景、中性灰胶囊控件、字号层级、低对比描边与 H⁺ 标志 |
 
