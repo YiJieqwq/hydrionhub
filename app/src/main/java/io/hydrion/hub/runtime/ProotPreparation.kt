@@ -13,9 +13,10 @@ internal sealed interface ProotPreparation {
     /**
      * Package and private provisioning metadata plus layout checks for this inspection.
      * The receipt does not re-verify the integrity of every file in a mutable guest tree.
-     * There is no process start, PID ownership, or reclamation API at this stage.
+     * A later launch would need to recheck resources and establish process ownership separately.
      */
     data class Ready(
+        val environment: ProotEnvironment,
         val tools: ProotRuntimeTools,
         val rootfs: File,
         val workspace: File,
@@ -24,11 +25,11 @@ internal sealed interface ProotPreparation {
         val hostCwd: File
     ) : ProotPreparation
 
-    data class Unavailable(val reason: Reason) : ProotPreparation
+    data class Unavailable(val reason: Reason) : ProotPreparation, ProotPlan
 
     enum class Reason {
         UnknownEnvironment, RuntimeNotPackaged, UntrustedRootfs, IncompleteRootfs,
-        MissingWorkspace, MissingWorkingDirectory, UnsafeOrUnreadablePath
+        MissingWorkspace, MissingWorkingDirectory, MissingGuestExecutable, UnsafeOrUnreadablePath
     }
 }
 
@@ -61,9 +62,10 @@ internal class ProotFiles(private val filesDir: File, private val nativeLibraryD
         require(Files.isDirectory(path, noLinks)) { "请先预置应用专属工作区目录。" }
     }
 
-    private fun trustedShell(rootfs: Path): Boolean {
+    private fun imageExecutable(rootfs: Path, guestPath: String): Boolean {
         // Guest absolute symlinks are rooted in the guest image, never the Android host.
-        val remaining = ArrayDeque(listOf("bin", "sh"))
+        val remaining = ArrayDeque(guestPath.removePrefix("/").split('/'))
+        val mount = rootfs.resolve("workspace")
         var current = rootfs
         var links = 0
         while (remaining.isNotEmpty()) {
@@ -76,6 +78,8 @@ internal class ProotFiles(private val filesDir: File, private val nativeLibraryD
                 }
                 else -> {
                     val next = current.resolve(part)
+                    // This directory would be overlaid by the workspace at runtime.
+                    if (next == mount) return false
                     if (Files.isSymbolicLink(next)) {
                         if (++links > 40) return false
                         val target = Files.readSymbolicLink(next)
@@ -134,7 +138,7 @@ internal class ProotFiles(private val filesDir: File, private val nativeLibraryD
                 !Files.isDirectory(rootfs, noLinks)) return absent(ProotPreparation.Reason.IncompleteRootfs)
             val mount = below(rootfs, "workspace")
             if (!Files.isDirectory(mount, noLinks) || !Files.isDirectory(below(rootfs, "etc"), noLinks) ||
-                !Files.isDirectory(below(rootfs, "usr"), noLinks) || !trustedShell(rootfs)) {
+                !Files.isDirectory(below(rootfs, "usr"), noLinks) || !imageExecutable(rootfs, "/bin/sh")) {
                 return absent(ProotPreparation.Reason.IncompleteRootfs)
             }
             val work = workspacePath(privateRoot, workspace)
@@ -142,12 +146,28 @@ internal class ProotFiles(private val filesDir: File, private val nativeLibraryD
             val cwd = if (env.guestCwd == "/workspace") work else
                 below(work, *env.guestCwd.removePrefix("/workspace/").split('/').toTypedArray())
             if (!Files.isDirectory(cwd, noLinks)) return absent(ProotPreparation.Reason.MissingWorkingDirectory)
-            ProotPreparation.Ready(ProotRuntimeTools(proot.toFile(), loader.toFile()), rootfs.toFile(),
+            ProotPreparation.Ready(env, ProotRuntimeTools(proot.toFile(), loader.toFile()), rootfs.toFile(),
                 work.toFile(), mount.toFile(), env.guestCwd, cwd.toFile())
         } catch (_: IOException) {
             absent(ProotPreparation.Reason.UnsafeOrUnreadablePath)
         } catch (_: SecurityException) {
             absent(ProotPreparation.Reason.UnsafeOrUnreadablePath)
+        }
+    }
+
+    /** Filesystem checks specific to planning, immediately after the environment preflight. */
+    fun commandProblem(ready: ProotPreparation.Ready, command: ProotGuestCommand): ProotPreparation.Reason? {
+        // PRoot uses ':' inside a bind argument to separate the host and guest paths.
+        if (':' in ready.workspace.path) {
+            return ProotPreparation.Reason.UnsafeOrUnreadablePath
+        }
+        return try {
+            if (imageExecutable(ready.rootfs.toPath(), command.executable)) null
+            else ProotPreparation.Reason.MissingGuestExecutable
+        } catch (_: IOException) {
+            ProotPreparation.Reason.UnsafeOrUnreadablePath
+        } catch (_: SecurityException) {
+            ProotPreparation.Reason.UnsafeOrUnreadablePath
         }
     }
 }

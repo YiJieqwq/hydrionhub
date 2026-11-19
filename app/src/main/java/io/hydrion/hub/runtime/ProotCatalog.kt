@@ -9,6 +9,12 @@ internal fun isRuntimeId(value: String): Boolean =
 
 internal val rootfsDigest = Regex("[0-9a-f]{64}")
 
+internal fun isGuestPath(value: String): Boolean =
+    value.length in 2..4095 && value.startsWith('/') && Charsets.UTF_8.newEncoder().canEncode(value) &&
+        value.toByteArray(Charsets.UTF_8).size < 4096 && value.substring(1).split('/').all { part ->
+            part.isNotEmpty() && part != "." && part != ".." && part.none { it == '\\' || it.isISOControl() }
+        }
+
 internal data class ProotContainer(val id: String, val rootfsSha256: String) {
     init {
         require(isRuntimeId(id)) { "容器 ID 须为规范 UUID。" }
@@ -28,11 +34,9 @@ internal data class ProotEnvironment(
 ) {
     init {
         require(listOf(id, containerId, workspaceId).all(::isRuntimeId)) { "环境及其引用须为规范 UUID。" }
-        require(guestCwd == "/workspace" || guestCwd.startsWith("/workspace/") &&
-            guestCwd.substringAfter("/workspace/").split('/').all { part ->
-                part.isNotEmpty() && part != "." && part != ".." &&
-                    part.none { it == '\\' || it.isISOControl() }
-            }) { "环境工作目录须位于 /workspace 中。" }
+        require(isGuestPath(guestCwd) && (guestCwd == "/workspace" || guestCwd.startsWith("/workspace/"))) {
+            "环境工作目录须位于 /workspace 中。"
+        }
     }
 }
 

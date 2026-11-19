@@ -63,7 +63,8 @@ class ProotEnvironmentTest {
             assertThrows(IllegalArgumentException::class.java) { ProotWorkspace(bad) }
         }
         for (bad in listOf("/", "/workspace/", "/workspace-other", "workspace/docs", "/workspace/../etc",
-            "/workspace/./docs", "/workspace/a//b", "/workspace/a\\b", "/workspace/x\u0000y")) {
+            "/workspace/./docs", "/workspace/a//b", "/workspace/a\\b", "/workspace/x\u0000y",
+            "/workspace/\uD800", "/workspace/" + "界".repeat(1400))) {
             assertThrows(IllegalArgumentException::class.java) { env.copy(guestCwd = bad) }
         }
         assertThrows(IllegalArgumentException::class.java) { container.copy(rootfsSha256 = "../artifact") }
@@ -165,5 +166,62 @@ class ProotEnvironmentTest {
         Files.delete(shell)
         Files.createSymbolicLink(shell, Paths.get("../../installed.sha256"))
         assertReason(ProotPreparation.Reason.IncompleteRootfs, outcome())
+    }
+
+    @Test fun planUsesOnlyRegisteredResourcesAndPreservesLiteralArgv() {
+        provision()
+        check(File(work, "my docs").mkdir())
+        val configured = catalog.copy(environments = listOf(env.copy(guestCwd = "/workspace/my docs")))
+        Files.createSymbolicLink(File(rootfs, "bin/fixture-tool").toPath(), Paths.get("/bin/sh"))
+        val args = mutableListOf("two words", "", "\$VARIABLE; *", "-b", "/host:/guest")
+        val command = ProotGuestCommand("/bin/fixture-tool", args)
+        val expectedArgs = args.toList()
+        args.clear()
+        val plan = ProotPlan.Command.inspect(files, configured, env.id, setOf(digest), command) as ProotPlan.Command
+        assertEquals(listOf(
+            File(nativeDir, "libproot.so").canonicalPath,
+            "-r", rootfs.canonicalPath,
+            "-b", "${work.canonicalPath}:/workspace!",
+            "-w", "/workspace/my docs",
+            "/bin/fixture-tool"
+        ) + expectedArgs, plan.argv)
+        assertEquals(plan.executable.path, plan.argv.first())
+        assertTrue(plan.replacementEnvironment.isEmpty())
+        assertEquals(configured.environments.single(), plan.instance.environment)
+        assertThrows(UnsupportedOperationException::class.java) {
+            (plan.argv as MutableList<String>).clear()
+        }
+    }
+
+    @Test fun replanningRechecksOwnershipRegistrationGuestProgramAndWorkspace() {
+        provision()
+        val program = File(rootfs, "bin/tool").toPath()
+        Files.createSymbolicLink(program, Paths.get("/bin/sh"))
+        val command = ProotGuestCommand("/bin/tool", emptyList())
+        fun plan(source: ProotCatalog = catalog, digests: Set<String> = setOf(digest)) =
+            ProotPlan.Command.inspect(files, source, env.id, digests, command)
+        val first = plan() as ProotPlan.Command
+        val second = plan() as ProotPlan.Command
+        assertNotSame(first.instance, second.instance)
+        assertEquals(ProotPreparation.Unavailable(ProotPreparation.Reason.UnknownEnvironment), plan(ProotCatalog()))
+        assertEquals(ProotPreparation.Unavailable(ProotPreparation.Reason.UntrustedRootfs), plan(digests = emptySet()))
+        Files.delete(program)
+        assertEquals(ProotPreparation.Unavailable(ProotPreparation.Reason.MissingGuestExecutable), plan())
+        // Even an executable present in the image at the later bind location is ineligible.
+        Files.createLink(File(rootfs, "workspace/tool").toPath(), File(rootfs, "bin/sh").toPath())
+        Files.createSymbolicLink(program, Paths.get("/workspace/tool"))
+        assertEquals(ProotPreparation.Unavailable(ProotPreparation.Reason.MissingGuestExecutable), plan())
+        Files.delete(work.toPath())
+        assertEquals(ProotPreparation.Unavailable(ProotPreparation.Reason.MissingWorkspace), plan())
+    }
+
+    @Test fun rejectsInvalidExecutablesAndBoundsLiteralArgumentCountAndEncodedSize() {
+        for (path in listOf("", "sh", "--rootfs", "/bin/", "/bin//sh", "/bin/./sh", "/../bin/sh", "/x\u0000y")) {
+            assertThrows(IllegalArgumentException::class.java) { ProotGuestCommand(path, emptyList()) }
+        }
+        for (args in listOf(listOf("a\u0000b"), listOf("\uD800"), List(129) { "x" },
+            listOf("界".repeat(24_000)), listOf("a".repeat(35_000), "b".repeat(35_000)))) {
+            assertThrows(IllegalArgumentException::class.java) { ProotGuestCommand("/bin/sh", args) }
+        }
     }
 }

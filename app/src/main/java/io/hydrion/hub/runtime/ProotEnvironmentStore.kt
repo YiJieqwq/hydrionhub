@@ -37,6 +37,11 @@ internal class ProotEnvironmentStore(context: Context) {
         files.prepare(snapshot, environmentId, trustedRootfsDigests())
     }
 
+    suspend fun plan(environmentId: String, command: ProotGuestCommand): ProotPlan = withContext(Dispatchers.IO) {
+        val snapshot = synchronized(lock) { read() }
+        ProotPlan.Command.inspect(files, snapshot, environmentId, trustedRootfsDigests(), command)
+    }
+
     private fun trustedRootfsDigests(): Set<String> = try {
         // Shipped by the APK publisher. The guest image cannot add digests to this list.
         app.assets.open("proot/trusted-rootfs-v1.txt").bufferedReader(Charsets.US_ASCII).useLines { lines ->
