@@ -1,0 +1,13 @@
+data: {"id":"chatcmpl-deepseek-stop","object":"chat.completion.chunk","created":1735689600,"model":"deepseek-flash","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"Checked "},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-deepseek-stop","object":"chat.completion.chunk","created":1735689600,"model":"deepseek-flash","choices":[{"index":0,"delta":{"reasoning_content":"the calendar."},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-deepseek-stop","object":"chat.completion.chunk","created":1735689600,"model":"deepseek-flash","choices":[{"index":0,"delta":{"content":"周"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-deepseek-stop","object":"chat.completion.chunk","created":1735689600,"model":"deepseek-flash","choices":[{"index":0,"delta":{"content":"一。"},"logprobs":null,"finish_reason":null}]}
+
+data: {"id":"chatcmpl-deepseek-stop","object":"chat.completion.chunk","created":1735689600,"model":"deepseek-flash","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":24,"completion_tokens":8,"total_tokens":32,"prompt_cache_hit_tokens":6,"prompt_cache_miss_tokens":18,"completion_tokens_details":{"reasoning_tokens":3}}}
+
+data: [DONE]
+
+: end of fixture

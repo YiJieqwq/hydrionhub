@@ -1,6 +1,7 @@
 package io.hydrion.hub.model
 
 import io.hydrion.hub.provider.LocalModelRequest
+import java.io.BufferedReader
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -18,13 +19,24 @@ import org.json.JSONObject
 internal class ResponsesTransport(
     private val openConnection: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }
 ) {
-    fun stream(prepared: LocalModelRequest, request: Message): Flow<Message> = callbackFlow {
+    fun stream(prepared: LocalModelRequest, request: Message): Flow<Message> =
+        streamEvents(prepared, request, "Responses", ::readResponsesEvents)
+
+    fun streamChatCompletions(prepared: LocalModelRequest, request: Message): Flow<Message> =
+        streamEvents(prepared, request, "Chat Completions", ::readChatCompletionsEvents)
+
+    private fun streamEvents(
+        prepared: LocalModelRequest,
+        request: Message,
+        protocol: String,
+        parse: suspend (BufferedReader, Message, suspend (Message) -> Unit) -> Unit
+    ): Flow<Message> = callbackFlow {
         val connection = try {
             openConnection(URL(prepared.url))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            throw IOException(redact(failure.message ?: "无法打开 Responses 连接。", prepared.headers))
+            throw IOException(redactTransportError(failure.message ?: "无法打开 $protocol 连接。", prepared.headers))
         }
         val reader = launch {
             try {
@@ -45,12 +57,12 @@ internal class ResponsesTransport(
                 }
                 ensureActive()
                 val status = connection.responseCode
-                if (status !in 200..299) throw IOException(connection.httpError(status))
+                if (status !in 200..299) throw IOException(connection.httpError(status, protocol))
                 if (!connection.contentType.orEmpty().substringBefore(';').trim().equals("text/event-stream", true)) {
-                    throw IOException("服务端未返回 Responses 事件流（text/event-stream）。")
+                    throw IOException("服务端未返回 $protocol 事件流（text/event-stream）。")
                 }
                 connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
-                    readResponsesEvents(input, request) { send(it) }
+                    parse(input, request) { send(it) }
                 }
                 close()
             } catch (cancelled: CancellationException) {
@@ -59,8 +71,8 @@ internal class ResponsesTransport(
                 // A platform read can return EOF or an IOException when cancellation closes the socket.
                 ensureActive()
                 this@callbackFlow.ensureActive()
-                val detail = failure.message?.takeIf(String::isNotBlank) ?: "Responses 连接中断。"
-                close(IOException(redact(detail, prepared.headers)))
+                val detail = failure.message?.takeIf(String::isNotBlank) ?: "$protocol 连接中断。"
+                close(IOException(redactTransportError(detail, prepared.headers)))
             }
         }
         // Cancellation has to close the socket from outside the coroutine blocked on read.
@@ -71,8 +83,8 @@ internal class ResponsesTransport(
     }.flowOn(Dispatchers.IO)
 }
 
-private fun HttpURLConnection.httpError(status: Int): String {
-    val prefix = "Responses HTTP $status"
+private fun HttpURLConnection.httpError(status: Int, protocol: String): String {
+    val prefix = "$protocol HTTP $status"
     if (status == 401) return "$prefix · API Key 无效或已过期。"
     if (status == 403) return "$prefix · 当前 API Key 没有访问权限。"
     val body = errorStream?.bufferedReader(Charsets.UTF_8)?.use { input ->
@@ -95,7 +107,7 @@ private fun HttpURLConnection.httpError(status: Int): String {
     return if (detail.isNullOrBlank()) prefix else "$prefix · $detail"
 }
 
-private fun redact(detail: String, headers: Map<String, String>): String {
+internal fun redactTransportError(detail: String, headers: Map<String, String>): String {
     var safe = detail
     for ((name, value) in headers) {
         if (value.isBlank() || name.equals("Content-Type", true) || name.equals("Accept", true)) continue

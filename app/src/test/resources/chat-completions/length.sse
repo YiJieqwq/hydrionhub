@@ -1,0 +1,11 @@
+data: {"id":"chatcmpl-length","object":"chat.completion.chunk","created":1735689600,"model":"gpt-4.1","choices":[{"index":0,"delta":{"role":"assistant","content":""},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-length","object":"chat.completion.chunk","created":1735689600,"model":"gpt-4.1","choices":[{"index":0,"delta":{"content":"Unfinished"},"logprobs":null,"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-length","object":"chat.completion.chunk","created":1735689600,"model":"gpt-4.1","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"length"}],"usage":null}
+
+data: {"id":"chatcmpl-length","object":"chat.completion.chunk","created":1735689600,"model":"gpt-4.1","choices":[],"usage":{"prompt_tokens":9,"completion_tokens":4,"total_tokens":13,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":0}}}
+
+data: [DONE]
+
+: end of fixture

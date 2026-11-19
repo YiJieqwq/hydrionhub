@@ -11,11 +11,30 @@ internal suspend fun readResponsesEvents(
     request: Message,
     emit: suspend (Message) -> Unit
 ) {
-    var message = request.copy(status = Generation.Generating, tool = null, totalTokens = null, usage = null)
-    emit(message)
-    val parts = ResponseParts()
+    val turn = ResponsesEventAccumulator(request)
+    emit(turn.message)
     for ((eventName, data) in reader.sseEvents()) {
         if (data.trim() == "[DONE]") break
+        if (turn.accept(data, eventName).deliver(emit)) return
+    }
+    throw IOException("连接在收到 Responses 结束事件前中断。")
+}
+
+internal data class ResponsesUpdate(val snapshot: Message? = null, val failure: IOException? = null) {
+    suspend fun deliver(emit: suspend (Message) -> Unit): Boolean {
+        snapshot?.let { emit(it) }
+        failure?.let { throw it }
+        return snapshot?.status == Generation.Completed
+    }
+}
+
+/** Each collected turn owns its own reducer, regardless of the framing transport. */
+internal class ResponsesEventAccumulator(request: Message) {
+    var message = request.copy(status = Generation.Generating, tool = null, totalTokens = null, usage = null)
+        private set
+    private val parts = ResponseParts()
+
+    fun accept(data: String, eventName: String): ResponsesUpdate {
         try {
             val event = JSONObject(data)
             val type = event.optString("type").ifEmpty { eventName }
@@ -35,23 +54,23 @@ internal suspend fun readResponsesEvents(
                     val usage = response.optJSONObject("usage")?.tokenUsage()
                     message = parts.applyTo(message).copy(usage = usage, totalTokens = usage?.contextTokens)
                     if (failure == null) {
-                        emit(message.copy(status = Generation.Completed))
-                        return
+                        return ResponsesUpdate(message.copy(status = Generation.Completed))
                     }
-                    if (message != before) emit(message)
-                    throw IOException(failure)
+                    return ResponsesUpdate(message.takeIf { it != before }, IOException(failure))
                 }
-                "error" -> throw IOException(responseProblem("响应失败", event.optJSONObject("error") ?: event, "message"))
+                "error" -> return ResponsesUpdate(failure = IOException(
+                    responseProblem("响应失败", event.optJSONObject("error") ?: event, "message")
+                ))
                 else -> if (parts.update(type, event)) {
                     message = parts.applyTo(message)
-                    if (message != before) emit(message)
+                    if (message != before) return ResponsesUpdate(message)
                 }
             }
         } catch (_: JSONException) {
             throw IOException("服务端返回了无效的 Responses 流式事件。")
         }
+        return ResponsesUpdate()
     }
-    throw IOException("连接在收到 Responses 结束事件前中断。")
 }
 
 private fun responseProblem(label: String, fields: JSONObject?, key: String): String {
@@ -59,7 +78,7 @@ private fun responseProblem(label: String, fields: JSONObject?, key: String): St
     return if (detail.isNullOrBlank()) "$label。" else "$label · $detail"
 }
 
-private fun BufferedReader.sseEvents(): Sequence<Pair<String, String>> = sequence {
+internal fun BufferedReader.sseEvents(): Sequence<Pair<String, String>> = sequence {
     var event = ""
     var firstLine = true
     val data = mutableListOf<String>()
