@@ -101,6 +101,7 @@ private fun ConversationChip(
     title: String, mode: Mode, usage: ContextUsage, onRename: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    val detailColor = Color(0xFFCDCDCD)
     Column(
         Modifier.widthIn(max = 290.dp).testTag("conversation-chip").capsuleEdge().clip(CircleShape).background(colors.surfaceContainerHigh)
             .clickable(role = Role.Button, onClickLabel = "重命名会话", onClick = onRename)
@@ -114,17 +115,17 @@ private fun ConversationChip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Icon(Icons.Outlined.Lock, "已锁定", Modifier.size(11.dp), tint = colors.onSurfaceVariant)
-            Text(mode.name, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, color = colors.onSurfaceVariant)
+            Icon(Icons.Outlined.Lock, "已锁定", Modifier.size(11.dp), tint = detailColor)
+            Text(mode.name, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, color = detailColor)
             val ringColor = if (usage.high) Color(0xFFEF4444) else Color(0xFF3B82F6)
             CircularProgressIndicator(
                 progress = { usage.fraction }, modifier = Modifier.size(11.dp).testTag("context-usage-ring")
                     .semantics { stateDescription = "${usage.tokens ?: "—"} / ${usage.window} tokens" },
                 strokeWidth = 1.6.dp,
-                color = ringColor, trackColor = ringColor.copy(alpha = 0.45f), strokeCap = StrokeCap.Butt,
+                color = ringColor, trackColor = Color.White, strokeCap = StrokeCap.Butt,
                 gapSize = 0.dp
             )
-            usage.label?.let { Text(it, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, color = colors.onSurfaceVariant) }
+            usage.label?.let { Text(it, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, color = detailColor) }
         }
     }
 }

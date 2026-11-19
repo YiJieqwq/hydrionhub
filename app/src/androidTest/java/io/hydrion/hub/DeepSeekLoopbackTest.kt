@@ -69,7 +69,8 @@ class DeepSeekLoopbackTest {
         val received = mutableListOf<JSONObject>()
         val serverFailure = AtomicReference<Throwable?>()
         val allowCompletion = List(2) { CountDownLatch(1) }
-        val totals = listOf(90L, 800_000L)
+        // Both arcs must span visible pixels in the 11dp ring for the colour assertions.
+        val totals = listOf(250_000L, 800_000L)
         val partial = "正在接收"
         val thought = "本地 HTTPS 服务已开始回复。"
         val full = "${partial}。"
@@ -143,7 +144,7 @@ class DeepSeekLoopbackTest {
                 val ring = screen.onNodeWithTag("context-usage-ring", useUnmergedTree = true).assertIsDisplayed()
                 assertEquals(tokens / 1_000_000f,
                     ring.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current, .00001f)
-                assertInk(ring, blue = index == 0)
+                assertInk(ring, blue = index == 0, expectWhiteTrack = true)
                 if (index == 0) assertInk(screen.onNodeWithContentDescription("DeepSeek", useUnmergedTree = true), blue = true)
             }
             worker.join(5_000)
@@ -167,7 +168,7 @@ class DeepSeekLoopbackTest {
         }
     }
 
-    private fun assertInk(node: SemanticsNodeInteraction, blue: Boolean) {
+    private fun assertInk(node: SemanticsNodeInteraction, blue: Boolean, expectWhiteTrack: Boolean = false) {
         val bitmap = node.assertIsDisplayed().captureToImage().asAndroidBitmap()
         val pixels = IntArray(bitmap.width * bitmap.height)
         bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
@@ -175,6 +176,11 @@ class DeepSeekLoopbackTest {
             val difference = Color.blue(pixel) - Color.red(pixel)
             if (blue) difference > 40 else difference < -40
         } > 4)
+        if (expectWhiteTrack) {
+            assertTrue("Expected a white unused arc", pixels.any { pixel ->
+                Color.red(pixel) >= 248 && Color.green(pixel) >= 248 && Color.blue(pixel) >= 248
+            })
+        }
     }
 
     private fun BufferedWriter.event(payload: JSONObject) {
