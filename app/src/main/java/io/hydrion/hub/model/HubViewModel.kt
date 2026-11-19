@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import io.hydrion.hub.provider.ProviderStore
 import io.hydrion.hub.provider.responsesImageSources
 import io.hydrion.hub.provider.imageRequest
+import io.hydrion.hub.runtime.ProotEnvironmentStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +23,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     private var loaded = false
     private var changedDuringLoad = false
     internal val providers = ProviderStore(app)
+    private val environments by lazy { ProotEnvironmentStore(app) }
     private val generation = ChatGenerationRepository({ providers.catalog.value }, providers::sessionKey,
         app.contentResolver::responsesImageSources)
     private val mutableErrors = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -67,6 +69,10 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun openConversation(id: String) = session.openConversation(id)
     fun setMode(mode: Mode) = session.setMode(mode)
+    internal suspend fun bindEnvironment(conversationId: String, environmentId: String?) {
+        if (environmentId != null) requireNotNull(environments.getEnvironment(environmentId)) { "环境已不存在。" }
+        withContext(Dispatchers.Main.immediate) { session.bindEnvironment(conversationId, environmentId) }
+    }
     fun rename(id: String, title: String) = session.rename(id, title)
     fun togglePin(id: String) = session.togglePin(id)
     fun deleteConversation(id: String) {

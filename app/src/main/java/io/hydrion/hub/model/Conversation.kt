@@ -79,7 +79,8 @@ data class Conversation(
     val mode: Mode = Mode.Chat,
     val pinned: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
-    val messages: List<Message> = emptyList()
+    val messages: List<Message> = emptyList(),
+    val environmentId: String? = null
 )
 
 data class HubState(

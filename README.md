@@ -24,6 +24,12 @@ OpenAI 的 Base URL 可填 `https://api.openai.com/v1`，DeepSeek 可填 `https:
 
 图像模式和聊天中的模拟生图都使用单独选择的图像模型。后端的 `prepareImageGeneration` 可以从显式配置的 `OpenAI Images` 供应商准备 `/images/generations` 请求，校验模型、提示词、张数、尺寸和质量。现有图片入口继续生成本地示例图。
 
+## PRoot 环境后端
+
+每个环境引用一个容器和一个应用私有工作区。多个环境可以共用工作区，并分别指定 `/workspace` 下的工作目录。首版最多登记一个新容器。会话可以保存预配置环境的 ID，旧会话默认未绑定。
+
+准备检查只读取预置的 PRoot、加载器、受信镜像摘要、安装收据和目录结构。目前没有随包分发的运行时或 rootfs，也没有安装、进程启动、回收或终端执行入口。准备结果仅代表检查时所见的状态。PRoot 使用宿主应用权限，不能作为运行不受信任代码的安全边界。
+
 ## 运行
 
 需要 JDK 17、Android SDK Platform 35 和 Android SDK Build-Tools 34.0.0。安装目标为 Android 8.0（API 26）及以上。

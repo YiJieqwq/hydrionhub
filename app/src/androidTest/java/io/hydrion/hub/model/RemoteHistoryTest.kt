@@ -63,6 +63,7 @@ class RemoteHistoryTest {
             """.trimIndent())
             val history = HistoryFile(context)
             val legacy = history.load().history.single()
+            assertNull(legacy.environmentId)
             val unmetered = legacy.messages.first()
             assertNull(unmetered.remoteModel)
             assertNull(unmetered.totalTokens)
@@ -78,13 +79,16 @@ class RemoteHistoryTest {
             val newReplies = listOf(full, parts, partial).map { usage ->
                 Message(role = Role.Assistant, remoteModel = old.remoteModel, usage = usage)
             }
-            val saved = SavedWorkspace(listOf(legacy.copy(messages = legacy.messages + newReplies)))
+            val environmentId = newId()
+            val saved = SavedWorkspace(listOf(legacy.copy(messages = legacy.messages + newReplies, environmentId = environmentId)))
             history.save(saved)
             val written = JSONObject(file.readText()).getJSONArray("history").getJSONObject(0).getJSONArray("messages")
             assertEquals(123L, written.getJSONObject(1).getLong("totalTokens"))
             assertEquals(71L, written.getJSONObject(2).getLong("totalTokens"))
             assertEquals(20L, written.getJSONObject(3).getLong("totalTokens"))
-            val loaded = HistoryFile(context).load().history.single().messages
+            val reloaded = HistoryFile(context).load().history.single()
+            assertEquals(environmentId, reloaded.environmentId)
+            val loaded = reloaded.messages
             assertEquals(legacy.messages.map { it.reportedUsage }, loaded.take(2).map { it.reportedUsage })
             assertEquals(listOf(full, parts, partial), loaded.drop(2).map { it.usage })
             assertEquals(listOf(full, parts, partial), loaded.drop(2).map { it.reportedUsage })

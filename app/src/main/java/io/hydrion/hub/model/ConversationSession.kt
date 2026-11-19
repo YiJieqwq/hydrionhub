@@ -78,13 +78,20 @@ internal class ConversationSession(
 
     fun openConversation(id: String) {
         val item = screen.history.firstOrNull { it.id == id } ?: return
-        if (!screen.modeLocked && (screen.draft != Draft() || screen.current.mode != Mode.Chat))
+        if (!screen.modeLocked && (screen.draft != Draft() || screen.current.mode != Mode.Chat || screen.current.environmentId != null))
             parkedEmpty = screen.current
         choose(item)
     }
 
     fun setMode(mode: Mode) {
         if (!screen.modeLocked) update(screen.current.copy(mode = mode))
+    }
+
+    fun bindEnvironment(conversationId: String, environmentId: String?) {
+        val item = requireNotNull(conversation(conversationId)) { "会话已不存在。" }
+        if (item.environmentId == environmentId) return
+        update(item.copy(environmentId = environmentId))
+        save()
     }
 
     fun rename(id: String, title: String) {

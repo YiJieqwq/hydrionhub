@@ -20,7 +20,8 @@ internal class HistoryFile(context: Context) {
         val history = json.optJSONArray("history").objects().map { item ->
             Conversation(id = item.getString("id"), title = item.getString("title"),
                 mode = Mode.valueOf(item.getString("mode")), pinned = item.optBoolean("pinned"),
-                updatedAt = item.getLong("updatedAt"), messages = item.optJSONArray("messages").objects().map(::readMessage))
+                updatedAt = item.getLong("updatedAt"), messages = item.optJSONArray("messages").objects().map(::readMessage),
+                environmentId = item.optional("environmentId"))
         }
         val drafts = json.optJSONObject("drafts") ?: JSONObject()
         val defaults = Draft()
@@ -38,7 +39,7 @@ internal class HistoryFile(context: Context) {
         for (c in saved.history) {
             history.put(JSONObject().put("id", c.id).put("title", c.title)
                 .put("mode", c.mode.name).put("pinned", c.pinned).put("updatedAt", c.updatedAt)
-                .put("messages", JSONArray(c.messages.map(::writeMessage))))
+                .put("messages", JSONArray(c.messages.map(::writeMessage))).put("environmentId", c.environmentId))
         }
         val drafts = JSONObject()
         for ((id, draft) in saved.drafts) {

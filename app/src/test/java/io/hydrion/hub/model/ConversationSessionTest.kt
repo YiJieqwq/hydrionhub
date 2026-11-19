@@ -10,6 +10,31 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConversationSessionTest {
+    @Test fun environmentStaysWithItsConversationThroughSwitchSaveAndUnbind() = runBlocking {
+        val session = ConversationSession(this, FakeGenerationRepository {}, {})
+        val original = Conversation()
+        session.restore(SavedWorkspace(listOf(original)))
+        val draftId = session.state.value.current.id
+        val environmentId = newId()
+        session.bindEnvironment(draftId, environmentId)
+        assertTrue(session.snapshot().history.none { it.id == draftId })
+
+        session.openConversation(original.id)
+        assertEquals(null, session.state.value.current.environmentId)
+        session.newConversation()
+        assertEquals(draftId, session.state.value.current.id)
+        assertEquals(environmentId, session.state.value.current.environmentId)
+        session.setDraft("hello")
+        session.send("local", emptyMap(), null, null)
+        yield()
+        assertEquals(environmentId, session.snapshot().history.single { it.id == draftId }.environmentId)
+
+        session.newConversation()
+        assertEquals(null, session.state.value.current.environmentId)
+        session.bindEnvironment(draftId, null)
+        assertEquals(null, session.snapshot().history.single { it.id == draftId }.environmentId)
+    }
+
     @Test fun historyStartsOnFirstSendAndModeLockSurvivesDeletion() = runBlocking {
         val session = ConversationSession(this, FakeGenerationRepository {}, {})
         fun screen() = session.state.value
