@@ -101,11 +101,11 @@ private fun imageBody(model: ProviderModel, prompt: String, parameters: Map<Stri
 }
 
 private val dimensions = Regex("[1-9][0-9]{0,4}x[1-9][0-9]{0,4}")
-private val extendedQualityModels = setOf("gpt-image-2.5-sunburst", "gpt-image-2.5-flare",
+private val extendedQualityModels = setOf("gpt-image-2.6-sunburst", "gpt-image-2.6-flare",
+    "gpt-image-2.5-sunburst", "gpt-image-2.5-flare",
     "gpt-image-2.5-sunburst-2026-09-08", "gpt-image-2.5-flare-2026-09-08")
 private val variableSizeModels = extendedQualityModels + setOf("gpt-image-2", "gpt-image-2-2026-04-21")
-private val supportedImageModels = variableSizeModels + setOf("gpt-image-1-mini", "gpt-image-1.5",
-    "gpt-image-2.6-sunburst", "gpt-image-2.6-flare", "chatgpt-image-latest")
+private val supportedImageModels = variableSizeModels + setOf("gpt-image-1-mini", "gpt-image-1.5", "chatgpt-image-latest")
 private val commonSizes = setOf("auto", "1024x1024", "1536x1024", "1024x1536")
 
 private fun imageSize(body: JSONObject): String? {
@@ -130,7 +130,8 @@ private fun supportsSize(model: ProviderModel, size: String): Boolean {
     if (!dimensions.matches(size)) return false
     if (id in variableSizeModels) {
         val (w, h) = size.split('x').map(String::toInt)
-        return w % 16 == 0 && h % 16 == 0 && maxOf(w, h) <= 3840 && w.toLong() * h <= 3840L * 2160 &&
+        val pixels = w.toLong() * h
+        return w % 16 == 0 && h % 16 == 0 && maxOf(w, h) <= 3840 && pixels in 655_360L..8_294_400L &&
             maxOf(w, h) <= 3 * minOf(w, h)
     }
     return false

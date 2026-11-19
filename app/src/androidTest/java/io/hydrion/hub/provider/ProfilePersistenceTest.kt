@@ -130,7 +130,13 @@ class ProfilePersistenceTest {
         assertEquals("high", wire.body.getString("quality"))
         assertEquals(setOf("model", "prompt", "n", "size", "quality"), wire.body.keys().asSequence().toSet())
         assertEquals("1600x1024", catalog("{}", "gpt-image-2", 1600).prepareImageGeneration("lake").body.getString("size"))
-        assertTrue(runCatching { catalog("{}", "gpt-image-2.6-flare", 1600).prepareImageGeneration("lake") }.isFailure)
+        for (id in listOf("gpt-image-2.6-sunburst", "gpt-image-2.6-flare")) {
+            for (quality in listOf("xhigh", "max")) {
+                val body = catalog("""{"quality":"$quality"}""", id, 1600).prepareImageGeneration("lake").body
+                assertEquals("1600x1024", body.getString("size"))
+                assertEquals(quality, body.getString("quality"))
+            }
+        }
         assertTrue(runCatching { catalog("{}", "gpt-image-2-future", 1600).prepareImageGeneration("lake") }.isFailure)
         for (extra in listOf("""{"size":"1024x1024"}""", """{"quality":"max"}""", """{"tool":"local"}""")) {
             val configured = catalog(extra)

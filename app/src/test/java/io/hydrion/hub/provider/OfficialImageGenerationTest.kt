@@ -65,6 +65,28 @@ class OfficialImageGenerationTest {
         rejects(saved = params + ("quality" to "wrong"))
     }
 
+    @Test fun customSizePixelBoundsAndOlderModelQualityAreCheckedOnReplay() {
+        fun request(id: String, size: String, quality: String): LocalModelRequest {
+            val configured = model.copy(profile = model.profile.copy(externalId = id))
+            val catalog = ModelCatalog(listOf(provider.copy(models = listOf(configured))))
+            val saved = mapOf("model" to id, "n" to "1", "size" to size, "quality" to quality)
+            return catalog.prepareOfficialImageGeneration(route, "prompt", saved) { "fixture" }
+        }
+        for (id in listOf("gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.6-sunburst", "gpt-image-2.6-flare")) {
+            assertThrows(IllegalArgumentException::class.java) { request(id, "1024x624", "high") }
+            for (size in listOf("1024x640", "3840x2160")) {
+                assertEquals(size, request(id, size, "high").body.getString("size"))
+            }
+            assertThrows(IllegalArgumentException::class.java) { request(id, "3840x2176", "high") }
+        }
+        for (id in listOf("gpt-image-2", "gpt-image-1.5", "gpt-image-1-mini")) {
+            assertEquals("high", request(id, "1024x1024", "high").body.getString("quality"))
+            for (quality in listOf("xhigh", "max")) {
+                assertThrows(IllegalArgumentException::class.java) { request(id, "1024x1024", quality) }
+            }
+        }
+    }
+
     @Test fun missingOrDisabledImagePreferenceNeverChoosesTheDemoImplicitly() {
         val local = demoCatalog()
         for (preference in listOf(false, true)) {
