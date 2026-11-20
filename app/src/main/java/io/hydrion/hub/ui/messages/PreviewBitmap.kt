@@ -57,10 +57,10 @@ private val previews = object : LruCache<String, Bitmap>(12 * 1024 * 1024) {
 }
 private val renderSlots = Semaphore(2)
 
-private sealed interface Preview {
-    data object Loading : Preview
-    data class Ready(val bitmap: Bitmap) : Preview
-    data object Failed : Preview
+internal sealed interface PicturePreview {
+    data object Loading : PicturePreview
+    data class Ready(val bitmap: Bitmap) : PicturePreview
+    data object Failed : PicturePreview
 }
 
 private fun scaledSize(width: Int, height: Int, maxEdge: Int): Pair<Int, Int> {
@@ -87,39 +87,39 @@ internal fun GeneratedPicture(
     modifier: Modifier = Modifier,
     fit: Boolean = false,
 ) {
-    val maxEdge = if (fit) 1440 else 480
+    val preview = rememberGeneratedPreview(key, width, height, if (fit) 1440 else 480)
+    BitmapPreview(preview, description, modifier, fit)
+}
+
+@Composable
+internal fun rememberGeneratedPreview(key: String, width: Int, height: Int, maxEdge: Int): PicturePreview {
     if (GeneratedImageStore.isStored(key)) {
         val context = LocalContext.current.applicationContext
-        BitmapPreview("stored/$maxEdge/$key", description, modifier, fit, cache = false) {
+        return rememberBitmapPreview("stored/$maxEdge/$key", cache = false) {
             GeneratedImageStore(context).decodePreview(key, maxEdge)
         }
-    } else {
-        val (w, h) = scaledSize(width, height, maxEdge)
-        BitmapPreview("mock/$w/$h/$key", description, modifier, fit) { renderLandscape(key, w, h) }
     }
+    val (w, h) = scaledSize(width, height, maxEdge)
+    return rememberBitmapPreview("mock/$w/$h/$key") { renderLandscape(key, w, h) }
 }
 
 @Composable
 internal fun AttachmentPicture(uri: String, modifier: Modifier = Modifier) {
-    val context = LocalContext.current.applicationContext
-    BitmapPreview("attachment/$uri", "图片附件", modifier, false) {
-        decodeAttachment(context, Uri.parse(uri), 640)
-    }
+    BitmapPreview(rememberAttachmentPreview(uri), "图片附件", modifier, fit = false)
 }
 
 @Composable
-private fun BitmapPreview(
-    cacheId: String,
-    description: String,
-    modifier: Modifier,
-    fit: Boolean,
-    cache: Boolean = true,
-    load: () -> Bitmap,
-) {
+internal fun rememberAttachmentPreview(uri: String): PicturePreview {
+    val context = LocalContext.current.applicationContext
+    return rememberBitmapPreview("attachment/$uri") { decodeAttachment(context, Uri.parse(uri), 640) }
+}
+
+@Composable
+private fun rememberBitmapPreview(cacheId: String, cache: Boolean = true, load: () -> Bitmap): PicturePreview {
     val preview by key(cacheId) {
         val cached = if (cache) previews.get(cacheId) else null
-        produceState<Preview>(initialValue = cached?.let { Preview.Ready(it) } ?: Preview.Loading) {
-            if (value is Preview.Ready) return@produceState
+        produceState<PicturePreview>(initialValue = cached?.let { PicturePreview.Ready(it) } ?: PicturePreview.Loading) {
+            if (value is PicturePreview.Ready) return@produceState
             value = try {
                 val bitmap = withContext(Dispatchers.IO) {
                     renderSlots.withPermit {
@@ -127,24 +127,29 @@ private fun BitmapPreview(
                         else load()
                     }
                 }
-                Preview.Ready(bitmap)
+                PicturePreview.Ready(bitmap)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                Preview.Failed
+                PicturePreview.Failed
             }
         }
     }
+    return preview
+}
+
+@Composable
+internal fun BitmapPreview(preview: PicturePreview, description: String, modifier: Modifier, fit: Boolean) {
     Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
         when (val result = preview) {
-            is Preview.Ready -> Image(
+            is PicturePreview.Ready -> Image(
                 bitmap = result.bitmap.asImageBitmap(),
                 contentDescription = description,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = if (fit) ContentScale.Fit else ContentScale.Crop,
             )
-            Preview.Loading -> CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-            Preview.Failed -> Text("无法读取图片", style = MaterialTheme.typography.labelSmall)
+            PicturePreview.Loading -> CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            PicturePreview.Failed -> Text("无法读取图片", style = MaterialTheme.typography.labelSmall)
         }
     }
 }

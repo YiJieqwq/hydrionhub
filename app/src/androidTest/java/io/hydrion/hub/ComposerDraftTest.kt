@@ -118,13 +118,16 @@ class ComposerDraftTest {
                 vm.addAttachment(Attachment("draft-doc", "资料.txt", mimeType = "text/plain"))
             }
 
-            // BitmapPreview exposes these image semantics only after a successful decode/render.
+            // Larger previews may be off-screen until their item enters the LazyRow viewport.
+            val tray = screen.onNodeWithTag("draft-attachments")
+            tray.performScrollToIndex(0)
             waitFor(hasContentDescription("图片附件"))
-            waitFor(hasContentDescription("参考图缩略图"))
             screen.onNodeWithContentDescription("打开工具箱").assertIsDisplayed()
             screen.onNodeWithContentDescription("发送消息").assertIsEnabled()
             screen.onNodeWithContentDescription("移除 小图.png").performSemanticsAction(SemanticsActions.OnClick)
             screen.onNodeWithContentDescription("图片附件").assertDoesNotExist()
+            tray.performScrollToIndex(0)
+            waitFor(hasContentDescription("参考图缩略图"))
             screen.onNodeWithContentDescription("移除 参考图").performSemanticsAction(SemanticsActions.OnClick)
             screen.onNodeWithText("资料.txt").assertIsDisplayed()
             screen.onNodeWithContentDescription("移除 资料.txt").performSemanticsAction(SemanticsActions.OnClick)

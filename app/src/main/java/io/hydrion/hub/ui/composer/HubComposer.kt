@@ -13,6 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
@@ -89,6 +90,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.round
 import androidx.compose.ui.unit.dp
@@ -101,8 +103,10 @@ import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubState
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
-import io.hydrion.hub.ui.messages.AttachmentPicture
-import io.hydrion.hub.ui.messages.GeneratedPicture
+import io.hydrion.hub.ui.messages.BitmapPreview
+import io.hydrion.hub.ui.messages.PicturePreview
+import io.hydrion.hub.ui.messages.rememberAttachmentPreview
+import io.hydrion.hub.ui.messages.rememberGeneratedPreview
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.capsuleEdge
 import kotlinx.coroutines.delay
@@ -274,7 +278,7 @@ internal fun HubComposer(
     val bottomGap = lerp(compactGap, 12.25.dp, expansion)
     val editorMinHeight = lerp(49.25.dp, 46.5.dp, toolbar)
     val controlRowHeight = 47.75.dp
-    val editorTextStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp)
+    val editorTextStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
     Column(modifier.fillMaxWidth().padding(start = sideInset, end = sideInset, bottom = bottomGap)) {
         importError?.let { error ->
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -292,13 +296,20 @@ internal fun HubComposer(
         ) {
             Column {
                 if (draft.attachments.isNotEmpty()) {
-                    LazyRow(
-                        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        items(draft.attachments, key = { it.id }) { attachment ->
-                            DraftAttachment(attachment) { vm.removeAttachment(attachment.id) }
+                    val imageAndText = draft.text.isNotEmpty() && draft.attachments.any { it.hasImagePreview }
+                    // Let the editor and toolbar measure first in short windows above the IME.
+                    BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth()
+                        .padding(start = 8.dp, end = 8.dp, top = 3.dp, bottom = if (imageAndText) 0.dp else 3.dp)) {
+                        val previewWidth = maxWidth
+                        val previewHeight = minOf(120.dp, maxHeight)
+                        LazyRow(
+                            Modifier.fillMaxWidth().testTag("draft-attachments"),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            items(draft.attachments, key = { it.id }) { attachment ->
+                                DraftAttachment(attachment, previewWidth, previewHeight) { vm.removeAttachment(attachment.id) }
+                            }
                         }
                     }
                 }
@@ -332,7 +343,7 @@ internal fun HubComposer(
                                         Text(
                                             if (isChat) "Chat with AI" else "描述想生成的图片",
                                             color = HubStyle.ComposerHint,
-                                            style = if (isChat) editorTextStyle.copy(fontSize = 16.sp) else editorTextStyle,
+                                            style = if (isChat) editorTextStyle else editorTextStyle.copy(fontSize = 17.sp),
                                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                                         )
                                     }
@@ -487,17 +498,30 @@ private fun SendButton(generating: Boolean, canSend: Boolean, onClick: () -> Uni
     }
 }
 
+private val Attachment.hasImagePreview: Boolean
+    get() = imageKey != null || (uri != null && mimeType?.startsWith("image/") == true)
+
 @Composable
-private fun DraftAttachment(attachment: Attachment, onRemove: () -> Unit) {
+private fun DraftAttachment(attachment: Attachment, maxWidth: Dp, maxHeight: Dp, onRemove: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val key = attachment.imageKey
-    val uri = attachment.uri
-    if (key != null || (uri != null && attachment.mimeType?.startsWith("image/") == true)) {
-        Box(Modifier.size(72.dp).clip(RoundedCornerShape(12.dp))) {
-            if (key != null) {
-                GeneratedPicture(key, attachment.width ?: 1024, attachment.height ?: 1024,
-                    "参考图缩略图", Modifier.matchParentSize())
-            } else if (uri != null) AttachmentPicture(uri, Modifier.matchParentSize())
+    if (attachment.hasImagePreview) {
+        val key = attachment.imageKey
+        val preview = if (key != null) {
+            rememberGeneratedPreview(key, attachment.width ?: 1024, attachment.height ?: 1024, maxEdge = 480)
+        } else {
+            rememberAttachmentPreview(requireNotNull(attachment.uri))
+        }
+        // Imported files often have no stored dimensions. The decoded bitmap includes EXIF rotation.
+        val bitmap = (preview as? PicturePreview.Ready)?.bitmap
+        val w = bitmap?.width ?: attachment.width ?: 1
+        val h = bitmap?.height ?: attachment.height ?: 1
+        val ratio = if (w > 0 && h > 0) w.toFloat() / h else 1f
+        // Give the remove action room even on very thin panoramas or portraits.
+        val width = minOf(maxWidth, maxOf(32.dp, maxHeight * ratio))
+        val height = minOf(maxHeight, maxOf(32.dp, maxWidth / ratio))
+        Box(Modifier.size(width, height)
+            .testTag("draftImage:${attachment.id}").clip(RoundedCornerShape(12.dp))) {
+            BitmapPreview(preview, if (key != null) "参考图缩略图" else "图片附件", Modifier.matchParentSize(), fit = true)
             IconButton(onClick = onRemove, modifier = Modifier.align(Alignment.TopEnd).size(32.dp)) {
                 Box(Modifier.size(22.dp).capsuleEdge().background(Color.Black.copy(alpha = .68f), CircleShape),
                     contentAlignment = Alignment.Center) {
