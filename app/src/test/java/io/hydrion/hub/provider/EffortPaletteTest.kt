@@ -10,6 +10,16 @@ import org.junit.Test
 class EffortPaletteTest {
     private val levels = listOf("Off", "Minimal", "Low", "Medium", "High", "Extra High", "Max")
 
+    @Test fun ordinaryFastRailUsesTheExistingBlueInEachTheme() {
+        for (dark in listOf(false, true)) {
+            val blue = effortPalette(levels, "Low", dark)
+            val fast = ordinaryFastRailColors(dark)
+            assertEquals(blue.fill, fast.fill)
+            assertEquals(blue.track, fast.track)
+            assertFalse(fast.isPeak)
+        }
+    }
+
     @Test fun eachStrengthHasDistinctFillAndReadableInkInEachTheme() {
         fun contrast(a: Color, b: Color): Float {
             val aLuminance = a.luminance()

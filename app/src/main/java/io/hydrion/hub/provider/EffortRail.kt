@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -40,6 +41,8 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -116,15 +119,31 @@ internal fun EffortRail(
     }
     val palette = remember(stops, preview, dark) { effortPalette(stops, stops[preview], dark) }
     val peak = preview == highestIndex && highestIndex >= 0
-    val fill = animateColorAsState(palette.fill, tween(250, easing = ToneEase), label = "effortFill")
-    val track = animateColorAsState(palette.track, tween(250, easing = ToneEase), label = "effortTrack")
+    val fastBlue = remember(dark) { ordinaryFastRailColors(dark) }
+    val railPalette = if (accelerated && !peak) fastBlue else palette
+    val fill = animateColorAsState(railPalette.fill, tween(250, easing = ToneEase), label = "effortFill")
+    val track = animateColorAsState(railPalette.track, tween(250, easing = ToneEase), label = "effortTrack")
     val ticks = animateFloatAsState(if (peak) 0f else 1f, tween(180, easing = ToneEase), label = "effortTicks")
     val dust = animateFloatAsState(if (peak || accelerated) 1f else 0f, tween(250, easing = ToneEase), label = "effortDust")
     val hasDust by remember(dust) { derivedStateOf(structuralEqualityPolicy()) { dust.value > 0f } }
     val seconds = remember { mutableDoubleStateOf(0.0) }
-    val peakMotion = remember { PeakStarMotion() }
-    val fastPeak by rememberUpdatedState(peak && accelerated)
+    val motion = remember { RailStarMotion() }
+    val fast by rememberUpdatedState(accelerated)
     val rtl by rememberUpdatedState(LocalLayoutDirection.current == LayoutDirection.Rtl)
+    var widthPx by remember { mutableIntStateOf(0) }
+    val maxThumbRadius = with(LocalDensity.current) { 15.dp.toPx() }
+    // An initially selected peak uses the adjacent ordinary stop as its speed reference.
+    var ordinaryIndex by remember(stops, highestIndex) { mutableIntStateOf((highestIndex - 1).coerceAtLeast(0)) }
+    SideEffect {
+        if (committedIndex in stops.indices && committedIndex != highestIndex) ordinaryIndex = committedIndex
+    }
+    val speedScale by rememberUpdatedState {
+        if (peak && stops.size > 1) {
+            val width = widthPx.toFloat()
+            val reference = railFillWidth(width, maxThumbRadius, ordinaryIndex.toFloat() / stops.lastIndex)
+            fastStarSpeedScale(railFillWidth(width, maxThumbRadius, readPosition()), reference)
+        } else 1.0
+    }
     if (peak || accelerated || hasDust) {
         LaunchedEffect(Unit) {
             val scale = coroutineContext[MotionDurationScale]
@@ -134,7 +153,7 @@ internal fun EffortRail(
                     var previous = withInfiniteAnimationFrameNanos { it }
                     while (true) withInfiniteAnimationFrameNanos { now ->
                         val delta = (now - previous) / 1_000_000_000.0 / factor
-                        peakMotion.advance(delta, fastPeak, rtl)
+                        motion.advance(delta, fast, rtl, if (fast) speedScale() else 1.0)
                         seconds.doubleValue += delta
                         previous = now
                     }
@@ -152,12 +171,14 @@ internal fun EffortRail(
         } else bloom.snapTo(1f)
     }
 
-    Spacer(Modifier.fillMaxWidth().height(30.dp).drawWithCache {
+    Spacer(Modifier.fillMaxWidth().height(30.dp).onSizeChanged { widthPx = it.width }.drawWithCache {
         val railHeight = 26.dp.toPx()
         val top = (size.height - railHeight) / 2
         val y = size.height / 2
-        val radius = minOf(15.dp.toPx(), size.width / 2)
+        val radius = minOf(maxThumbRadius, size.width / 2)
         val travel = size.width - 2 * radius
+        // Stars are solid antialiased discs. Allow one pixel for the soft edge plus 1dp of clear track.
+        val starEdgeGap = 1f + 1.dp.toPx()
         val clip = Path().apply {
             addRoundRect(RoundRect(0f, top, size.width, top + railHeight, CornerRadius(railHeight / 2)))
         }
@@ -177,13 +198,13 @@ internal fun EffortRail(
         onDrawBehind {
             if (size.width <= 0f) return@onDrawBehind
             val fraction = position().coerceIn(0f, 1f)
-            val knob = Offset(radius + travel * fraction, y)
+            val knob = Offset(railFillWidth(size.width, maxThumbRadius, fraction), y)
+            val timer = seconds.doubleValue
             scale(if (layoutDirection == LayoutDirection.Rtl) -1f else 1f, 1f, pivot = center) {
                 clipPath(clip) {
                     drawRect(track.value)
                     clipRect(right = knob.x) {
                         if (peak) {
-                            val timer = seconds.doubleValue
                             // A 155%-wide gradient moves between both ends of the filled section.
                             translate(left = -.55f * knob.x * sweep(timer, 3.8)) {
                                 scale(1.55f * knob.x, 1f, pivot = Offset.Zero) {
@@ -201,13 +222,13 @@ internal fun EffortRail(
                             Offset(radius + travel * tick, y), alpha = ticks.value)
                     }
                     if (dust.value > 0f) clipRect(right = knob.x) {
-                        val timer = seconds.doubleValue
                         for (star in railStars) {
-                            val phase = if (peak) peakMotion.phase(star) else ((timer + star.advance) / star.seconds % 1.0).toFloat()
-                            val height = if (peak) peakMotion.heightFraction(star) else star.y
+                            val phase = motion.phase(star)
+                            val starRadius = 1.5.dp.toPx() * star.brightness
+                            val height = starDrawY(motion.heightFraction(star), railHeight, starRadius, starEdgeGap)
                             val alpha = minOf(phase / .06f, (1f - phase) / .06f, 1f) * star.brightness
-                            drawCircle(Color.White, 1.5.dp.toPx() * star.brightness,
-                                Offset(starDrawX(phase, knob.x), top + height * railHeight), alpha = alpha * dust.value)
+                            drawCircle(Color.White, starRadius,
+                                Offset(starDrawX(phase, knob.x), top + height), alpha = alpha * dust.value)
                         }
                     }
                 }

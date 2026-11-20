@@ -55,6 +55,12 @@ internal fun effortPalette(levels: List<String>, level: String?, dark: Boolean):
         "ultra", "max" -> EffortTone.Max
         else -> EffortTone.Low // Low is also the reference colour for provider-defined labels.
     }
+    return effortColors(tone, dark, index >= 0 && index == peakEffortIndex(levels))
+}
+
+internal fun ordinaryFastRailColors(dark: Boolean): EffortPalette = effortColors(EffortTone.Low, dark, false)
+
+private fun effortColors(tone: EffortTone, dark: Boolean, isPeak: Boolean): EffortPalette {
     val fill = if (dark) tone.darkFill else tone.lightFill
     val thumb = if (dark) Color(0xFFF9FAFB) else Color.White
     return EffortPalette(
@@ -65,7 +71,7 @@ internal fun effortPalette(levels: List<String>, level: String?, dark: Boolean):
         passedTick = if (dark) thumb else Color.White.copy(alpha = 0.55f),
         thumb = thumb,
         mote = mixRgb(fill, 0xffffff, if (dark) 30 else 42),
-        isPeak = index >= 0 && index == peakEffortIndex(levels),
+        isPeak = isPeak,
     )
 }
 

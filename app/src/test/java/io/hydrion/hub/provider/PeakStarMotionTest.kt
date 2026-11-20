@@ -1,25 +1,23 @@
 package io.hydrion.hub.provider
 
+import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.abs
 
 class PeakStarMotionTest {
-    private val fill = 249f
-    private val width = 264f
-    private val span = starDrawX(1f, fill) - starDrawX(0f, fill)
-
-    private fun screenX(motion: PeakStarMotion, star: RailStar, rtl: Boolean): Float {
+    private fun screenX(motion: RailStarMotion, star: RailStar, width: Float, fill: Float, rtl: Boolean): Float {
         val localX = starDrawX(motion.phase(star), fill)
         return if (rtl) width - localX else localX
     }
 
+    private fun positions(motion: RailStarMotion) = railStars.map { motion.phase(it) to motion.heightFraction(it) }
+
     @Test fun idleStarsDriftIndependentlyAndResumeInPlaceAfterFast() {
-        val motion = PeakStarMotion()
+        val motion = RailStarMotion()
         for (pause in listOf(0.0, .015, 2.8)) {
             motion.advance(3.5, false, false)
-            val before = railStars.map { motion.phase(it) to motion.heightFraction(it) }
+            val before = positions(motion)
             motion.advance(.016, false, false)
             val changes = railStars.mapIndexed { i, star ->
                 val dx = motion.phase(star) - before[i].first
@@ -29,48 +27,98 @@ class PeakStarMotionTest {
             assertTrue(changes.any { it.second < 0f } && changes.any { it.second > 0f })
             assertTrue(changes.all { abs(it.first) < .003f && abs(it.second) < .004f })
 
-            val atSwitch = railStars.map { motion.phase(it) to motion.heightFraction(it) }
+            val atSwitch = positions(motion)
             motion.advance(0.0, true, false)
-            assertEquals(atSwitch, railStars.map { motion.phase(it) to motion.heightFraction(it) })
+            assertEquals(atSwitch, positions(motion))
             motion.advance(pause, true, false)
-            val atRelease = railStars.map { motion.phase(it) to motion.heightFraction(it) }
+            val atRelease = positions(motion)
             assertEquals(atSwitch.map { it.second }, atRelease.map { it.second })
             motion.advance(0.0, false, false)
-            assertEquals(atRelease, railStars.map { motion.phase(it) to motion.heightFraction(it) })
+            assertEquals(atRelease, positions(motion))
+            motion.advance(.2, false, false)
+            val drift = railStars.mapIndexed { i, star -> motion.heightFraction(star) - atRelease[i].second }
+            assertTrue(drift.any { it < -.001f } && drift.any { it > .001f })
+            assertTrue(drift.all { abs(it) < .035f })
         }
-        val heights = railStars.map(motion::heightFraction)
-        motion.advance(.2, false, false)
-        assertTrue(railStars.indices.any { abs(motion.heightFraction(railStars[it]) - heights[it]) > .001f })
     }
 
-    @Test fun fastAcceleratesLeftAndWrapsEveryStarBackToTheRight() {
-        for (rtl in listOf(false, true)) for (fps in listOf(30, 60, 120)) {
-            val motion = PeakStarMotion()
-            motion.advance(1.37, false, rtl)
-            val wraps = IntArray(railStars.size)
-            val rightEdge = if (rtl) width - starDrawX(0f, fill) else starDrawX(1f, fill)
-            val leftEdge = rightEdge - span
-            var previousStep = 0f
-            repeat(3 * fps) { frame ->
-                val before = railStars.map { screenX(motion, it, rtl) }
-                motion.advance(1.0 / fps, true, rtl)
-                val steps = railStars.mapIndexed { i, star ->
-                    val next = screenX(motion, star, rtl)
-                    val dx = next - before[i]
-                    if (dx > 0) {
-                        wraps[i]++
-                        assertTrue("Wrap must leave the left edge", before[i] < leftEdge + span * .05f)
-                        assertTrue("Wrap must enter at the right edge", next > rightEdge - span * .05f)
-                        span - dx
-                    } else -dx
+    @Test fun regularAndPeakMatchEachStarsOldRegularScreenSpeedAndWrapToTheRight() {
+        for (width in listOf(132f, 264f)) {
+            val regularFill = railFillWidth(width, 15f, .4f)
+            for (fill in listOf(regularFill, railFillWidth(width, 15f, 1f))) {
+                val scale = fastStarSpeedScale(fill, regularFill)
+                val span = starDrawX(1f, fill) - starDrawX(0f, fill)
+                for (rtl in listOf(false, true)) for (fps in listOf(30, 60, 120)) {
+                    val motion = RailStarMotion()
+                    val left = if (rtl) width - starDrawX(1f, fill) else starDrawX(0f, fill)
+                    val wraps = IntArray(railStars.size)
+                    motion.advance(.18, true, rtl, scale)
+                    repeat(10 * fps) {
+                        val before = railStars.map { screenX(motion, it, width, fill, rtl) }
+                        motion.advance(1.0 / fps, true, rtl, scale)
+                        railStars.forEachIndexed { i, star ->
+                            val next = screenX(motion, star, width, fill, rtl)
+                            val dx = next - before[i]
+                            val oldStep = 1.08 * regularFill / star.seconds / fps
+                            if (dx > 0f) {
+                                assertTrue(before[i] < left + oldStep + .0001)
+                                assertTrue(next > left + span - oldStep - .0001)
+                                wraps[i]++
+                            }
+                            val signedStep = if (dx > 0f) dx - span else dx
+                            assertEquals(-oldStep, signedStep.toDouble(), .0001)
+                        }
+                    }
+                    assertTrue(wraps.all { it > 0 })
                 }
-                val step = steps.first()
-                assertTrue("All stars must travel left together", steps.all { it > 0f && abs(it - step) < .0002f })
-                assertTrue("Fast must ramp up without a discontinuity", step >= previousStep - .0002f)
-                if (frame == 1) assertTrue(step > previousStep * 2)
-                previousStep = step
             }
-            assertTrue(wraps.all { it >= 3 })
         }
+    }
+
+    @Test fun acceleratingAndChangingFillRetainPhaseAcrossFrameRates() {
+        val regular = 114f
+        val peak = 250f
+        for (rtl in listOf(false, true)) {
+            val coarse = RailStarMotion()
+            val fine = RailStarMotion()
+            val start = coarse.phase(railStars.first())
+            for ((leg, fill) in listOf(regular, peak, regular).withIndex()) {
+                val scale = fastStarSpeedScale(fill, regular)
+                val before = positions(coarse)
+                coarse.advance(0.0, true, rtl, scale)
+                assertEquals(before, positions(coarse))
+                coarse.advance(.175, true, rtl, scale)
+                repeat(21) { fine.advance(1.0 / 120, true, rtl, scale) }
+                for (star in railStars) assertEquals(fine.phase(star), coarse.phase(star), .000001f)
+                if (leg == 0) {
+                    // The starting ramp integrates half the final velocity at 180ms.
+                    val expected = .175 * .175 / (2 * .18) / railStars.first().seconds
+                    val dx = coarse.phase(railStars.first()) - start
+                    assertEquals(if (rtl) expected else -expected, (dx - Math.round(dx)).toDouble(), .000001)
+                }
+            }
+        }
+    }
+
+    @Test fun verticalLaneLeavesRoomForEachPaintedRadiusWithoutPinningTheDrift() {
+        for (density in listOf(1f, 2.75f)) {
+            val height = 26 * density
+            val gap = 1f + density
+            for (star in railStars) {
+                val radius = 1.5f * density * star.brightness
+                val ys = (0..100).map { starDrawY(it / 100f, height, radius, gap) }
+                assertTrue(ys.first() - radius >= gap - .0001f)
+                assertTrue(ys.last() + radius <= height - gap + .0001f)
+                assertTrue(ys.zipWithNext().all { (a, b) -> b > a })
+            }
+        }
+    }
+
+    @Test fun referenceWidthComesFromTheFilledRegionEndingAtTheThumbCenter() {
+        assertEquals(15f, railFillWidth(264f, 15f, 0f), 0f)
+        assertEquals(132f, railFillWidth(264f, 15f, .5f), 0f)
+        assertEquals(249f, railFillWidth(264f, 15f, 1f), 0f)
+        assertEquals(10f, railFillWidth(20f, 15f, 1f), 0f)
+        assertEquals(1.0, fastStarSpeedScale(0f, 0f), 0.0)
     }
 }
