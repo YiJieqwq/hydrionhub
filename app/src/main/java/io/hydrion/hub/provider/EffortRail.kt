@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collectLatest
@@ -59,14 +60,8 @@ private val LightGradient = listOf(0x3b83f6, 0x3b82f6, 0x3d7bf3, 0x4c75f4, 0x647
 private val DarkGradient = listOf(0x3e89ff, 0x438bff, 0x518dff, 0x668bff, 0x7c8aff, 0x9386ff, 0xa084ff,
     0xa785ff, 0xb085ff, 0xb087ff, 0xaf8bff, 0xae8fff, 0xae91ff, 0xaf95ff, 0xb296fe)
 
-private data class Star(val y: Float, val brightness: Float, val seconds: Double, val advance: Double)
 private data class Mote(val near: Offset, val far: Offset, val radius: Float, val alpha: Float, val delay: Float, val life: Float)
 
-// Stable for all draws, with independent phases and vertical coordinates.
-private val stars = Random(713).let { random ->
-    List(22) { i -> Star(.08f + .84f * random.nextFloat(), .5f + .5f * random.nextFloat(),
-        1.6 + 2.4 * random.nextDouble(), 4.0 * ((i * .61803398875) % 1.0)) }
-}
 private val motes = Random(971).let { random ->
     List(18) { i ->
         val angle = (108.0 + random.nextDouble() * 56.0) * PI / 180.0
@@ -127,6 +122,9 @@ internal fun EffortRail(
     val dust = animateFloatAsState(if (peak || accelerated) 1f else 0f, tween(250, easing = ToneEase), label = "effortDust")
     val hasDust by remember(dust) { derivedStateOf(structuralEqualityPolicy()) { dust.value > 0f } }
     val seconds = remember { mutableDoubleStateOf(0.0) }
+    val peakMotion = remember { PeakStarMotion() }
+    val fastPeak by rememberUpdatedState(peak && accelerated)
+    val rtl by rememberUpdatedState(LocalLayoutDirection.current == LayoutDirection.Rtl)
     if (peak || accelerated || hasDust) {
         LaunchedEffect(Unit) {
             val scale = coroutineContext[MotionDurationScale]
@@ -135,7 +133,9 @@ internal fun EffortRail(
                     if (factor <= 0f) return@collectLatest
                     var previous = withInfiniteAnimationFrameNanos { it }
                     while (true) withInfiniteAnimationFrameNanos { now ->
-                        seconds.doubleValue += (now - previous) / 1_000_000_000.0 / factor
+                        val delta = (now - previous) / 1_000_000_000.0 / factor
+                        peakMotion.advance(delta, fastPeak, rtl)
+                        seconds.doubleValue += delta
                         previous = now
                     }
                 }
@@ -202,11 +202,12 @@ internal fun EffortRail(
                     }
                     if (dust.value > 0f) clipRect(right = knob.x) {
                         val timer = seconds.doubleValue
-                        for (star in stars) {
-                            val phase = ((timer + star.advance) / star.seconds % 1.0).toFloat()
+                        for (star in railStars) {
+                            val phase = if (peak) peakMotion.phase(star) else ((timer + star.advance) / star.seconds % 1.0).toFloat()
+                            val height = if (peak) peakMotion.heightFraction(star) else star.y
                             val alpha = minOf(phase / .06f, (1f - phase) / .06f, 1f) * star.brightness
                             drawCircle(Color.White, 1.5.dp.toPx() * star.brightness,
-                                Offset((-.04f + 1.08f * phase) * knob.x, top + star.y * railHeight), alpha = alpha * dust.value)
+                                Offset(starDrawX(phase, knob.x), top + height * railHeight), alpha = alpha * dust.value)
                         }
                     }
                 }
