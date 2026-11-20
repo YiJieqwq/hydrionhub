@@ -56,15 +56,12 @@ import kotlin.math.roundToInt
 internal class ChatModelPickerState {
     enum class Page { Controls, Models, Search, Providers, Options }
 
-    val searchFocus = ChatPickerSearchFocus()
-
     var page by mutableStateOf<Page?>(null)
         private set
     var optionKey by mutableStateOf("")
         private set
     var composerBounds by mutableStateOf<IntRect?>(null)
-    var draftFieldBounds by mutableStateOf<IntRect?>(null)
-    var searchFieldBounds by mutableStateOf<IntRect?>(null)
+    var editorBounds by mutableStateOf<IntRect?>(null)
     var searchQuery by mutableStateOf(TextFieldValue())
         private set
     var searchSubmissions by mutableIntStateOf(0)
@@ -79,24 +76,17 @@ internal class ChatModelPickerState {
             // Keep the query and selection while browsing; composition belongs to the old IME session.
             searchQuery = searchQuery.copy(composition = null)
         }
-        if (page == Page.Search && next != Page.Search) {
-            searchSubmissions = 0
-            searchFieldBounds = null
-        }
+        if (page == Page.Search && next != Page.Search) searchSubmissions = 0
         page = next
     }
     fun open() { browsedProviderId = null; show(Page.Controls) }
     fun models(providerId: String, startSearching: Boolean = false) {
         if (startSearching && page != Page.Controls) return
         browsedProviderId = providerId
-        if (startSearching) beginSearch() else show(Page.Models)
+        show(if (startSearching) Page.Search else Page.Models)
     }
     fun search() {
-        if (page == Page.Models) beginSearch()
-    }
-    private fun beginSearch() {
-        searchFocus.capture()
-        show(Page.Search)
+        if (page == Page.Models) show(Page.Search)
     }
     fun updateSearchQuery(value: TextFieldValue) {
         if (page == Page.Search) searchQuery = value
@@ -120,6 +110,7 @@ internal class ChatModelPickerState {
 internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState, modifier: Modifier = Modifier) {
     val page = picker.page
     val controls = page == null || page == ChatModelPickerState.Page.Controls
+    val modelList = page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Search
     val visibility = if (controls) {
         val visible = remember(picker) { MutableTransitionState(false) }
         visible.targetState = page != null
@@ -149,16 +140,13 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
     val dark = colors.onSurface.luminance() > colors.surface.luminance()
     var peak by remember(entry?.route) { mutableStateOf(false) }
 
-    // The picker and draft share a window. Only an explicitly opened search field borrows focus.
+    // Controls and search both leave the composer editor reachable through the dismissal layer.
     Box(modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))) {
         var origin by remember { mutableStateOf<IntOffset?>(null) }
         if (page == ChatModelPickerState.Page.Controls || page == ChatModelPickerState.Page.Search) {
             PickerDismissLayer(
                 picker, close, Modifier.matchParentSize(),
-                fieldBounds = {
-                    val field = if (page == ChatModelPickerState.Page.Controls) picker.draftFieldBounds else picker.searchFieldBounds
-                    origin?.let { field?.translate(-it) }
-                },
+                fieldBounds = { origin?.let { picker.editorBounds?.translate(-it) } },
             )
         } else if (!closing) Box(Modifier.matchParentSize().focusProperties { canFocus = false }
             .clickable(interactionSource = null, indication = null, role = Role.Button, onClick = picker::dismiss)
@@ -177,7 +165,12 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                     else -> BorderStroke(0.5.dp, (if (dark) Color.White else Color.Black).copy(alpha = 0.05f))
                 }
                 Surface(shape = RoundedCornerShape(14.dp),
-                    color = if (!controls) colors.surface else if (dark) Color(0xFF2A2B2E) else Color(0xFFF8F8F8),
+                    color = when {
+                        modelList -> colors.surfaceContainerHigh
+                        !controls -> colors.surface
+                        dark -> Color(0xFF2A2B2E)
+                        else -> Color(0xFFF8F8F8)
+                    },
                     border = border, shadowElevation = 6.dp,
                     modifier = motion.then(capture).semantics { paneTitle = select }) {
                     if (entry == null) {
@@ -188,8 +181,7 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                         val values = catalog.parameters(model, provider)
                         val cap = model.configureCapabilities().find { it.key == picker.optionKey }
                         when {
-                            page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Search ||
-                                page == ChatModelPickerState.Page.Providers -> {
+                            modelList || page == ChatModelPickerState.Page.Providers -> {
                                 val providers = remember(catalog) { catalog.providers.filter { it.enabled && it.mode == Mode.Chat } }
                                 val browsing = providers.find { it.id == picker.browsedProviderId } ?: provider
                                 if (page == ChatModelPickerState.Page.Search && browsing.id != picker.browsedProviderId) {

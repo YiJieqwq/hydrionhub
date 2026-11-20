@@ -42,7 +42,7 @@ class ChatModelPickerAnchorTest {
             fun checkPage(tag: String): Float {
                 val composerNode = screen.onNodeWithTag("composer-capsule", useUnmergedTree = true).fetchSemanticsNode()
                 val pageNode = screen.onNodeWithTag(tag).fetchSemanticsNode()
-                // Search changes the editor contents and may open the IME. Measure both live nodes in one frame.
+                // Measure both live nodes in the same layout frame.
                 return screen.runOnIdle {
                     val composer = composerNode.boundsInRoot
                     val page = pageNode.boundsInRoot
@@ -54,7 +54,7 @@ class ChatModelPickerAnchorTest {
             val viewport = screen.onNodeWithTag("chat-picker-viewport", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             assertEquals(minOf(288f * density, viewport.width - 24f * density), checkPage("chat-model-card"), 2f)
             screen.onNodeWithTag("chat-model-select").performClick()
-            screen.onNodeWithTag("chat-model-search-field").assertIsFocused()
+            screen.onNodeWithTag("chat-model-search-field").assertIsDisplayed()
             val width = checkPage("chat-model-list")
             screen.onNodeWithTag("chat-model-search-close").performClick()
             screen.onNodeWithTag("chat-model-search-field").assertDoesNotExist()

@@ -39,7 +39,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Close
@@ -64,8 +63,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -102,7 +99,6 @@ import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
 import io.hydrion.hub.provider.ChatModelPickerState
-import io.hydrion.hub.provider.PickerDraftFocus
 import io.hydrion.hub.provider.pickerComposerMaxHeight
 import io.hydrion.hub.provider.chatModelPickerPreImeBack
 import io.hydrion.hub.model.Attachment
@@ -237,30 +233,31 @@ internal fun HubComposer(
     val hardwareKeyboardOnly = remember(resolver, hardwareKeyboard, windowFocused) {
         hardwareKeyboard && Settings.Secure.getInt(resolver, "show_ime_with_hard_keyboard", 0) == 0
     }
-    val hardwareOnly = hardwareKeyboardOnly && !hiddenAfterEditing && !sawHideAnimation
+    val pickerOpen = chatPicker?.page != null
+    val hardwareOnly = hardwareKeyboardOnly && !pickerOpen && !hiddenAfterEditing && !sawHideAnimation
+    val searchPicker = chatPicker?.takeIf { it.page == ChatModelPickerState.Page.Search }
     SideEffect {
         if (fieldValue.text != draft.text) fieldValue = editorValue
+        // Composing spans belong to the outgoing IME session; keep the draft text and selection.
+        if (searchPicker != null && fieldValue.composition != null) fieldValue = fieldValue.copy(composition = null)
         if (focused && hasImeHeight) sawKeyboard = true
         if (hiding && hasImeHeight) sawHideAnimation = true
     }
-    val editingDraft = focused && !toolsRequested && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
-    val searchPicker = chatPicker?.takeIf { it.page == ChatModelPickerState.Page.Search }
-    val borrowed = chatPicker?.searchFocus?.origin
+    val editing = focused && !toolsRequested && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
     // A delayed click or text callback must still belong to this draft-editing session.
     val draftSession = remember(imeReturn, searchPicker) { mutableStateOf(true) }
     DisposableEffect(draftSession) { onDispose { draftSession.value = false } }
     fun acceptsDraftInput(): Boolean {
         val conversation = vm.state.value.current
         return draftSession.value && searchPicker == null && conversation.id == state.current.id &&
-            conversation.mode == state.current.mode && chatPicker?.page != ChatModelPickerState.Page.Search &&
-            chatPicker?.searchFocus?.origin == null
+            conversation.mode == state.current.mode && chatPicker?.page != ChatModelPickerState.Page.Search
     }
     ComposerImeReturnEffect(
         controller = imeReturn,
-        enabled = allowImeReturn && !toolsRequested && !hardwareKeyboardOnly && borrowed == null,
+        enabled = allowImeReturn && !toolsRequested && !hardwareKeyboardOnly && searchPicker == null,
         editorFocused = focused, windowFocused = windowFocused,
         imeShown = imeVisible || hasImeHeight, dismissing = hiding, opening = opening,
-        clearAfterDismissal = hiddenAfterEditing && !toolsRequested && borrowed == null,
+        clearAfterDismissal = hiddenAfterEditing && !toolsRequested && searchPicker == null,
         selection = ComposerEditorSelection(editorValue.text, editorValue.selection.start, editorValue.selection.end),
         onRestore = {
             sawKeyboard = hasImeHeight
@@ -276,7 +273,6 @@ internal fun HubComposer(
         },
         onDismissed = { focusManager.clearFocus() },
     )
-    val pickerOpen = chatPicker?.page != null
     if (toolsPanel == ToolsPanel.WaitingForIme) {
         AwaitToolsImeDismissal(imeActive, windowFocused && allowImeReturn && toolsAvailable && !pickerOpen) { present ->
             if (toolsPanel == ToolsPanel.WaitingForIme) toolsPanel = if (present) ToolsPanel.Open else ToolsPanel.Closed
@@ -285,9 +281,6 @@ internal fun HubComposer(
     BackHandler(enabled = toolsPanel == ToolsPanel.WaitingForIme || (focused && !toolsRequested && !pickerOpen)) {
         if (toolsPanel == ToolsPanel.WaitingForIme) cancelPendingTools() else collapse()
     }
-    // Search borrows focus without collapsing the toolbar that owns its model-picker anchor.
-    // A draft parked with the keyboard down keeps that layout while the search keyboard opens.
-    val editing = borrowed?.editingLayout ?: editingDraft
     val shapeProgress = rememberComposerShape {
         ComposerMotionInput(
             (current.getBottom(density) - nav).coerceAtLeast(0),
@@ -297,48 +290,20 @@ internal fun HubComposer(
         )
     }
     // Legacy keyboards may jump straight to zero before the flow collector sees the final inset.
-    val liveExpansion = if (hasImeHeight || hasImeTarget || hardwareOnly) shapeProgress.value else 0f
-    val expansion = borrowed?.expansion ?: liveExpansion
+    val expansion = if (hasImeHeight || hasImeTarget || hardwareOnly) shapeProgress.value else 0f
     if (chatPicker != null) {
-        val readDraft by rememberUpdatedState {
-            PickerDraftFocus(
-                focused = focused,
-                softwareKeyboardShown = !hiding && (imeVisible || hasImeHeight || opening),
-                editingLayout = editingDraft,
-                expansion = expansion,
-                value = editorValue,
-            )
-        }
+        // The floating panel belongs to this composer even while its toolbar trigger is folded away.
         DisposableEffect(chatPicker) {
-            chatPicker.searchFocus.readDraft = { readDraft() }
             onDispose {
-                chatPicker.draftFieldBounds = null
-                chatPicker.searchFocus.readDraft = null
-                chatPicker.searchFocus.finish()
+                chatPicker.editorBounds = null
+                chatPicker.dismiss()
             }
-        }
-        LaunchedEffect(chatPicker, chatPicker.page, windowFocused, allowImeReturn, toolsRequested) {
-            if (chatPicker.page == ChatModelPickerState.Page.Search) return@LaunchedEffect
-            if (!allowImeReturn || toolsRequested) {
-                chatPicker.searchFocus.finish()
-                return@LaunchedEffect
-            }
-            if (!windowFocused) return@LaunchedEffect
-            val saved = chatPicker.searchFocus.finish(draftFocused = focused) ?: return@LaunchedEffect
-            if (editorValue.text == saved.value.text) {
-                fieldValue = editorValue.copy(selection = saved.value.selection, composition = null)
-            }
-            if (saved.focused && !focused) editorFocus.requestFocus()
-            if (!saved.focused && focused) focusManager.clearFocus()
-            if (!saved.softwareKeyboardShown) keyboard?.hide()
-            else if (saved.focused) keyboard?.show()
         }
     }
-
     val hasContent = draft.text.isNotEmpty() || draft.attachments.isNotEmpty()
-    val rowGate by animateFloatAsState(if (hasContent) 1f else 0f,
+    val rowGate by animateFloatAsState(if (hasContent || searchPicker != null) 1f else 0f,
         tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerDraftRow")
-    val toolbar = if (pickerOpen) 1f else maxOf(expansion, rowGate)
+    val toolbar = maxOf(expansion, rowGate)
     val canSend = searchPicker == null && (modelAvailable || state.current.mode == Mode.Image) &&
         (draft.text.isNotBlank() || draft.attachments.isNotEmpty())
     val active = searchPicker == null && state.isGenerating
@@ -405,8 +370,19 @@ internal fun HubComposer(
                 }
                 Box(Modifier.fillMaxWidth()) {
                     Column {
-                        ComposerEditorSlot(searchPicker, editorMinHeight, editorTextStyle,
-                            modifier = if (pickerOpen) Modifier.weight(1f, fill = false) else Modifier) {
+                        ComposerEditorSlot(
+                            picker = chatPicker, minHeight = editorMinHeight, textStyle = editorTextStyle,
+                            draftFocus = editorFocus,
+                            retainEditorFocus = { windowFocused && allowImeReturn && !hiding && (imeVisible || opening) },
+                            onEditorFocusChanged = { nowFocused ->
+                                if (nowFocused && !focused) {
+                                    sawKeyboard = false
+                                    sawHideAnimation = false
+                                }
+                                focused = nowFocused
+                            },
+                            modifier = if (pickerOpen) Modifier.weight(1f, fill = false) else Modifier,
+                        ) { draftFocusModifier ->
                             BasicTextField(
                                 value = editorValue,
                                 onValueChange = { updated ->
@@ -418,21 +394,13 @@ internal fun HubComposer(
                                 modifier = Modifier.fillMaxWidth().padding(
                                     start = lerp(48.dp, 15.dp, toolbar), end = lerp(48.dp, 16.dp, toolbar)
                                 ).chatModelPickerPreImeBack(pickerOpen) { chatPicker?.back() }
-                                    .focusRequester(editorFocus).onFocusChanged {
-                                        if (it.isFocused && !focused) {
-                                            sawKeyboard = false
-                                            sawHideAnimation = false
-                                        }
-                                        focused = it.isFocused
-                                    }.semantics { contentDescription = "消息输入框" },
+                                    .then(draftFocusModifier).semantics { contentDescription = "消息输入框" },
                                 textStyle = editorTextStyle.copy(color = colors.onSurface),
                                 cursorBrush = SolidColor(colors.primary),
                                 maxLines = if (hasContent || focused) 5 else 1,
                                 decorationBox = { editor ->
                                     Box(Modifier.fillMaxWidth()
-                                        .then(if (chatPicker == null) Modifier else Modifier.onGloballyPositioned {
-                                            chatPicker.draftFieldBounds = IntRect(it.positionInWindow().round(), it.size)
-                                        })
+                                        .trackPickerEditor(chatPicker, search = false)
                                         .heightIn(min = editorMinHeight)
                                         .padding(top = lerp(5.dp, 16.dp, toolbar), bottom = 4.dp),
                                         contentAlignment = Alignment.CenterStart) {
@@ -480,12 +448,7 @@ internal fun HubComposer(
                                 }, contentAlignment = Alignment.Center) { TerminalGlyph(promptColor = glyphAccent, underlineColor = glyphLine) }
                             }
                             Box(Modifier.weight(1f).then(reveal), contentAlignment = Alignment.CenterEnd) {
-                                val trigger = if (chatPicker == null) Modifier else {
-                                    DisposableEffect(chatPicker) {
-                                        onDispose { chatPicker.dismiss() }
-                                    }
-                                    Modifier.testTag("chat-model-trigger")
-                                }
+                                val trigger = if (chatPicker != null) Modifier.testTag("chat-model-trigger") else Modifier
                                 // The former chevron and its gap contribute 17 dp to the trigger’s hit area.
                                 val actionLabel = if (chatPicker != null) stringResource(R.string.chat_controls_select_model)
                                     else "配置模型"
@@ -613,25 +576,22 @@ private fun SendButton(generating: Boolean, canSend: Boolean, onClick: () -> Uni
             canSend -> colors.primary
             else -> colors.surfaceContainerHighest
         }
-        val face = when {
-            generating -> Modifier
-            canSend -> Modifier.offset(x = (-1.75).dp)
-            else -> Modifier.capsuleEdge()
-        }
+        val face = if (generating) Modifier else Modifier.offset(x = (-1.75).dp)
+        val arrow = if (canSend) colors.onPrimary else colors.onSurfaceVariant
         Box(Modifier.size(32.dp).then(face)
             .background(fill, CircleShape), contentAlignment = Alignment.Center) {
-            when {
-                generating -> Box(Modifier.size(11.dp).background(Color.Black, RoundedCornerShape(1.25.dp)))
-                canSend -> Canvas(Modifier.size(20.dp)) {
+            if (generating) {
+                Box(Modifier.size(11.dp).background(Color.Black, RoundedCornerShape(1.25.dp)))
+            } else {
+                Canvas(Modifier.size(20.dp)) {
                     val tip = Offset(center.x, center.y - 6.67.dp.toPx())
                     val tail = Offset(center.x, center.y + 6.67.dp.toPx())
                     val wing = 5.67.dp.toPx()
                     val stroke = 2.dp.toPx()
-                    drawLine(colors.onPrimary, tail, tip, stroke, StrokeCap.Round)
-                    drawLine(colors.onPrimary, tip, tip + Offset(-wing, wing), stroke, StrokeCap.Round)
-                    drawLine(colors.onPrimary, tip, tip + Offset(wing, wing), stroke, StrokeCap.Round)
+                    drawLine(arrow, tail, tip, stroke, StrokeCap.Round)
+                    drawLine(arrow, tip, tip + Offset(-wing, wing), stroke, StrokeCap.Round)
+                    drawLine(arrow, tip, tip + Offset(wing, wing), stroke, StrokeCap.Round)
                 }
-                else -> Icon(Icons.Outlined.ArrowUpward, null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
             }
         }
     }

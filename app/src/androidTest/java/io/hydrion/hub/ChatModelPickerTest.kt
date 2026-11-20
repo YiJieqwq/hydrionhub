@@ -188,7 +188,8 @@ class ChatModelPickerTest {
             assertCardTargetsStaySeparate()
             control("select").performTouchInput { click(Offset(2.dp.toPx(), center.y)) }
             control("list").assertIsDisplayed()
-            control("search-field").assertIsFocused()
+            control("search-field").assertIsDisplayed()
+            assertTrue("Browsing from a parked draft keeps the keyboard down", !softwareKeyboardIsOpen())
             pressBack()
             control("search-field").assertDoesNotExist()
             control("search").assertIsDisplayed()

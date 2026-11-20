@@ -20,6 +20,7 @@ import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.provider.deepSeekProvider
 import java.io.File
+import kotlin.math.abs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -39,7 +40,7 @@ class ComposerDraftTest {
     }
 
     @Test
-    fun enabledSendHasAFullDiskAndCenteredArrowInsideItsTouchTarget() {
+    fun enabledAndDisabledSendShareTheSameDiskAndArrowInsideTheirTouchTarget() {
         val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
         val previous = screen.runOnIdle { vm.state.value.draft.text }
         try {
@@ -66,6 +67,37 @@ class ComposerDraftTest {
             assertEquals(15.34f * density, arrow.height().toFloat(), 2f)
             assertEquals(disk.exactCenterX(), arrow.exactCenterX(), 1.5f)
             assertEquals(disk.exactCenterY(), arrow.exactCenterY(), 1.5f)
+
+            val enabledBounds = send.fetchSemanticsNode().boundsInRoot
+            // Whitespace keeps the composer parked at the same size but disables Send.
+            screen.runOnIdle { vm.setDraft(" ") }
+            send.assertIsNotEnabled()
+            assertEquals(enabledBounds, send.fetchSemanticsNode().boundsInRoot)
+            val muted = send.captureToImage().asAndroidBitmap()
+            val cx = disk.centerX()
+            val cy = disk.centerY()
+            // Sample solid paint in the disk, the lower arrow shaft and the adjacent composer.
+            fun paints(bitmap: Bitmap) = listOf(
+                bitmap.getPixel(cx - (10 * density).toInt(), cy),
+                bitmap.getPixel(cx, cy + (3 * density).toInt()),
+                bitmap.getPixel(cx - (17 * density).toInt(), cy),
+            )
+            val enabledPaints = paints(image)
+            val disabledPaints = paints(muted)
+            assertEquals(3, disabledPaints.distinct().size)
+            assertTrue(enabledPaints[0] != disabledPaints[0] && enabledPaints[1] != disabledPaints[1])
+            val margin = (2 * density).toInt()
+            for (y in (disk.top - margin).coerceAtLeast(0) until (disk.bottom + margin).coerceAtMost(image.height)) {
+                for (x in (disk.left - margin).coerceAtLeast(0) until (disk.right + margin).coerceAtMost(image.width)) {
+                    val role = enabledPaints.indexOf(image.getPixel(x, y))
+                    if (role < 0) continue // Mixed edge pixels depend on the paint contrast.
+                    val actual = muted.getPixel(x, y)
+                    val expected = disabledPaints[role]
+                    val delta = maxOf(abs(Color.red(expected) - Color.red(actual)),
+                        abs(Color.green(expected) - Color.green(actual)), abs(Color.blue(expected) - Color.blue(actual)))
+                    assertTrue("Different send silhouette at ($x,$y)", delta <= 2)
+                }
+            }
         } finally {
             screen.runOnIdle { vm.setDraft(previous) }
         }

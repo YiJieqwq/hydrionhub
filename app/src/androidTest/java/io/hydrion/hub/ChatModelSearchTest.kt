@@ -2,6 +2,7 @@ package io.hydrion.hub
 
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewTreeObserver
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -10,6 +11,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -83,11 +85,14 @@ class ChatModelSearchTest {
     }
 
     private fun enterSearch(button: String, expectedQuery: String = ""): SemanticsNodeInteraction {
+        val keyboardWasOpen = imeIsVisible()
         control(button).performTouchInput { click(center) }
         control("list").assertIsDisplayed()
         val field = screen.onNode(hasTestTag("chat-model-search-field") and
             hasAnyAncestor(hasTestTag("composer-capsule")))
-            .assertIsDisplayed().assertIsFocused().assert(hasImeAction(ImeAction.Search))
+            .assertIsDisplayed().assert(hasImeAction(ImeAction.Search))
+        if (keyboardWasOpen) field.assertIsFocused()
+        assertEquals("Entering search preserves keyboard visibility", keyboardWasOpen, imeIsVisible())
         screen.onAllNodes(hasSetTextAction() and hasAnyAncestor(hasTestTag("chat-model-list")),
             useUnmergedTree = true).assertCountEquals(0)
         assertEquals(expectedQuery, field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
@@ -102,6 +107,105 @@ class ChatModelSearchTest {
         val insets = ViewCompat.getRootWindowInsets(view)
         view.hasWindowFocus() && insets?.isVisible(WindowInsetsCompat.Type.ime()) == true
     }
+
+    private fun hideKeyboard() {
+        screen.runOnUiThread {
+            val window = screen.activity.window
+            WindowCompat.getInsetsController(window, window.decorView).hide(WindowInsetsCompat.Type.ime())
+        }
+        screen.waitUntil(15_000) { !imeIsVisible() }
+    }
+
+    private fun capsule() = screen.onNodeWithTag("composer-capsule", useUnmergedTree = true)
+        .fetchSemanticsNode().boundsInRoot
+
+    private fun assertAnchored(tag: String) {
+        val density = screen.activity.resources.displayMetrics.density
+        val card = control(tag).assertIsDisplayed().fetchSemanticsNode()
+        val composer = screen.onNodeWithTag("composer-capsule", useUnmergedTree = true).fetchSemanticsNode()
+        screen.runOnIdle {
+            assertEquals("Panel gap above composer", 11.5f * density,
+                composer.boundsInRoot.top - card.boundsInRoot.bottom, 2f)
+        }
+    }
+
+    private fun assertImeStays(visible: Boolean, action: () -> Unit) {
+        val view = screen.activity.window.decorView
+        val samples = mutableListOf<Boolean>()
+        val listener = ViewTreeObserver.OnPreDrawListener {
+            samples += ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+            true
+        }
+        screen.runOnUiThread { view.viewTreeObserver.addOnPreDrawListener(listener) }
+        try {
+            action()
+            screen.waitForIdle()
+            assertEquals(visible, imeIsVisible())
+            screen.runOnUiThread {
+                assertTrue("IME visibility per drawn frame: $samples", samples.isNotEmpty() && samples.all { it == visible })
+            }
+        } finally {
+            screen.runOnUiThread { view.viewTreeObserver.removeOnPreDrawListener(listener) }
+        }
+    }
+
+    @Test fun emptyDraftFoldsUnderTheCardAndListButAnEmptySearchParksUntilTapped() = withProviders { vm, _, _ ->
+        screen.runOnIdle { vm.setDraft("") }
+        val compact = capsule()
+        screen.runOnIdle { vm.setDraft("x") }
+        val parked = capsule()
+        assertTrue(parked.height > compact.height)
+        assertEquals(compact.bottom, parked.bottom, 1f)
+        screen.runOnIdle { vm.setDraft("") }
+
+        editor.performTouchInput { click(center) }
+        screen.waitUntil(15_000) { imeIsVisible() && capsule().width > parked.width }
+        openControls()
+        hideKeyboard()
+        screen.waitUntil(15_000) { capsule() == compact }
+        assertAnchored("card")
+        assertImeStays(false) { enterSearch("select") }
+        screen.waitUntil(15_000) { capsule() == parked }
+        assertAnchored("list")
+
+        val query = control("search-field")
+        query.performTouchInput { click(center) }
+        screen.waitUntil(15_000) { imeIsVisible() && capsule().width > parked.width }
+        query.assertIsFocused()
+        assertAnchored("list")
+        assertImeStays(true) { control("search-close").performTouchInput { click(center) } }
+        control("list").assertIsDisplayed()
+        hideKeyboard()
+        screen.waitUntil(15_000) { capsule() == compact }
+        assertAnchored("list")
+        send.assertIsNotEnabled()
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun cancelAfterHidingTheSearchKeyboardRestoresParkedDraftSelectionAndAttachment() =
+        withProviders(includeAttachment = true) { vm, _, _ ->
+            val draft = "draft stays here"
+            val selection = TextRange(2, 7)
+            screen.runOnIdle { vm.setDraft(draft) }
+            val parked = capsule()
+            val attachments = screen.runOnIdle { vm.state.value.draft.attachments }
+            editor.performTouchInput { click(center) }
+            screen.waitUntil(15_000) { imeIsVisible() && capsule().width > parked.width }
+            editor.performTextInputSelection(selection)
+            openControls()
+            assertImeStays(true) { enterSearch("select").performTextReplacement("Nimbus") }
+            hideKeyboard()
+            screen.waitUntil(15_000) { capsule() == parked }
+            assertAnchored("list")
+
+            assertImeStays(false) { control("search-close").performTouchInput { click(center) } }
+            editor.assertTextEquals(draft)
+            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            assertEquals(parked, capsule())
+            screen.onNodeWithText("draft-only.txt").assertIsDisplayed()
+            screen.runOnIdle { assertEquals(attachments, vm.state.value.draft.attachments) }
+            assertImeStays(false) { enterSearch("search", expectedQuery = "Nimbus") }
+        }
 
     @OptIn(ExperimentalTestApi::class)
     @Test fun searchUsesTheBrowsedProviderAndRestoresTheDraftSelection() = withProviders(includeAttachment = true) { vm, first, second ->
