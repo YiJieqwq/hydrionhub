@@ -31,6 +31,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -70,6 +73,7 @@ fun matchingMessages(state: HubState, query: String): List<String> {
     }.map { it.id }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MessageList(
     vm: HubViewModel,
@@ -117,8 +121,15 @@ fun MessageList(
     MessageCanvas(LocalMessageStyle.current, modifier.fillMaxSize()) {
         val edges = if (state.current.mode == Mode.Chat) {
             val origin = remember { mutableStateOf<IntOffset?>(null) }
+            val colors = MaterialTheme.colorScheme
+            val dark = colors.onSurface.luminance() > colors.surface.luminance()
+            val systemBars = WindowInsets.systemBars.union(WindowInsets.displayCutout)
+            val consumed = remember { mutableStateOf(WindowInsets(0, 0, 0, 0)) }
+            val remainingBars = { systemBars.exclude(consumed.value) }
             Modifier.onGloballyPositioned { origin.value = it.positionInWindow().round() }
-                .chatEdgeFades(floatingBars, MaterialTheme.colorScheme.background, list, origin, composerBoundsInWindow)
+                .then(if (dark) Modifier.onConsumedWindowInsetsChanged { consumed.value = it } else Modifier)
+                .chatEdgeFades(floatingBars, colors.background, list, origin, composerBoundsInWindow,
+                    darkInsets = remainingBars.takeIf { dark })
         } else Modifier
         LazyColumn(
             state = list, modifier = Modifier.fillMaxSize().testTag("message-timeline").then(edges), contentPadding = padding,
@@ -144,14 +155,30 @@ fun MessageList(
 
 private fun Modifier.chatEdgeFades(
     bars: PaddingValues, background: Color, list: LazyListState, origin: State<IntOffset?>,
-    composerBoundsInWindow: () -> IntRect?,
+    composerBoundsInWindow: () -> IntRect?, darkInsets: (() -> WindowInsets)?,
 ) = drawWithCache {
     val capsule = origin.value?.let { offset -> composerBoundsInWindow()?.translate(-offset) }
         ?.takeIf { it.right > 0 && it.left < size.width }
-    val bands = chatFadeBands(
-        size.height, bars.calculateTopPadding().toPx(), bars.calculateBottomPadding().toPx(),
-        capsule?.top?.toFloat(), capsule?.bottom?.toFloat(), density,
-    )
+    val headerHeight = bars.calculateTopPadding().toPx()
+    val bottomBarHeight = bars.calculateBottomPadding().toPx()
+    val top = capsule?.top?.toFloat()
+    val bottom = capsule?.bottom?.toFloat()
+    val reveal = ChatEdgeFade.ScrollRevealDp.dp.toPx()
+    val insets = darkInsets?.invoke()
+    if (insets != null) {
+        val fade = darkChatFade(size.height, headerHeight, bottomBarHeight, top, bottom,
+            insets.getTop(this).toFloat(), insets.getBottom(this).toFloat(), density)
+        val topBrush = fade.top.blackGradient()
+        val bottomBrush = fade.bottom.blackGradient()
+        return@drawWithCache onDrawWithContent {
+            drawContent()
+            drawRect(Color.Black, size = Size(size.width, fade.top.guardY))
+            drawRect(Color.Black, Offset(0f, fade.bottom.guardY), Size(size.width, size.height - fade.bottom.guardY))
+            drawDarkShoulder(fade.top, topBrush, list.topReveal(reveal))
+            drawDarkShoulder(fade.bottom, bottomBrush, list.bottomReveal(reveal))
+        }
+    }
+    val bands = chatFadeBands(size.height, headerHeight, bottomBarHeight, top, bottom, density)
     val clear = background.copy(alpha = 0f)
     val header = bands.headerStop
     val topBrush = if (bands.topLength > 0f) Brush.verticalGradient(
@@ -170,24 +197,46 @@ private fun Modifier.chatEdgeFades(
         }
         Brush.verticalGradient(*stops.toTypedArray(), startY = bottomStart, endY = size.height)
     } else null
-    val reveal = ChatEdgeFade.ScrollRevealDp.dp.toPx()
     onDrawWithContent {
         drawContent()
-        // Ease the mask away as the first or last item reaches its resting padding.
-        // Reading scroll position here reuses the cached brushes during a drag.
         if (topBrush != null && list.canScrollBackward) {
-            val alpha = if (list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / reveal).coerceIn(0f, 1f)
-            drawRect(topBrush, size = Size(size.width, bands.topLength), alpha = alpha)
+            drawRect(topBrush, size = Size(size.width, bands.topLength), alpha = list.topReveal(reveal))
         }
         if (bottomBrush != null && list.canScrollForward) {
-            val info = list.layoutInfo
-            val last = info.visibleItemsInfo.lastOrNull()
-            val alpha = if (last != null && last.index == info.totalItemsCount - 1) {
-                ((last.offset + last.size + info.afterContentPadding - info.viewportEndOffset) / reveal).coerceIn(0f, 1f)
-            } else 1f
-            drawRect(bottomBrush, Offset(0f, bottomStart), Size(size.width, bands.bottomLength), alpha = alpha)
+            drawRect(bottomBrush, Offset(0f, bottomStart), Size(size.width, bands.bottomLength), alpha = list.bottomReveal(reveal))
         }
     }
+}
+
+private fun DarkChatFadeEdge.blackGradient() = Brush.verticalGradient(
+    *stops.map { (position, alpha) -> position to Color.Black.copy(alpha = alpha) }.toTypedArray(), endY = 1f,
+)
+
+private fun DrawScope.drawDarkShoulder(edge: DarkChatFadeEdge, brush: Brush, reveal: Float) {
+    val span = edge.endY(reveal) - edge.guardY
+    if (span == 0f) return
+    // The cached unit gradient runs inward from the guard; the bottom edge grows upward.
+    withTransform({
+        translate(0f, edge.guardY)
+        scale(1f, span, pivot = Offset.Zero)
+    }) {
+        drawRect(brush, size = Size(size.width, 1f))
+    }
+}
+
+private fun LazyListState.topReveal(distance: Float): Float = when {
+    !canScrollBackward -> 0f
+    firstVisibleItemIndex > 0 -> 1f
+    else -> (firstVisibleItemScrollOffset / distance).coerceIn(0f, 1f)
+}
+
+private fun LazyListState.bottomReveal(distance: Float): Float {
+    if (!canScrollForward) return 0f
+    val info = layoutInfo
+    val last = info.visibleItemsInfo.lastOrNull()
+    return if (last != null && last.index == info.totalItemsCount - 1) {
+        ((last.offset + last.size + info.afterContentPadding - info.viewportEndOffset) / distance).coerceIn(0f, 1f)
+    } else 1f
 }
 
 @Composable
