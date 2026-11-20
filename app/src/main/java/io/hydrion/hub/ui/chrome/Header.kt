@@ -81,10 +81,11 @@ internal fun Header(
         contentAlignment = Alignment.CenterStart
     ) {
         if (locked) {
-            val compactActions = maxWidth < 252.dp + 125.dp * (LocalDensity.current.fontScale - 1f)
+            // Keep the same minimum text space before showing both actions.
+            val compactActions = maxWidth < 262.dp + 125.dp * (LocalDensity.current.fontScale - 1f)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 DrawerButton(onDrawer)
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(8.dp))
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                     ConversationChip(title, mode, contextUsage, onRename)
                 }
@@ -147,7 +148,7 @@ private fun ConversationChip(
             .background(colors.capsuleFill(colors.surfaceContainerHigh))
             .clickable(role = Role.Button, onClickLabel = "重命名会话", onClick = onRename)
             .semantics { stateDescription = "模式已锁定" }
-            .heightIn(min = 44.dp).padding(horizontal = 16.dp, vertical = 4.dp),
+            .heightIn(min = 44.dp).padding(start = 20.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.Center
     ) {
         Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp,
@@ -184,7 +185,8 @@ private fun ConversationActions(
                 Icon(painterResource(R.drawable.ic_compose), "新建会话", Modifier.size(22.dp), tint = headerInk())
             }
             Box {
-                IconButton(onClick = { more = true }, modifier = Modifier.size(40.dp, ChatHeaderLayout.ActionSize)) {
+                val moreWidth = if (compact) 40.dp else ChatHeaderLayout.ActionSize
+                IconButton(onClick = { more = true }, modifier = Modifier.size(moreWidth, ChatHeaderLayout.ActionSize)) {
                     Icon(Icons.Outlined.MoreVert, "更多会话操作", Modifier.size(23.dp), tint = headerInk())
                 }
                 DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
