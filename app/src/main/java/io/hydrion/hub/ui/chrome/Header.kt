@@ -14,8 +14,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -35,6 +41,31 @@ internal object ChatHeaderLayout {
     val SidePadding = 14.dp
     val TopPadding = 12.dp
     val ActionSize = 44.dp
+}
+
+private val DarkCapsuleFill = Color(0xFF303030)
+private val DarkCapsuleBorder = Color(0xFF4F4F4F)
+private const val BorderWidthPx = 2f
+
+private val ColorScheme.darkHeader get() = surface.luminance() < onSurface.luminance()
+private fun ColorScheme.capsuleFill(light: Color) = if (darkHeader) DarkCapsuleFill else light
+
+@Composable
+private fun headerInk(light: Color = LocalContentColor.current) =
+    if (MaterialTheme.colorScheme.darkHeader) Color.White else light
+
+private fun Modifier.headerEdge(colors: ColorScheme): Modifier {
+    if (!colors.darkHeader) return capsuleEdge()
+    return drawWithContent {
+        drawContent()
+        // Align both edges of the stroke to the pixel grid at every display density.
+        val diameter = size.minDimension - BorderWidthPx
+        if (diameter > 0f) drawRoundRect(
+            color = DarkCapsuleBorder, topLeft = Offset(BorderWidthPx / 2, BorderWidthPx / 2),
+            size = Size(size.width - BorderWidthPx, size.height - BorderWidthPx),
+            cornerRadius = CornerRadius(diameter / 2f), style = Stroke(BorderWidthPx),
+        )
+    }
 }
 
 @Composable
@@ -69,12 +100,13 @@ internal fun Header(
 
 @Composable
 private fun DrawerButton(onClick: () -> Unit) {
-    Surface(modifier = Modifier.testTag("header-drawer-capsule").capsuleEdge(), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface) {
+    val colors = MaterialTheme.colorScheme
+    Surface(modifier = Modifier.testTag("header-drawer-capsule").headerEdge(colors), shape = CircleShape,
+        color = colors.capsuleFill(colors.surfaceContainerHigh), contentColor = colors.onSurface) {
         IconButton(onClick = onClick, modifier = Modifier.size(ChatHeaderLayout.ActionSize)) {
             Icon(
                 painterResource(R.drawable.ic_sidebar_menu),
-                contentDescription = "打开侧栏", modifier = Modifier.size(24.dp)
+                contentDescription = "打开侧栏", modifier = Modifier.size(24.dp), tint = headerInk()
             )
         }
     }
@@ -84,15 +116,15 @@ private fun DrawerButton(onClick: () -> Unit) {
 private fun ModePicker(mode: Mode, onMode: (Mode) -> Unit, modifier: Modifier = Modifier) {
     val colors = MaterialTheme.colorScheme
     Row(
-        modifier.capsuleEdge().clip(CircleShape).background(colors.surfaceContainerHighest)
+        modifier.headerEdge(colors).clip(CircleShape).background(colors.capsuleFill(colors.surfaceContainerHighest))
             .selectableGroup().padding(3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Mode.entries.forEach { option ->
             val selected = mode == option
             Box(
-                Modifier.then(if (selected) Modifier.capsuleEdge() else Modifier).clip(CircleShape)
-                    .background(if (selected) colors.surface else colors.surfaceContainerHighest)
+                Modifier.then(if (selected) Modifier.headerEdge(colors) else Modifier).clip(CircleShape)
+                    .background(colors.capsuleFill(if (selected) colors.surface else colors.surfaceContainerHighest))
                     .selectable(selected = selected, role = Role.Tab, onClick = { onMode(option) })
                     .defaultMinSize(minWidth = 74.dp, minHeight = 36.dp).padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center
@@ -111,14 +143,15 @@ private fun ConversationChip(
     val colors = MaterialTheme.colorScheme
     val detailColor = Color(0xFFCDCDCD)
     Column(
-        Modifier.widthIn(max = 290.dp).testTag("conversation-chip").capsuleEdge().clip(CircleShape).background(colors.surfaceContainerHigh)
+        Modifier.widthIn(max = 290.dp).testTag("conversation-chip").headerEdge(colors).clip(CircleShape)
+            .background(colors.capsuleFill(colors.surfaceContainerHigh))
             .clickable(role = Role.Button, onClickLabel = "重命名会话", onClick = onRename)
             .semantics { stateDescription = "模式已锁定" }
             .heightIn(min = 44.dp).padding(horizontal = 16.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.Center
     ) {
         Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp,
-            lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, color = colors.onSurface)
+            lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, color = headerInk(colors.onSurface))
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -143,15 +176,16 @@ private fun ConversationActions(
     pinned: Boolean, compact: Boolean, onNew: () -> Unit, onPin: () -> Unit, onFind: () -> Unit, onDelete: () -> Unit
 ) {
     var more by remember { mutableStateOf(false) }
-    Surface(modifier = Modifier.testTag("header-actions-capsule").capsuleEdge(), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface) {
+    val colors = MaterialTheme.colorScheme
+    Surface(modifier = Modifier.testTag("header-actions-capsule").headerEdge(colors), shape = CircleShape,
+        color = colors.capsuleFill(colors.surfaceContainerHigh), contentColor = colors.onSurface) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (!compact) IconButton(onClick = onNew, modifier = Modifier.size(ChatHeaderLayout.ActionSize)) {
-                Icon(painterResource(R.drawable.ic_compose), "新建会话", Modifier.size(22.dp))
+                Icon(painterResource(R.drawable.ic_compose), "新建会话", Modifier.size(22.dp), tint = headerInk())
             }
             Box {
                 IconButton(onClick = { more = true }, modifier = Modifier.size(40.dp, ChatHeaderLayout.ActionSize)) {
-                    Icon(Icons.Outlined.MoreVert, "更多会话操作", Modifier.size(23.dp))
+                    Icon(Icons.Outlined.MoreVert, "更多会话操作", Modifier.size(23.dp), tint = headerInk())
                 }
                 DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                     if (compact) DropdownMenuItem(text = { Text("新建会话") },
