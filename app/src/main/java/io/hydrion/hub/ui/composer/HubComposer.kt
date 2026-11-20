@@ -2,6 +2,7 @@ package io.hydrion.hub.ui.composer
 
 import android.content.res.Configuration
 import android.provider.Settings
+import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -42,6 +43,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Bolt
@@ -59,6 +61,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -76,6 +79,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.positionInWindow
@@ -183,6 +187,7 @@ internal fun HubComposer(
     chatPicker: ChatModelPickerState? = null,
     modelEditorBridge: ModelEditorComposerBridge? = null,
     forceReturnFolded: Boolean = false,
+    chatTools: ToolsPageState? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val darkComposer = colors.onSurface.luminance() > colors.surfaceContainerHigh.luminance()
@@ -206,7 +211,11 @@ internal fun HubComposer(
     val opening by remember(source, target, density, nav) {
         derivedStateOf { target.getBottom(density) > maxOf(nav, source.getBottom(density)) }
     }
-    val imeReturn = remember(state.current.id, state.current.mode) { ComposerImeReturn() }
+    val tools = chatTools?.takeIf { state.current.mode == Mode.Chat }
+    val toolEditor = tools?.takeIf { it.active }
+    val toolsProgress = tools?.progress ?: 0f
+    // A pending background restore belongs to its editing role, not a later tool query or draft.
+    val imeReturn = remember(state.current.id, state.current.mode, toolEditor) { ComposerImeReturn() }
     val editorFocus = remember { FocusRequester() }
     val draft = state.draft
     var fieldValue by remember(state.current.id, state.current.mode) {
@@ -218,6 +227,7 @@ internal fun HubComposer(
     var sawHideAnimation by remember { mutableStateOf(false) }
     var toolsPanel by remember(state.current.id, state.current.mode) { mutableStateOf(ToolsPanel.Closed) }
     val toolsRequested = toolsPanel != ToolsPanel.Closed
+    val canOpenTools = toolsAvailable && (tools != null || state.current.mode == Mode.Image)
     fun cancelPendingTools() {
         if (toolsPanel == ToolsPanel.WaitingForIme) toolsPanel = ToolsPanel.Closed
     }
@@ -250,25 +260,25 @@ internal fun HubComposer(
     SideEffect {
         if (fieldValue.text != draft.text) fieldValue = editorValue
         // Composing spans belong to the outgoing IME session; keep the draft text and selection.
-        if (searchPicker != null && fieldValue.composition != null) fieldValue = fieldValue.copy(composition = null)
+        if ((searchPicker != null || toolEditor != null) && fieldValue.composition != null) fieldValue = fieldValue.copy(composition = null)
         if (focused && hasImeHeight) sawKeyboard = true
         if (hiding && hasImeHeight) sawHideAnimation = true
     }
     val editing = focused && !toolsRequested && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
     // A delayed click or text callback must still belong to this draft-editing session.
-    val draftSession = remember(imeReturn, searchPicker) { mutableStateOf(true) }
+    val draftSession = remember(imeReturn, searchPicker, toolEditor) { mutableStateOf(true) }
     DisposableEffect(draftSession) { onDispose { draftSession.value = false } }
     fun acceptsDraftInput(): Boolean {
         val conversation = vm.state.value.current
-        return draftSession.value && searchPicker == null && conversation.id == state.current.id &&
+        return draftSession.value && searchPicker == null && tools?.active != true && conversation.id == state.current.id &&
             conversation.mode == state.current.mode && chatPicker?.page != ChatModelPickerState.Page.Search
     }
     ComposerImeReturnEffect(
         controller = imeReturn,
-        enabled = allowImeReturn && !toolsRequested && !hardwareKeyboardOnly && searchPicker == null,
+        enabled = allowImeReturn && !toolsRequested && !hardwareKeyboardOnly && searchPicker == null && toolEditor == null,
         editorFocused = focused, windowFocused = windowFocused,
         imeShown = imeVisible || hasImeHeight, dismissing = hiding, opening = opening,
-        clearAfterDismissal = hiddenAfterEditing && !toolsRequested && searchPicker == null,
+        clearAfterDismissal = hiddenAfterEditing && !toolsRequested && searchPicker == null && toolEditor == null,
         selection = ComposerEditorSelection(editorValue.text, editorValue.selection.start, editorValue.selection.end),
         onRestore = {
             sawKeyboard = hasImeHeight
@@ -289,7 +299,7 @@ internal fun HubComposer(
             if (toolsPanel == ToolsPanel.WaitingForIme) toolsPanel = if (present) ToolsPanel.Open else ToolsPanel.Closed
         }
     }
-    BackHandler(enabled = toolsPanel == ToolsPanel.WaitingForIme || (focused && !toolsRequested && !pickerOpen)) {
+    BackHandler(enabled = toolsPanel == ToolsPanel.WaitingForIme || (focused && !toolsRequested && !pickerOpen && toolEditor == null)) {
         if (toolsPanel == ToolsPanel.WaitingForIme) cancelPendingTools() else collapse()
     }
     val shapeProgress = rememberComposerShape {
@@ -315,7 +325,8 @@ internal fun HubComposer(
     val hasRowContent = hasContent || searchPicker != null
     val rowGate by animateFloatAsState(if (!forceReturnFolded && hasRowContent) 1f else 0f,
         if (forceReturnFolded) snap() else tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerDraftRow")
-    val toolbar = if (forceReturnFolded) 0f else maxOf(expansion, rowGate)
+    val chatToolbar = if (forceReturnFolded) 0f else maxOf(expansion, rowGate)
+    val toolbar = chatToolbar * (1f - toolsProgress)
     val returning = modelEditorBridge?.returning != null
     val returnFrame = remember(modelEditorBridge) { mutableStateOf<ModelEditorReturnFrame?>(null) }
     if (modelEditorBridge != null) {
@@ -341,6 +352,7 @@ internal fun HubComposer(
     val editorMinHeight = lerp(49.25.dp, 46.5.dp, toolbar)
     val controlRowHeight = 47.75.dp
     val editorTextStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
+    var draftOverflowPx by remember(state.current.id, state.current.mode) { mutableIntStateOf(0) }
     val safeArea = WindowInsets.safeDrawing
     val pickerRoom = if (!pickerOpen) Modifier else Modifier.layout { measurable, limits ->
         val keep = (editorMinHeight + controlRowHeight + bottomGap).roundToPx()
@@ -349,7 +361,7 @@ internal fun HubComposer(
         layout(composer.width, composer.height) { composer.place(0, 0) }
     }
     Column(modifier.then(pickerRoom).fillMaxWidth().padding(start = sideInset, end = sideInset, bottom = bottomGap)) {
-        importError?.let { error ->
+        importError?.takeIf { toolEditor == null }?.let { error ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(error, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = colors.error)
                 IconButton(onClick = { importError = null }) {
@@ -380,11 +392,15 @@ internal fun HubComposer(
             color = colors.surfaceContainerHigh,
         ) {
             Column {
-                if (draft.attachments.isNotEmpty() && !forceReturnFolded) {
+                if (draft.attachments.isNotEmpty() && !forceReturnFolded && toolsProgress < 1f) {
                     val imageAndText = draft.text.isNotEmpty() && draft.attachments.any { it.hasImagePreview }
                     // Let the editor and toolbar measure first in short windows above the IME.
                     BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth()
-                        .then(if (returning) Modifier.revealHeight(toolbar, 0.dp) else Modifier)
+                        .then(when {
+                            toolEditor != null -> Modifier.clearAndSetSemantics { }.revealHeight(1f - toolsProgress, 0.dp)
+                            returning -> Modifier.revealHeight(toolbar, 0.dp)
+                            else -> Modifier
+                        })
                         .padding(start = 8.dp, end = 8.dp, top = 3.dp, bottom = if (imageAndText) 0.dp else 3.dp)) {
                         val previewWidth = maxWidth
                         val previewHeight = minOf(120.dp, maxHeight)
@@ -394,7 +410,9 @@ internal fun HubComposer(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             items(draft.attachments, key = { it.id }) { attachment ->
-                                DraftAttachment(attachment, previewWidth, previewHeight) { vm.removeAttachment(attachment.id) }
+                                DraftAttachment(attachment, previewWidth, previewHeight) {
+                                    if (tools?.active != true) vm.removeAttachment(attachment.id)
+                                }
                             }
                         }
                     }
@@ -421,31 +439,56 @@ internal fun HubComposer(
                             modifier = (if (pickerOpen) Modifier.weight(1f, fill = false) else Modifier)
                                 .then(if (returning || forceReturnFolded) Modifier.revealHeight(toolbar, 49.25.dp) else Modifier),
                         ) { draftFocusModifier ->
+                            val shown = toolEditor?.query ?: editorValue
+                            val toolHint = stringResource(R.string.tools_search_hint)
                             BasicTextField(
-                                value = editorValue,
+                                // The same field, FocusRequester and native IME options serve both roles.
+                                value = shown,
                                 onValueChange = { updated ->
-                                    if (acceptsDraftInput()) {
+                                    if (toolEditor != null) {
+                                        if (draftSession.value && toolEditor.targetOpen) {
+                                            toolEditor.query = if ('\n' in updated.text || '\r' in updated.text)
+                                                updated.copy(text = updated.text.replace('\r', ' ').replace('\n', ' '), composition = null)
+                                            else updated
+                                        }
+                                    } else if (acceptsDraftInput()) {
                                         fieldValue = updated
                                         if (updated.text != vm.state.value.draft.text) vm.setDraft(updated.text)
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth().padding(
                                     start = lerp(48.dp, 15.dp, toolbar), end = lerp(48.dp, 16.dp, toolbar)
-                                ).chatModelPickerPreImeBack(pickerOpen) { chatPicker?.back() }
-                                    .then(draftFocusModifier).semantics { contentDescription = "消息输入框" },
+                                ).then(if (toolEditor == null) Modifier else Modifier.testTag("tools-search-field")
+                                    .onPreviewKeyEvent { event ->
+                                        val code = event.nativeKeyEvent.keyCode
+                                        code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER
+                                    })
+                                    .chatModelPickerPreImeBack(pickerOpen || toolEditor != null) {
+                                        if (toolEditor != null) toolEditor.close() else chatPicker?.back()
+                                    }
+                                    .then(draftFocusModifier)
+                                    .semantics { contentDescription = if (toolEditor != null) toolHint else "消息输入框" },
                                 textStyle = editorTextStyle.copy(color = colors.onSurface),
                                 cursorBrush = SolidColor(colors.primary),
-                                maxLines = if (!forceReturnFolded && (hasContent || focused)) 5 else 1,
+                                maxLines = if (toolEditor == null && !forceReturnFolded && (hasContent || focused)) 5 else 1,
+                                keyboardActions = if (toolEditor != null) KeyboardActions(onSearch = {}, onDone = {}, onSend = {})
+                                    else KeyboardActions.Default,
                                 decorationBox = { editor ->
                                     Box(Modifier.fillMaxWidth()
                                         .trackPickerEditor(chatPicker, search = false)
-                                        .heightIn(min = editorMinHeight)
+                                        .layout { content, limits ->
+                                            val field = content.measure(limits)
+                                            // Switching to a blank query must not drop the old draft's wrapped lines in one frame.
+                                            if (toolEditor == null) draftOverflowPx = (field.height - editorMinHeight.roundToPx()).coerceAtLeast(0)
+                                            val extra = if (toolEditor == null) 0 else (draftOverflowPx * (1f - toolsProgress)).roundToInt()
+                                            layout(field.width, limits.constrainHeight(field.height + extra)) { field.place(0, 0) }
+                                        }.heightIn(min = editorMinHeight)
                                         .padding(top = lerp(5.dp, 16.dp, toolbar), bottom = 4.dp),
                                         contentAlignment = Alignment.CenterStart) {
-                                        if (draft.text.isEmpty()) {
+                                        if (shown.text.isEmpty()) {
                                             val isChat = state.current.mode == Mode.Chat
                                             Text(
-                                                if (isChat) "Chat with AI" else "描述想生成的图片",
+                                                if (toolEditor != null) toolHint else if (isChat) "Chat with AI" else "描述想生成的图片",
                                                 color = HubStyle.ComposerHint,
                                                 style = if (isChat) editorTextStyle else editorTextStyle.copy(fontSize = 17.sp),
                                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -458,16 +501,22 @@ internal fun HubComposer(
                         }
                         Spacer(Modifier.height(controlRowHeight * toolbar))
                     }
-                    Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(lerp(editorMinHeight, controlRowHeight, toolbar))
-                        .padding(horizontal = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                        ComposerIconButton("添加附件", onClick = ::pick) { PlusGlyph() }
-                        if (toolbar > 0f) {
-                            val interactive = toolbar >= 0.6f
+                    ToolsToolbarMorph(
+                        progress = toolsProgress, toolsOpen = tools?.targetOpen == true,
+                        hasClearableTools = toolEditor?.query?.text?.isNotEmpty() == true,
+                        generating = active, canSend = canSend,
+                        onAttach = { if (tools?.active != true) pick() }, onSend = onAction,
+                        onClear = { toolEditor?.clearQuery() }, onBack = { toolEditor?.close() },
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                            .height(lerp(editorMinHeight, controlRowHeight, toolbar)).padding(horizontal = 3.dp),
+                    ) { leading, trailing ->
+                        if (chatToolbar > 0f && toolsProgress < 1f) {
+                            val interactive = chatToolbar >= 0.6f && toolEditor == null
                             val reveal = Modifier.graphicsLayer {
-                                alpha = toolbar
-                                translationX = -8.dp.toPx() * (1f - toolbar)
+                                alpha = chatToolbar
+                                translationX = -8.dp.toPx() * (1f - chatToolbar)
                             }.then(if (interactive) Modifier else Modifier.clearAndSetSemantics { })
-                            Row(reveal, verticalAlignment = Alignment.CenterVertically) {
+                            Row(leading.then(reveal), verticalAlignment = Alignment.CenterVertically) {
                                 val terminalSlot = if (state.current.mode == Mode.Chat) 0 else 1
                                 repeat(2) { slot ->
                                     // The inset belongs to the slot so the visible glyph spacing stays even.
@@ -482,14 +531,21 @@ internal fun HubComposer(
                                         }
                                     } else {
                                         ComposerIconButton("打开工具箱", onClick = {
-                                            if (toolsPanel == ToolsPanel.WaitingForIme) {
-                                                cancelPendingTools()
-                                            } else {
-                                                imeReturn.cancel()
-                                                toolsPanel = if (imeActive) ToolsPanel.WaitingForIme else ToolsPanel.Open
-                                                if (imeActive) keyboard?.hide()
+                                            if (tools != null) {
+                                                if (toolsAvailable && !tools.active) {
+                                                    imeReturn.cancel()
+                                                    chatPicker?.dismiss()
+                                                    tools.open()
+                                                }
+                                            } else if (state.current.mode == Mode.Image) {
+                                                if (toolsPanel == ToolsPanel.WaitingForIme) cancelPendingTools()
+                                                else {
+                                                    imeReturn.cancel()
+                                                    toolsPanel = if (imeActive) ToolsPanel.WaitingForIme else ToolsPanel.Open
+                                                    if (imeActive) keyboard?.hide()
+                                                }
                                             }
-                                        }, enabled = interactive && toolsAvailable) {
+                                        }, enabled = interactive && canOpenTools) {
                                             ToolGlyph(toolTrack, if (toolsAvailable) glyphAccent else toolTrack, glyph)
                                         }
                                     }
@@ -524,7 +580,7 @@ internal fun HubComposer(
                                     Modifier.width(width)
                                 } else Modifier
                                 Row(
-                                    trigger.then(if (pickerOpen) Modifier else Modifier.clip(CircleShape)).semantics {
+                                    trailing.then(trigger).then(if (pickerOpen) Modifier else Modifier.clip(CircleShape)).semantics {
                                         contentDescription = if (pickerOpen && effortLabel != null) effortLabel else actionLabel
                                         stateDescription = modelLabel
                                     }.clickable(interactionSource = presses,
@@ -555,19 +611,15 @@ internal fun HubComposer(
                                 }
                             }
                         } else Spacer(Modifier.weight(1f))
-                        SendButton(active, canSend, onAction)
                     }
                 }
             }
         }
     }
-    if (toolsPanel == ToolsPanel.Open) {
-        ComposerTools(
-            mode = state.current.mode,
+    if (state.current.mode == Mode.Image && toolsPanel == ToolsPanel.Open) {
+        ImageComposerTools(
             draft = draft,
             modelLabel = modelLabel,
-            onSearch = vm::setSearch,
-            onImageTool = vm::setImageTool,
             onPickReference = {
                 toolsPanel = ToolsPanel.Closed
                 pick()
@@ -599,16 +651,6 @@ private fun ComposerIconButton(label: String, onClick: () -> Unit, enabled: Bool
         .semantics { contentDescription = label }, contentAlignment = Alignment.Center) { glyph() }
 }
 
-@Composable
-private fun PlusGlyph() {
-    Canvas(Modifier.size(ComposerGlyphSize)) {
-        val stroke = ComposerGlyphStroke.toPx()
-        val r = size.minDimension / 2 - stroke / 2
-        drawLine(Color.White, Offset(center.x - r, center.y), Offset(center.x + r, center.y), stroke, StrokeCap.Round)
-        drawLine(Color.White, Offset(center.x, center.y - r), Offset(center.x, center.y + r), stroke, StrokeCap.Round)
-    }
-}
-
 private fun DrawScope.narrowGlyphX(x: Float) = center.x + (x - center.x) * 0.90f
 
 @Composable
@@ -637,37 +679,6 @@ private fun TerminalGlyph(promptColor: Color, underlineColor: Color, modifier: M
         drawLine(promptColor, point(1f, 4f), point(6f, 9f), stroke, StrokeCap.Round)
         drawLine(promptColor, point(6f, 9f), point(1f, 14f), stroke, StrokeCap.Round)
         drawLine(underlineColor, point(9f, 14f), point(17f, 14f), ComposerGlyphFineStroke.toPx(), StrokeCap.Round)
-    }
-}
-
-@Composable
-private fun SendButton(generating: Boolean, canSend: Boolean, onClick: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    val enabled = generating || canSend
-    ComposerIconButton(if (generating) "停止生成" else "发送消息", onClick, enabled, Modifier.testTag("chat-composer-send")) {
-        val fill = when {
-            generating -> Color.White
-            canSend -> colors.primary
-            else -> colors.surfaceContainerHighest
-        }
-        val face = if (generating) Modifier else Modifier.offset(x = (-1.75).dp)
-        val arrow = if (canSend) colors.onPrimary else colors.onSurfaceVariant
-        Box(Modifier.size(32.dp).then(face)
-            .background(fill, CircleShape), contentAlignment = Alignment.Center) {
-            if (generating) {
-                Box(Modifier.size(11.dp).background(Color.Black, RoundedCornerShape(1.25.dp)))
-            } else {
-                Canvas(Modifier.size(20.dp)) {
-                    val tip = Offset(center.x, center.y - 6.67.dp.toPx())
-                    val tail = Offset(center.x, center.y + 6.67.dp.toPx())
-                    val wing = 5.67.dp.toPx()
-                    val stroke = 2.dp.toPx()
-                    drawLine(arrow, tail, tip, stroke, StrokeCap.Round)
-                    drawLine(arrow, tip, tip + Offset(-wing, wing), stroke, StrokeCap.Round)
-                    drawLine(arrow, tip, tip + Offset(wing, wing), stroke, StrokeCap.Round)
-                }
-            }
-        }
     }
 }
 

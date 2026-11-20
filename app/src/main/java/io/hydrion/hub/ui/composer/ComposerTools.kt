@@ -1,11 +1,13 @@
 package io.hydrion.hub.ui.composer
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -43,8 +45,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -57,9 +66,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import io.hydrion.hub.R
 import io.hydrion.hub.model.CUSTOM_IMAGE_TOOL
 import io.hydrion.hub.model.Draft
-import io.hydrion.hub.model.Mode
 import kotlinx.coroutines.delay
 
 // Some keyboards never acknowledge a hide request. Keep the tools reachable in that case.
@@ -78,26 +87,64 @@ internal fun AwaitToolsImeDismissal(imeActive: Boolean, eligible: Boolean, onFin
 }
 
 private const val Disabled = "禁用"
-private data class ToolChoice(val label: String, val icon: ImageVector)
+private data class ToolChoice(val value: String, val label: String, val icon: ImageVector)
 
-private val searchChoices = listOf(
-    ToolChoice("模型内置搜索", Icons.Outlined.Language),
-    ToolChoice("自定义搜索", Icons.AutoMirrored.Outlined.ManageSearch),
-    ToolChoice(Disabled, Icons.Outlined.Block),
-)
-private val imageChoices = listOf(
-    ToolChoice(CUSTOM_IMAGE_TOOL, Icons.Outlined.Palette),
-    ToolChoice(Disabled, Icons.Outlined.Block),
-)
+@Composable
+internal fun ChatToolsPage(
+    draft: Draft, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val browsing = rememberScrollState()
+    val filtered = rememberScrollState()
+    val term = query.trim()
+    LaunchedEffect(term) { if (term.isNotEmpty()) filtered.scrollTo(0) }
+    Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).testTag("chat-tools-page")
+        .verticalScroll(if (term.isEmpty()) browsing else filtered).padding(horizontal = 16.dp, vertical = 12.dp)) {
+        ChatToolGroups(draft, term, onSearch, onImageTool)
+    }
+}
+
+@Composable
+private fun ChatToolGroups(draft: Draft, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val disabled = ToolChoice(Disabled, stringResource(R.string.chat_tools_disabled), Icons.Outlined.Block)
+    val web = listOf(
+        ToolChoice("模型内置搜索", stringResource(R.string.chat_tools_builtin_search), Icons.Outlined.Language),
+        ToolChoice("自定义搜索", stringResource(R.string.chat_tools_custom_search), Icons.AutoMirrored.Outlined.ManageSearch),
+        disabled,
+    )
+    val image = listOf(ToolChoice(CUSTOM_IMAGE_TOOL, stringResource(R.string.chat_tools_custom_image), Icons.Outlined.Palette), disabled)
+    val webTitle = stringResource(R.string.chat_tools_web)
+    val imageTitle = stringResource(R.string.chat_tools_image)
+    val webMatches = matchingToolChoices(query, webTitle, web) { it.label }
+    val imageMatches = matchingToolChoices(query, imageTitle, image) { it.label }
+    val count = listOf(draft.search, draft.imageTool).count { it != Disabled }
+    val countLabel = stringResource(R.string.chat_tools_enabled_count, count)
+    Box(Modifier.fillMaxWidth().padding(bottom = 12.dp), contentAlignment = Alignment.Center) {
+        Text(stringResource(R.string.chat_tools_title), Modifier.testTag("chat-tools-title"),
+            style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        Text("$count / 2", Modifier.align(Alignment.CenterEnd).padding(end = 8.dp).testTag("chat-tools-count")
+            .clearAndSetSemantics { contentDescription = countLabel },
+            style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+    }
+    ToolGroup("web", webTitle, web, webMatches, draft.search, initiallyOpen = true,
+        filtering = query.isNotEmpty(), onSelect = onSearch)
+    if (webMatches.isNotEmpty() && imageMatches.isNotEmpty())
+        HorizontalDivider(Modifier.padding(horizontal = 8.dp), color = colors.outlineVariant)
+    ToolGroup("image", imageTitle, image, imageMatches, draft.imageTool, initiallyOpen = false,
+        filtering = query.isNotEmpty(), onSelect = onImageTool)
+    if (webMatches.isEmpty() && imageMatches.isEmpty()) {
+        Text(stringResource(R.string.chat_tools_empty), Modifier.fillMaxWidth().testTag("chat-tools-empty")
+            .semantics { liveRegion = LiveRegionMode.Polite }.padding(8.dp),
+            style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun ComposerTools(
-    mode: Mode,
+internal fun ImageComposerTools(
     draft: Draft,
     modelLabel: String,
-    onSearch: (String) -> Unit,
-    onImageTool: (String) -> Unit,
     onPickReference: () -> Unit,
     onConfigure: () -> Unit,
     onDismiss: () -> Unit,
@@ -115,67 +162,56 @@ internal fun ComposerTools(
         ) {
             Box(Modifier.fillMaxWidth().padding(bottom = 12.dp), contentAlignment = Alignment.Center) {
                 Text("Tools", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                if (mode == Mode.Chat) {
-                    val enabled = listOf(draft.search, draft.imageTool).count { it != Disabled }
-                    Text(
-                        "$enabled / 2",
-                        Modifier.align(Alignment.CenterEnd).padding(end = 8.dp)
-                            .clearAndSetSemantics { contentDescription = "已启用 $enabled 个工具，共 2 个" },
-                        style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant,
-                    )
-                }
             }
-            if (mode == Mode.Chat) {
-                ToolGroup("网络搜索", searchChoices, draft.search, initiallyOpen = true, onSelect = onSearch)
-                HorizontalDivider(Modifier.padding(horizontal = 8.dp), color = colors.outlineVariant)
-                ToolGroup("图片生成", imageChoices, draft.imageTool, initiallyOpen = false, onSelect = onImageTool)
-            } else {
-                val references = draft.attachments.count { it.imageKey != null || it.mimeType?.startsWith("image/") == true }
-                ImageAction(Icons.Outlined.AddPhotoAlternate, "添加参考图", "已选 $references 张", onPickReference)
-                HorizontalDivider(Modifier.padding(horizontal = 8.dp), color = colors.outlineVariant)
-                ImageAction(Icons.Outlined.Tune, "生成参数", modelLabel, onConfigure)
-            }
+            val references = draft.attachments.count { it.imageKey != null || it.mimeType?.startsWith("image/") == true }
+            ImageAction(Icons.Outlined.AddPhotoAlternate, "添加参考图", "已选 $references 张", onPickReference)
+            HorizontalDivider(Modifier.padding(horizontal = 8.dp), color = colors.outlineVariant)
+            ImageAction(Icons.Outlined.Tune, "生成参数", modelLabel, onConfigure)
         }
     }
 }
 
 @Composable
 private fun ToolGroup(
-    title: String,
-    choices: List<ToolChoice>,
-    selected: String,
-    initiallyOpen: Boolean,
-    onSelect: (String) -> Unit,
+    id: String, title: String, choices: List<ToolChoice>, matches: List<ToolChoice>, selected: String,
+    initiallyOpen: Boolean, filtering: Boolean, onSelect: (String) -> Unit,
 ) {
+    var expanded by rememberSaveable(id) { mutableStateOf(initiallyOpen) }
+    if (matches.isEmpty()) return
     val colors = MaterialTheme.colorScheme
-    var expanded by rememberSaveable(title) { mutableStateOf(initiallyOpen) }
+    val showChoices = filtering || expanded
+    val describeState = stringResource(if (showChoices) R.string.chat_tools_expanded else R.string.chat_tools_collapsed)
+    val toggleLabel = stringResource(if (expanded) R.string.chat_tools_collapse else R.string.chat_tools_expand)
+    val inputMode = LocalInputModeManager.current
+    val keepEditorFocus = Modifier.focusProperties { canFocus = inputMode.inputMode != InputMode.Touch }
+    val toggle = if (filtering) Modifier else keepEditorFocus.clickable(role = Role.Button, onClickLabel = toggleLabel) { expanded = !expanded }
     Row(
-        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
-            .clickable(role = Role.Button, onClickLabel = if (expanded) "收起" else "展开") { expanded = !expanded }
-            .semantics { stateDescription = if (expanded) "已展开" else "已收起" }
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).testTag("chat-tools-group:$id").then(toggle)
+            .semantics { stateDescription = describeState }
             .heightIn(min = 52.dp).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, null,
+        Icon(if (showChoices) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, null,
             Modifier.size(20.dp), tint = colors.onSurfaceVariant)
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        Text(selected, Modifier.weight(1.25f), style = MaterialTheme.typography.bodySmall,
+        Text(choices.find { it.value == selected }?.label ?: selected, Modifier.weight(1.25f), style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.End, color = colors.onSurfaceVariant)
     }
-    AnimatedVisibility(expanded) {
+    AnimatedVisibility(showChoices) {
         Column(Modifier.fillMaxWidth().selectableGroup().padding(bottom = 6.dp)) {
-            choices.forEach { choice ->
-                val checked = selected == choice.label
+            matches.forEach { choice ->
+                val checked = selected == choice.value
                 Row(
-                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
-                        .selectable(selected = checked, role = Role.RadioButton, onClick = { onSelect(choice.label) })
+                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).then(keepEditorFocus)
+                        .testTag("chat-tools-option:$id:${choice.value}")
+                        .selectable(selected = checked, role = Role.RadioButton, onClick = { onSelect(choice.value) })
                         .heightIn(min = 46.dp).padding(start = 20.dp, end = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Icon(choice.icon, null, Modifier.size(20.dp),
-                        tint = if (choice.label == Disabled) colors.onSurface.copy(alpha = .38f) else colors.onSurfaceVariant)
+                        tint = if (choice.value == Disabled) colors.onSurface.copy(alpha = .38f) else colors.onSurfaceVariant)
                     Text(choice.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     RadioButton(selected = checked, onClick = null,
                         colors = RadioButtonDefaults.colors(selectedColor = colors.onSurface, unselectedColor = colors.outline))

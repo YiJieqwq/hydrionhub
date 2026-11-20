@@ -1,0 +1,18 @@
+<resources>
+    <string name="chat_tools_title">Tools</string>
+    <string name="tools_search_hint">Search tools…</string>
+    <string name="chat_tools_back">Back to message</string>
+    <string name="chat_tools_clear">Clear search</string>
+    <string name="chat_tools_web">Web search</string>
+    <string name="chat_tools_image">Image generation</string>
+    <string name="chat_tools_builtin_search">Built-in model search</string>
+    <string name="chat_tools_custom_search">Custom search</string>
+    <string name="chat_tools_custom_image">Custom image generation</string>
+    <string name="chat_tools_disabled">Disabled</string>
+    <string name="chat_tools_enabled_count">%1$d of 2 tools enabled</string>
+    <string name="chat_tools_expand">Expand</string>
+    <string name="chat_tools_collapse">Collapse</string>
+    <string name="chat_tools_expanded">Expanded</string>
+    <string name="chat_tools_collapsed">Collapsed</string>
+    <string name="chat_tools_empty">No matching tools</string>
+</resources>

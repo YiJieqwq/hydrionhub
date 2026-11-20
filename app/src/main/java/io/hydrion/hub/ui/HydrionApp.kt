@@ -35,6 +35,7 @@ import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.provider.ChatModelPicker
+import io.hydrion.hub.provider.ChatModelPickerBack
 import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.provider.ChatPickerEasing
 import io.hydrion.hub.provider.ChatPickerTransitionMillis
@@ -46,6 +47,7 @@ import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 import io.hydrion.hub.ui.chrome.Header
 import io.hydrion.hub.ui.chrome.contextUsage
 import io.hydrion.hub.ui.composer.HubComposer
+import io.hydrion.hub.ui.composer.rememberToolsPageState
 import io.hydrion.hub.ui.composer.ModelEditorComposerBridge
 import io.hydrion.hub.ui.messages.ProvideMessageStyle
 import io.hydrion.hub.ui.messages.MessageList
@@ -76,6 +78,8 @@ private fun Workspace(vm: HubViewModel) {
     val current = state.current
     val selection = catalog.selection(current.mode)
     val chatPicker = remember(current.id, current.mode) { ChatModelPickerState() }
+    val toolsPage = if (current.mode == Mode.Chat) rememberToolsPageState(current.id) else null
+    val toolsActive = toolsPage?.active == true
     val composerBridge = remember(current.id, current.mode) { ModelEditorComposerBridge() }
     val editTransition = remember { MutableTransitionState(false) }
     var editVisit by remember { mutableStateOf<ModelEditVisit?>(null) }
@@ -152,6 +156,8 @@ private fun Workspace(vm: HubViewModel) {
         if (drawerOpening) closeDrawer() else { finding = false; query = "" }
     }
 
+    if (toolsPage != null && toolsActive && !settings) ChatModelPickerBack(toolsPage::close)
+
     if (settings) {
         // The settings screen owns back navigation between its nested editors.
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
@@ -161,6 +167,7 @@ private fun Workspace(vm: HubViewModel) {
     } else {
         WorkspaceDrawer(
             mode = current.mode, drawer = drawer, onClose = ::closeDrawer, workspaceCovered = blockEditorFocus,
+            gesturesEnabled = !toolsActive,
             drawerContent = { width, visible ->
                 ConversationDrawer(
                     width = width,
@@ -186,26 +193,9 @@ private fun Workspace(vm: HubViewModel) {
                     .windowInsetsPadding(if (returnMotion.holdCollapsed) nav.only(WindowInsetsSides.Bottom) else hostImeInsets),
                 contentAlignment = Alignment.TopCenter
             ) {
-                Scaffold(
+                ChatComposerLayers(
                     modifier = Modifier.widthIn(max = ChatHeaderLayout.MaxWidth).fillMaxSize(),
-                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                    topBar = {
-                        Column(chatReveal.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
-                            Header(
-                                mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
-                                contextUsage = contextUsage(current, selectedEntry),
-                                onMode = vm::setMode, onNew = ::newChat,
-                                onDrawer = { focus.clearFocus(); scope.launch { drawer.open() } },
-                                onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },
-                                onFind = { finding = true }, onDelete = { deleteId = current.id }
-                            )
-                            if (finding) FindBar(query, { query = it }, index, hits.size,
-                                previous = { if (hits.isNotEmpty()) matchIndex = (index - 1 + hits.size) % hits.size },
-                                next = { if (hits.isNotEmpty()) matchIndex = (index + 1) % hits.size },
-                                onClose = { finding = false; query = ""; focus.clearFocus() })
-                        }
-                    },
-                    bottomBar = {
+                    composer = {
                         val bottomBars = if (returnMotion.holdCollapsed) nav else WindowInsets.safeDrawing
                         Column(composerReveal.windowInsetsPadding(bottomBars.only(WindowInsetsSides.Bottom))) {
                             key(current.id) {
@@ -221,6 +211,7 @@ private fun Workspace(vm: HubViewModel) {
                                     },
                                     chatPicker = chatPicker.takeIf { current.mode == Mode.Chat },
                                     modelEditorBridge = composerBridge,
+                                    chatTools = toolsPage,
                                     forceReturnFolded = returnMotion.holdCollapsed,
                                     allowImeReturn = !blockEditorFocus && !drawerOpening && !configure && !finding && renameId == null && deleteId == null,
                                     toolsAvailable = selectedEntry?.second?.chatProtocol() == null,
@@ -233,23 +224,48 @@ private fun Workspace(vm: HubViewModel) {
                             }
                         }
                     },
-                    snackbarHost = { SnackbarHost(snackbar) }
-                ) { bars ->
-                    if (current.messages.isNotEmpty()) {
-                        timelines.SaveableStateProvider(current.id) {
-                            MessageList(vm, state, if (finding) query else "", index, modifier = chatReveal, floatingBars = bars,
-                                composerBoundsInWindow = { chatPicker.composerBounds })
+                ) { composerHeight ->
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize().behindToolsPage(toolsActive),
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                        topBar = {
+                            Column(chatReveal.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
+                                Header(
+                                    mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
+                                    contextUsage = contextUsage(current, selectedEntry),
+                                    onMode = vm::setMode, onNew = ::newChat,
+                                    onDrawer = { focus.clearFocus(); scope.launch { drawer.open() } },
+                                    onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },
+                                    onFind = { finding = true }, onDelete = { deleteId = current.id }
+                                )
+                                if (finding) FindBar(query, { query = it }, index, hits.size,
+                                    previous = { if (hits.isNotEmpty()) matchIndex = (index - 1 + hits.size) % hits.size },
+                                    next = { if (hits.isNotEmpty()) matchIndex = (index + 1) % hits.size },
+                                    onClose = { finding = false; query = ""; focus.clearFocus() })
+                            }
+                        },
+                        bottomBar = { Spacer(Modifier.height(composerHeight)) },
+                        snackbarHost = { SnackbarHost(snackbar) }
+                    ) { bars ->
+                        if (current.messages.isNotEmpty()) {
+                            timelines.SaveableStateProvider(current.id) {
+                                MessageList(vm, state, if (finding) query else "", index, modifier = chatReveal, floatingBars = bars,
+                                    composerBoundsInWindow = { chatPicker.composerBounds })
+                            }
+                        } else if (current.mode == Mode.Image && !state.modeLocked &&
+                            state.draft.text.isBlank() && state.draft.attachments.isEmpty()) {
+                            RecentImageConversations(
+                                history = state.history,
+                                onOpen = { id -> focus.clearFocus(); vm.openConversation(id) },
+                                modifier = Modifier.fillMaxSize().padding(bars)
+                            )
                         }
-                    } else if (current.mode == Mode.Image && !state.modeLocked &&
-                        state.draft.text.isBlank() && state.draft.attachments.isEmpty()) {
-                        RecentImageConversations(
-                            history = state.history,
-                            onOpen = { id -> focus.clearFocus(); vm.openConversation(id) },
-                            modifier = Modifier.fillMaxSize().padding(bars)
-                        )
+                    }
+                    if (toolsPage != null && toolsActive) {
+                        ToolsPageOverlay(toolsPage, state.draft, composerHeight, vm::setSearch, vm::setImageTool)
                     }
                 }
-                if (current.mode == Mode.Chat) {
+                if (current.mode == Mode.Chat && !toolsActive) {
                     ChatModelPicker(providers, chatPicker, suspended = editVisit != null, hideForReturn = returning,
                         onEditModel = edit@{ route, browse ->
                             val origin = vm.state.value

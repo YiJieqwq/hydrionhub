@@ -29,6 +29,7 @@ import io.hydrion.hub.model.Mode
 @Composable
 internal fun WorkspaceDrawer(
     mode: Mode, drawer: DrawerState, onClose: () -> Unit, workspaceCovered: Boolean = false,
+    gesturesEnabled: Boolean = true,
     drawerContent: @Composable (width: Dp, visible: Boolean) -> Unit,
     content: @Composable () -> Unit
 ) {
@@ -47,7 +48,7 @@ internal fun WorkspaceDrawer(
             }
         } else {
             // Material measures the body at full width and places it at the moving edge of the sheet.
-            DismissibleNavigationDrawer(drawerState = drawer, drawerContent = {
+            DismissibleNavigationDrawer(drawerState = drawer, gesturesEnabled = gesturesEnabled, drawerContent = {
                 DrawerPane(disabled = !visible) { drawerContent(width, visible) }
             }) {
                 Box(Modifier.fillMaxSize().testTag("drawer-workspace")) {

@@ -1,34 +1,28 @@
 package io.hydrion.hub
 
+import android.app.Activity
+import android.app.Instrumentation
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.view.KeyEvent
+import android.view.ViewTreeObserver
 import android.view.View
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.SemanticsNodeInteraction
-import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assertHasClickAction
-import androidx.compose.ui.test.assertHasNoClickAction
-import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.assertIsNotSelected
-import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.isDisplayed
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.click
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.input.key.Key
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.ui.composer.AwaitToolsImeDismissal
@@ -45,18 +39,41 @@ class ComposerToolsTest {
     @get:Rule
     val screen = createAndroidComposeRule<MainActivity>()
 
-    private fun openTools(checkColors: Boolean = false) {
-        screen.onNodeWithContentDescription("消息输入框").performClick()
-        screen.waitUntil(10_000) { screen.onNodeWithContentDescription("打开工具箱").isDisplayed() }
-        if (checkColors) {
-            assertToolbarSlots(Mode.Chat)
-            screen.onNodeWithContentDescription("添加附件").assertGlyphGray("添加附件", 255)
-            screen.onNodeWithContentDescription("打开工具箱").assertToolInk(enabled = true)
-            screen.onNodeWithContentDescription("工作区终端").performTouchInput { click(center) }
-            screen.onNodeWithText("Tools").assertDoesNotExist()
+    private val editor get() = screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction())
+    private val field get() = screen.onNodeWithTag("tools-search-field")
+    private val page get() = screen.onNodeWithTag("chat-tools-page")
+    private val tools get() = screen.onNodeWithContentDescription("打开工具箱")
+    private fun action(name: String) = screen.onNodeWithTag("chat-tools-$name")
+    private fun option(group: String, value: String) = action("option:$group:$value")
+
+    private fun assertQuery(expected: String) {
+        assertEquals(expected, field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+    }
+
+    private fun imeVisible() = screen.runOnUiThread {
+        ViewCompat.getRootWindowInsets(screen.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+    }
+
+    private fun withStableIme(visible: Boolean, actions: () -> Unit) {
+        val view = screen.activity.window.decorView
+        val frames = mutableListOf<Boolean>()
+        val listener = ViewTreeObserver.OnPreDrawListener {
+            frames += ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+            true
         }
-        screen.onNodeWithContentDescription("打开工具箱").assertIsEnabled().performTouchInput { click(center) }
-        screen.waitUntil(10_000) { screen.onNodeWithText("Tools").isDisplayed() }
+        assertEquals(visible, imeVisible())
+        screen.runOnUiThread { view.viewTreeObserver.addOnPreDrawListener(listener) }
+        try {
+            actions()
+            screen.waitForIdle()
+            assertEquals(visible, imeVisible())
+            screen.runOnUiThread {
+                assertTrue("IME visibility during the tools transition: $frames",
+                    frames.isNotEmpty() && frames.all { it == visible })
+            }
+        } finally {
+            screen.runOnUiThread { view.viewTreeObserver.removeOnPreDrawListener(listener) }
+        }
     }
 
     private fun assertToolbarSlots(mode: Mode) {
@@ -89,7 +106,7 @@ class ComposerToolsTest {
         terminalImage.assertStroke("terminal underline", 255, shift, 13f, 14f)
     }
 
-    @Test fun imageComposerKeepsToolsInTheSecondSlot() {
+    @Test fun imageComposerKeepsTheSecondSlotAndItsKeyboardToSheetHandoff() {
         val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
         val previous = screen.runOnIdle { vm.state.value }
         try {
@@ -101,7 +118,16 @@ class ComposerToolsTest {
             screen.runOnIdle { assertEquals(Mode.Image, vm.state.value.current.mode) }
             assertToolbarSlots(Mode.Image)
             val tools = screen.onNodeWithContentDescription("打开工具箱")
-            tools.assertToolInk(enabled = SemanticsProperties.Disabled !in tools.fetchSemanticsNode().config, shift = -3f)
+            tools.assertToolInk(enabled = true, shift = -3f)
+            editor.performTouchInput { click(center) }
+            screen.waitUntil(15_000) { imeVisible() }
+            tools.assertIsEnabled().performTouchInput { click(center) }
+            screen.waitUntil(15_000) { !imeVisible() && screen.onNodeWithText("Tools").isDisplayed() }
+            page.assertDoesNotExist()
+            screen.onNodeWithText("添加参考图").assertIsDisplayed()
+            screen.onNodeWithText("生成参数").assertIsDisplayed()
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            screen.onNodeWithText("Tools").assertDoesNotExist()
         } finally {
             screen.runOnIdle {
                 vm.setDraft(previous.draft.text)
@@ -110,13 +136,7 @@ class ComposerToolsTest {
         }
     }
 
-    private fun choice(label: String) =
-        screen.onNode(hasText(label) and SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected))
-
-    private fun enabledCount(count: Int) =
-        screen.onNodeWithContentDescription("已启用 $count 个工具，共 2 个")
-
-    @Test fun handoffWaitsForImeDismissalAndDropsCancelledRequests() {
+    @Test fun imageSheetWaitsForImeDismissalAndDropsCancelledRequests() {
         val pending = mutableStateOf(false)
         val imeActive = mutableStateOf(true)
         val eligible = mutableStateOf(true)
@@ -190,32 +210,210 @@ class ComposerToolsTest {
         }
     }
 
-    @Test
-    fun independentlySelectToolsAndKeepChoicesAfterDismissal() {
-        openTools(checkColors = true)
-        enabledCount(2).assertIsDisplayed()
-        choice("模型内置搜索").assertIsSelected()
-        choice("禁用").performClick().assertIsSelected()
-        choice("模型内置搜索").assertIsNotSelected()
-        enabledCount(1).assertIsDisplayed()
-        screen.onNode(hasText("网络搜索") and hasText("禁用")).performClick()
+    @Test fun chatToolChoicesPersistIndependentlyWithoutOpeningTheKeyboard() {
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        val before = vm.state.value.draft
+        try {
+            screen.runOnIdle {
+                vm.setDraft("parked draft")
+                vm.setSearch("模型内置搜索")
+                vm.setImageTool("自定义图片生成")
+            }
+            assertToolbarSlots(Mode.Chat)
+            screen.onNodeWithContentDescription("添加附件").assertGlyphGray("添加附件", 255)
+            tools.assertToolInk(enabled = true)
+            screen.onNodeWithContentDescription("工作区终端").performTouchInput { click(center) }
+            page.assertDoesNotExist()
 
-        screen.onNode(hasText("图片生成") and hasText("自定义图片生成")).performClick()
-        screen.onNodeWithText("模型内置图片生成").assertDoesNotExist()
-        choice("自定义图片生成").assertIsSelected()
-        choice("禁用").performClick().assertIsSelected()
-        choice("自定义图片生成").assertIsNotSelected()
-        enabledCount(0).assertIsDisplayed()
-        choice("自定义图片生成").performClick().assertIsSelected()
-        enabledCount(1).assertIsDisplayed()
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-        screen.onNodeWithText("Tools").assertDoesNotExist()
+            withStableIme(false) {
+                tools.performTouchInput { click(center) }
+                page.assertIsDisplayed()
+                action("count").assertIsDisplayed()
+                option("web", "模型内置搜索").assertIsSelected()
+                val custom = option("web", "自定义搜索")
+                custom.assertIsDisplayed().performClick().assertIsSelected()
+                screen.runOnIdle { assertEquals("自定义搜索", vm.state.value.draft.search) }
+                action("group:image").performClick()
+                option("image", "禁用").performClick().assertIsSelected()
+                screen.runOnIdle { assertEquals("禁用", vm.state.value.draft.imageTool) }
+                action("back").performTouchInput { click(center) }
+                page.assertDoesNotExist()
+                editor.assertTextEquals("parked draft")
 
-        openTools()
-        enabledCount(1).assertIsDisplayed()
-        choice("禁用").assertIsSelected()
-        screen.onNode(hasText("图片生成") and hasText("自定义图片生成")).performClick()
-        choice("自定义图片生成").assertIsSelected()
+                tools.performTouchInput { click(center) }
+                custom.assertIsSelected()
+                if (!option("image", "禁用").isDisplayed()) action("group:image").performClick()
+                option("image", "禁用").assertIsSelected()
+                screen.runOnUiThread { screen.activity.onBackPressedDispatcher.onBackPressed() }
+                page.assertDoesNotExist()
+            }
+        } finally {
+            screen.runOnIdle {
+                vm.setDraft(before.text)
+                vm.setSearch(before.search)
+                vm.setImageTool(before.imageTool)
+            }
+        }
+    }
+
+    @Test fun travellingAttachmentAndSendSwapEndsAndReverseFromTheDrawnPosition() {
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        val before = screen.runOnIdle { vm.state.value }
+        val clock = screen.mainClock
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val filter = IntentFilter(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            addDataType("*/*")
+        }
+        val pickerMonitor = instrumentation.addMonitor(filter, Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null), true)
+        fun slot(name: String) = screen.onNodeWithTag("chat-toolbar-$name-glyph-slot", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot.center
+        fun visibleToolsHeight() = screen.onNodeWithTag("chat-tools-surface", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot.height
+        fun nextFrame() {
+            clock.advanceTimeByFrame()
+            screen.waitForIdle()
+        }
+        try {
+            screen.runOnIdle { vm.setDraft("must not send") }
+            val attachmentStart = slot("attach")
+            val sendStart = slot("send")
+            val travel = sendStart.x - attachmentStart.x
+            fun attachProgress() = (slot("attach").x - attachmentStart.x) / travel
+            fun sendProgress() = (sendStart.x - slot("send").x) / travel
+            fun beginAndSampleMidFrame() {
+                tools.performTouchInput { click(center) }
+                repeat(48) {
+                    nextFrame()
+                    if (attachProgress() in 0.16f..0.65f) {
+                        assertEquals("Both named slots travel together", attachProgress(), sendProgress(), .015f)
+                        return
+                    }
+                }
+                throw AssertionError("No intermediate positions for the attachment and send slots")
+            }
+            clock.autoAdvance = false
+            beginAndSampleMidFrame()
+            val midProgress = attachProgress()
+            val midHeight = visibleToolsHeight()
+            for (id in listOf("chat-composer-attach", "chat-composer-send", "chat-tools-clear", "chat-tools-back")) {
+                screen.onAllNodes(hasTestTag(id) and hasClickAction()).assertCountEquals(0)
+            }
+            // Tap actual moving glyph centers, independently of action semantics. A leaked attach
+            // is caught before launching DocumentsUI; a leaked send would add to the conversation.
+            val root = screen.onRoot()
+            val origin = root.fetchSemanticsNode().boundsInRoot.topLeft
+            listOf(slot("attach"), slot("send")).forEach { position ->
+                root.performTouchInput { click(position - origin) }
+            }
+            clock.advanceTimeBy(1_000)
+            screen.waitForIdle()
+            page.assertIsDisplayed()
+            assertEquals("The page descends with the moving toolbar", midProgress, midHeight / visibleToolsHeight(), .04f)
+            screen.onNodeWithContentDescription("打开侧栏").assertDoesNotExist()
+            fun actionCenter(name: String) = action(name).fetchSemanticsNode().boundsInRoot.center.x
+            assertEquals("Send becomes Back at the old attachment end", attachmentStart.x, actionCenter("back"), 2f)
+            assertEquals("Attachment becomes Clear at the old send end", sendStart.x, actionCenter("clear"), 2f)
+            assertEquals(0, pickerMonitor.hits)
+            screen.runOnUiThread {
+                assertEquals("must not send", vm.state.value.draft.text)
+                assertEquals(before.current.messages, vm.state.value.current.messages)
+            }
+            action("back").performTouchInput { click(center) }
+            clock.advanceTimeBy(1_000)
+            screen.waitForIdle()
+            assertEquals(0f, attachProgress(), .01f)
+            assertEquals(0f, sendProgress(), .01f)
+
+            beginAndSampleMidFrame()
+            val interrupted = attachProgress()
+            screen.runOnUiThread { screen.activity.onBackPressedDispatcher.onBackPressed() }
+            val reversing = List(45) {
+                nextFrame()
+                val value = attachProgress()
+                assertEquals(value, sendProgress(), .015f)
+                value
+            }
+            assertTrue("Back must reverse before reaching the tools endpoints: $reversing", reversing.max() < .95f)
+            assertTrue("The return must have intermediate geometry: $reversing",
+                reversing.any { it > .01f && it < interrupted - .01f })
+            assertEquals(0f, reversing.last(), .01f)
+            page.assertDoesNotExist()
+            editor.assertTextEquals("must not send")
+            screen.onNodeWithContentDescription("打开侧栏").assertIsDisplayed()
+            screen.onNodeWithContentDescription("添加附件").assertIsEnabled()
+            screen.onNodeWithTag("chat-composer-send").assertIsEnabled()
+        } finally {
+            clock.autoAdvance = true
+            instrumentation.removeMonitor(pickerMonitor)
+            screen.runOnIdle { vm.setDraft(before.draft.text) }
+        }
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun toolQueryKeepsTheOpenKeyboardAndRestoresDraftSelectionAndAttachment() {
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        val before = vm.state.value.draft
+        val attachment = Attachment("tools-draft-file", "tools-draft.txt", mimeType = "text/plain")
+        val selection = TextRange(2, 8)
+        try {
+            screen.runOnIdle { vm.addAttachment(attachment) }
+            editor.performTouchInput { click(center) }
+            screen.waitUntil(15_000) { imeVisible() }
+            editor.performTextReplacement("first line\nsecond line")
+            editor.performTextInputSelection(selection)
+            val saved = screen.runOnIdle { vm.state.value }
+            val model = screen.runOnIdle { vm.providers.catalog.value.active[Mode.Chat] }
+            withStableIme(true) {
+                tools.performTouchInput { click(center) }
+                page.assertIsDisplayed()
+                field.assertIsFocused()
+                assertQuery("")
+                screen.onNodeWithTag("chat-model-trigger").assertDoesNotExist()
+                screen.onNodeWithContentDescription("工作区终端").assertDoesNotExist()
+                val custom = option("web", "自定义搜索")
+                val label = custom.fetchSemanticsNode().config[SemanticsProperties.Text].first().text
+                field.performTextReplacement(label)
+                custom.assertIsDisplayed()
+                option("web", "模型内置搜索").assertDoesNotExist()
+                action("group:image").assertDoesNotExist()
+                field.performTextReplacement("does-not-match-any-tool")
+                action("empty").assertIsDisplayed()
+                screen.onNodeWithTag("chat-composer-send").assertDoesNotExist()
+                screen.onNodeWithContentDescription("添加附件").assertDoesNotExist()
+                field.performKeyInput {
+                    keyDown(Key.Enter)
+                    keyUp(Key.Enter)
+                }
+                assertQuery("does-not-match-any-tool")
+                page.assertIsDisplayed()
+                screen.runOnIdle {
+                    assertEquals(saved.draft, vm.state.value.draft)
+                    assertEquals(saved.current.messages, vm.state.value.current.messages)
+                    assertEquals(model, vm.providers.catalog.value.active[Mode.Chat])
+                }
+                action("clear").performTouchInput { click(center) }
+                field.assertIsFocused()
+                assertQuery("")
+                option("web", "模型内置搜索").assertIsDisplayed()
+                field.performTextInput("query to discard")
+                action("back").performTouchInput { click(center) }
+                editor.assertIsFocused().assertTextEquals(saved.draft.text)
+                assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+                screen.onNodeWithText(attachment.name).assertIsDisplayed()
+                screen.onNodeWithTag("chat-composer-send").assertIsEnabled()
+                screen.onNodeWithTag("chat-model-trigger").assertHasClickAction()
+                screen.onNodeWithContentDescription("工作区终端").assertIsNotEnabled().assertHasNoClickAction()
+                tools.performTouchInput { click(center) }
+                assertQuery("")
+                action("back").performTouchInput { click(center) }
+            }
+        } finally {
+            screen.runOnIdle {
+                vm.removeAttachment(attachment.id)
+                vm.setDraft(before.text)
+            }
+        }
     }
 }
 
