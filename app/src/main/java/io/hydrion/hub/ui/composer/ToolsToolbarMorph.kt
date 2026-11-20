@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.composerActionFace
+import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.composerActionFill
 import io.hydrion.hub.ui.theme.composerActionInk
 import kotlin.math.roundToInt
@@ -114,7 +116,9 @@ internal fun ToolsToolbarMorph(
                 val startInk = if (generating) Color.Black else colors.composerActionInk(canSend)
                 val ink = if (p == 0f) startInk else lerp(startInk, newInk, p)
                 val inset = if (generating) 0.dp else (-1.75).dp * (1f - p)
-                Box(Modifier.size(32.dp).offset(x = inset).background(fill.copy(alpha = fill.alpha * (1f - p)), CircleShape),
+                Box(Modifier.size(HubStyle.ComposerActionDiameter).offset(x = inset)
+                    .composerActionFace().testTag("chat-composer-action-face")
+                    .background(fill.copy(alpha = fill.alpha * (1f - p)), CircleShape),
                     contentAlignment = Alignment.Center) {
                     if (generating && p == 0f) {
                         Box(Modifier.size(11.dp).background(Color.Black, RoundedCornerShape(1.25.dp)))

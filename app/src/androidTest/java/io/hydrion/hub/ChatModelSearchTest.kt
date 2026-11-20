@@ -5,12 +5,14 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -143,6 +145,31 @@ class ChatModelSearchTest {
     private fun capsule() = screen.onNodeWithTag("composer-capsule", useUnmergedTree = true)
         .fetchSemanticsNode().boundsInRoot
 
+    private fun assertSearchFaceMatchesSend(searchControl: String): Rect {
+        fun bounds(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true).assertIsDisplayed()
+            .fetchSemanticsNode().boundsInRoot
+        val face = screen.onNodeWithTag("chat-model-search-face", useUnmergedTree = true)
+            .assertIsDisplayed().fetchSemanticsNode()
+        val search = face.boundsInRoot
+        val send = bounds("chat-composer-action-face")
+        val panel = bounds("chat-picker-bubble")
+        val composer = capsule()
+        val rtl = face.layoutInfo.layoutDirection == LayoutDirection.Rtl
+        fun endInset(outer: Rect, inner: Rect) = if (rtl) inner.left - outer.left else outer.right - inner.right
+        val diameter = with(face.layoutInfo.density) { 32.dp.roundToPx().toFloat() }
+        for (circle in listOf(send, search)) {
+            assertEquals("Visible face width", diameter, circle.width, 1f)
+            assertEquals("Visible face height", diameter, circle.height, 1f)
+        }
+        assertEquals("Visible trailing inset", endInset(composer, send), endInset(panel, search), 1f)
+        assertEquals("Visible bottom inset", composer.bottom - send.bottom, panel.bottom - search.bottom, 1f)
+        val hit = control(searchControl).assertHasClickAction().fetchSemanticsNode().boundsInRoot
+        val minimum = with(face.layoutInfo.density) { 48.dp.roundToPx() - 1f }
+        assertTrue("Search touch target: $hit", hit.width >= minimum && hit.height >= minimum)
+        assertTrue("Model results must be reachable beside the touch target", !hit.overlaps(bounds("chat-model-results")))
+        return hit
+    }
+
     private fun assertAnchored(tag: String) {
         val density = screen.activity.resources.displayMetrics.density
         val card = control(tag).assertIsDisplayed().fetchSemanticsNode()
@@ -231,6 +258,7 @@ class ChatModelSearchTest {
         assertImeStays(false) { enterSearch("select") }
         screen.waitUntil(15_000) { capsule() == parked }
         assertAnchored("list")
+        assertSearchFaceMatchesSend("search-close")
 
         val query = control("search-field")
         query.performTouchInput { click(center) }
@@ -238,12 +266,14 @@ class ChatModelSearchTest {
         query.assertIsFocused()
         assertComposerHint(searchHint)
         assertAnchored("list")
+        assertSearchFaceMatchesSend("search-close")
         assertImeStays(true) { control("search-close").performTouchInput { click(center) } }
         assertComposerHint("Chat with AI")
         control("list").assertIsDisplayed()
         hideKeyboard()
         screen.waitUntil(15_000) { capsule() == compact }
         assertAnchored("list")
+        assertSearchFaceMatchesSend("search")
         send.assertIsNotEnabled()
     }
 
@@ -264,6 +294,7 @@ class ChatModelSearchTest {
             hideKeyboard()
             screen.waitUntil(15_000) { capsule() == parked }
             assertAnchored("list")
+            assertSearchFaceMatchesSend("search-close")
 
             assertImeStays(false) { control("search-close").performTouchInput { click(center) } }
             editor.assertTextEquals(draft)
@@ -505,10 +536,9 @@ class ChatModelSearchTest {
         val field = enterSearch("select")
         val card = control("list").fetchSemanticsNode().boundsInRoot
         val close = control("search-close")
-        val closeBounds = close.fetchSemanticsNode().boundsInRoot
+        val closeBounds = assertSearchFaceMatchesSend("search-close")
         val minimum = 48f * screen.activity.resources.displayMetrics.density - 1f
         val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
-        assertTrue("The floating X needs a 48dp target: $closeBounds", closeBounds.width >= minimum && closeBounds.height >= minimum)
         assertTrue("The X must be inside the lower part of the card",
             card.contains(closeBounds.center) && closeBounds.center.y > card.center.y)
         assertTrue("The X must be on the trailing side",
@@ -517,7 +547,7 @@ class ChatModelSearchTest {
         close.performTouchInput { click(center) }
         control("search-field").assertDoesNotExist()
         control("list").assertIsDisplayed()
-        val search = control("search").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val search = assertSearchFaceMatchesSend("search")
         assertEquals("Search and close use the same left edge", search.left, closeBounds.left, 1f)
         assertEquals("Search and close use the same top edge", search.top, closeBounds.top, 1f)
         assertEquals("Search and close use the same right edge", search.right, closeBounds.right, 1f)

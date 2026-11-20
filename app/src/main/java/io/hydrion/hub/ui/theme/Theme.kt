@@ -24,6 +24,7 @@ object HubStyle {
     val ComposerBorder = Color(0xFF4F4F4F)
     val PageMargin = 16.dp
     val ControlIcon = 20.dp
+    val ComposerActionDiameter = 32.dp
     val CardRadius = 24.dp
 }
 

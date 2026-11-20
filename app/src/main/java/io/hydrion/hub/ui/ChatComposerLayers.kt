@@ -53,11 +53,12 @@ internal fun ChatComposerLayers(
         val barTop = page.height - bar.height
         // The selector's own Box applies vertical safeDrawing padding. Its origin is the
         // workspace's left edge and its first unconsumed safe row, including in split screen.
-        val bounds = if (trackPickerAnchor()) bar.capsuleBounds()?.translate(
-            IntOffset(barLeft, barTop - safe.exclude(consumed).getTop(this)),
-        ) else null
+        val capsule = if (trackPickerAnchor()) bar.capsuleBounds() else null
+        val bounds = capsule?.translate(IntOffset(barLeft, barTop - safe.exclude(consumed).getTop(this)))
+        val actionInsets = capsule?.let { bar.actionInsets(it, layoutDirection) }
         val overlay = subcompose(WorkspaceLayer.Picker) {
-            CompositionLocalProvider(LocalPickerComposerBounds provides bounds, content = picker)
+            CompositionLocalProvider(LocalPickerComposerBounds provides bounds, LocalComposerActionInsets provides actionInsets,
+                content = picker)
         }.singleOrNull()?.measure(limits)
         layout(limits.maxWidth, page.height) {
             page.place(left, 0)

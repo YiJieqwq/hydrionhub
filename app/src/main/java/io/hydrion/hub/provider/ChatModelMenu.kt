@@ -32,9 +32,12 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.R
 import io.hydrion.hub.model.RemoteModel
+import io.hydrion.hub.ui.LocalComposerActionInsets
+import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.composerActionFill
 import io.hydrion.hub.ui.theme.composerActionInk
 
@@ -171,13 +174,22 @@ internal fun ProviderModelsList(
         val enabled = searching || models.isNotEmpty()
         // Dismissing search stays clickable with the neutral send colors.
         val accented = enabled && !searching
-        Box(Modifier.align(Alignment.BottomEnd).padding(end = 4.dp, bottom = 2.dp).size(48.dp)
+        val sendInsets = LocalComposerActionInsets.current
+        val hitEnd = 4.dp
+        val hitBottom = 2.dp
+        Box(Modifier.align(Alignment.BottomEnd).padding(end = hitEnd, bottom = hitBottom).size(48.dp)
             .then(keepEditorFocus).clip(CircleShape).testTag(if (searching) "chat-model-search-close" else "chat-model-search")
             .semantics { contentDescription = actionLabel }
             .clickable(enabled = enabled, role = Role.Button) {
                 if (searching) picker.back() else picker.search()
             }, contentAlignment = Alignment.Center) {
-            Box(Modifier.size(36.dp).background(colors.composerActionFill(accented), CircleShape),
+            // Keep the hit target and list clearance fixed. Move the face inside it to the
+            // measured logical end/bottom insets; offset mirrors its x component in RTL.
+            val placement = if (sendInsets == null) Modifier else Modifier.align(Alignment.BottomEnd).offset {
+                IntOffset(hitEnd.roundToPx() - sendInsets.x, hitBottom.roundToPx() - sendInsets.y)
+            }
+            Box(placement.size(HubStyle.ComposerActionDiameter).testTag("chat-model-search-face")
+                .background(colors.composerActionFill(accented), CircleShape),
                 contentAlignment = Alignment.Center) {
                 Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, null, Modifier.size(19.dp),
                     tint = colors.composerActionInk(accented))
