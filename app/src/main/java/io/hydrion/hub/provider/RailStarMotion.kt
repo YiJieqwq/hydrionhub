@@ -10,6 +10,8 @@ internal class RailStar(val y: Float, val brightness: Float, val seconds: Double
     val initialPhase = advance / seconds % 1.0
 }
 
+internal const val RailStarClearanceDp = 2f
+
 internal val railStars = Random(713).let { random ->
     List(22) { i -> RailStar(.08f + .84f * random.nextFloat(), .5f + .5f * random.nextFloat(),
         1.6 + 2.4 * random.nextDouble(), 4.0 * ((i * .61803398875) % 1.0)) }

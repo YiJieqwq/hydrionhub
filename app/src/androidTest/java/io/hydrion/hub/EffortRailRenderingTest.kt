@@ -6,6 +6,7 @@ import android.graphics.Color as Pixel
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
@@ -61,7 +62,7 @@ class EffortRailRenderingTest {
         }
     }
 
-    private fun image() = screen.onNodeWithTag("rail-fixture").captureToImage().asAndroidBitmap()
+    private fun image(tag: String = "rail-fixture") = screen.onNodeWithTag(tag).captureToImage().asAndroidBitmap()
 
     @Test fun railAndThumbHaveDistinctHeightsAndMirrorTheirEndpoint() {
         show()
@@ -144,33 +145,45 @@ class EffortRailRenderingTest {
         return samples.sorted()[samples.size / 2]
     }
 
-    @Test fun arrivalMotesAppearOnlyAfterEnteringPeak() {
+    @Test fun peakArrivalLightStaysInsideTheTrack() {
         assumeTrue(ValueAnimator.areAnimatorsEnabled())
-        selected.value = stops.lastIndex
+        selected.value = 1
         screen.mainClock.autoAdvance = false
         try {
-            show()
+            screen.activityRule.scenario.onActivity { activity ->
+                activity.setContent {
+                    MaterialTheme(colorScheme = darkColorScheme()) {
+                        Column {
+                            for (tag in listOf("preview", "arrival")) {
+                                Box(Modifier.size(248.dp, 70.dp).testTag(tag).background(Color(0xFF292A2D)),
+                                    contentAlignment = Alignment.Center) {
+                                    // Both rails preview peak on the same clock. Only one commits the choice.
+                                    EffortRail({ 1f }, { 1f }, stops, stops.lastIndex,
+                                        if (tag == "arrival") selected.value else 1, false)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             screen.mainClock.advanceTimeBy(180)
-            assertEquals("Opening at peak", 0, brightPixelsOutsideTrack(image()))
-            screen.runOnIdle { selected.value = 1 }
-            screen.mainClock.advanceTimeBy(64)
+            assertTrue(image("preview").sameAs(image("arrival")))
             screen.runOnIdle { selected.value = stops.lastIndex }
             screen.mainClock.advanceTimeBy(240)
-            assertTrue("Arrival bloom should reach beyond the rail", brightPixelsOutsideTrack(image()) > 0)
+            val before = image("preview")
+            val after = image("arrival")
+            val radius = 13f * after.width / 248f
+            var changed = 0
+            for (y in 0 until after.height) for (x in 0 until after.width) {
+                if (before.getPixel(x, y) == after.getPixel(x, y)) continue
+                val dx = x + .5f - (x + .5f).coerceIn(radius, after.width - radius)
+                val dy = y + .5f - after.height / 2f
+                assertTrue("Arrival light left the rail at ($x,$y)", dx * dx + dy * dy <= (radius + 1f) * (radius + 1f))
+                changed++
+            }
+            assertTrue("Expected visible arrival light inside the track", changed > 0)
         } finally {
             screen.mainClock.autoAdvance = true
         }
-    }
-
-    private fun brightPixelsOutsideTrack(bitmap: Bitmap): Int {
-        val dp = bitmap.width / 248f
-        var count = 0
-        for (y in 0 until bitmap.height) {
-            if (abs(y - bitmap.height / 2) < 18f * dp) continue
-            for (x in (176 * dp).roundToInt() until bitmap.width) {
-                if (Pixel.blue(bitmap.getPixel(x, y)) > 75) count++
-            }
-        }
-        return count
     }
 }

@@ -140,12 +140,12 @@ class PeakStarMotionTest {
     @Test fun verticalLaneLeavesRoomForEachPaintedRadiusWithoutPinningTheDrift() {
         for (density in listOf(1f, 2.75f)) {
             val height = 26 * density
-            val gap = 1f + density
+            val gap = 1f + RailStarClearanceDp * density
             for (star in railStars) {
                 val radius = 1.5f * density * star.brightness
                 val ys = (0..100).map { starDrawY(it / 100f, height, radius, gap) }
-                assertTrue(ys.first() - radius >= gap - .0001f)
-                assertTrue(ys.last() + radius <= height - gap + .0001f)
+                assertEquals(2f * density + 1f, ys.first() - radius, .0001f)
+                assertEquals(2f * density + 1f, height - ys.last() - radius, .0001f)
                 assertTrue(ys.zipWithNext().all { (a, b) -> b > a })
             }
         }

@@ -62,8 +62,8 @@ private val BurstEase = CubicBezierEasing(.15f, .72f, .25f, 1f)
 private val GradientStops = listOf(0f, .10f, .20f, .30f, .40f, .50f, .55f, .60f, .65f, .70f, .75f, .80f, .85f, .93f, 1f)
 private val LightGradient = listOf(0x3b83f6, 0x3b82f6, 0x3d7bf3, 0x4c75f4, 0x6473fa, 0x8d80fc, 0x9375fd,
     0x9d78fd, 0xa779fe, 0xa476fe, 0x9e73fe, 0x9166fe, 0x845af9, 0x7d55f6, 0x7448ee)
-private val DarkGradient = listOf(0x3e89ff, 0x438bff, 0x518dff, 0x668bff, 0x7c8aff, 0x9386ff, 0xa084ff,
-    0xa785ff, 0xb085ff, 0xb087ff, 0xaf8bff, 0xae8fff, 0xae91ff, 0xaf95ff, 0xb296fe)
+private val DarkGradient = listOf(0x264bd8, 0x3e4cde, 0x5a4ee5, 0x7451ed, 0x8956f3, 0x955dff, 0x986afa,
+    0x9b75fe, 0x9a6dfc, 0x955dff, 0x9059f8, 0x8c58f3, 0x8755ee, 0x8558ec, 0x895eeb)
 
 private data class Mote(val near: Offset, val far: Offset, val radius: Float, val alpha: Float, val delay: Float, val life: Float)
 
@@ -186,8 +186,8 @@ internal fun EffortRail(
         val y = size.height / 2
         val radius = minOf(maxThumbRadius, size.width / 2)
         val travel = size.width - 2 * radius
-        // Stars are solid antialiased discs. Allow one pixel for the soft edge plus 1dp of clear track.
-        val starEdgeGap = 1f + 1.dp.toPx()
+        // Include a pixel of antialiasing outside the star's painted radius.
+        val starEdgeGap = 1f + RailStarClearanceDp.dp.toPx()
         val clip = Path().apply {
             addRoundRect(RoundRect(0f, top, size.width, top + railHeight, CornerRadius(railHeight / 2)))
         }
@@ -195,9 +195,11 @@ internal fun EffortRail(
         val stopsWithColors = GradientStops.mapIndexed { i, fraction -> fraction to Color(colors[i] or 0xff000000.toInt()) }.toTypedArray()
         val flow = Brush.horizontalGradient(*stopsWithColors, startX = 0f, endX = 1f)
         val shineWidth = size.width + 80.dp.toPx()
+        val gleam = if (dark) Color(0xFFDBC9FF) else Color.White
         val shine = Brush.linearGradient(
-            .18f to Color.Transparent, .35f to Color.White.copy(alpha = .03f), .48f to Color.White.copy(alpha = .19f),
-            .66f to Color.White.copy(alpha = .024f), .84f to Color.Transparent,
+            .18f to Color.Transparent, .35f to gleam.copy(alpha = .03f),
+            .48f to gleam.copy(alpha = if (dark) .13f else .19f),
+            .66f to (if (dark) Color(0x146336CC) else Color.White.copy(alpha = .024f)), .84f to Color.Transparent,
             start = Offset(0f, -.088f * shineWidth), end = Offset(shineWidth, .088f * shineWidth),
         )
         val softLight = Brush.radialGradient(0f to peakMote, .66f to peakMote.copy(alpha = 0f),
@@ -242,16 +244,16 @@ internal fun EffortRail(
                                 Offset(starDrawX(phase, knob.x), top + height), alpha = alpha * dust.value)
                         }
                     }
+                    if (purple > 0f && bloom.value < 1f && stops.lastIndex > 0) {
+                        val origin = Offset(radius + travel * highestIndex / stops.lastIndex, y)
+                        drawBloom(origin, bloom.value * BurstMillis, peakMote, softLight, purple)
+                    }
                 }
                 val thumbRadius = radius * thumbScale()
                 glow(shadow, knob + Offset(0f, 1.dp.toPx()), thumbRadius + 4.dp.toPx(), 1f)
                 drawCircle(palette.thumb, thumbRadius, knob)
                 val border = .5.dp.toPx()
                 drawCircle(Color.Black.copy(alpha = .07f), (thumbRadius - border / 2).coerceAtLeast(0f), knob, style = Stroke(border))
-                if (purple > 0f && bloom.value < 1f && stops.lastIndex > 0) {
-                    val origin = Offset(radius + travel * highestIndex / stops.lastIndex, y)
-                    drawBloom(origin, bloom.value * BurstMillis, peakMote, softLight, purple)
-                }
             }
         }
     })
