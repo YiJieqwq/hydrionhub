@@ -32,12 +32,24 @@ internal fun ModelEditor(
 ) {
     val owner = viewModel<ModelFormOwner>()
     val draft = remember(initial.id, owner) { owner.open(initial, mode, isDefault) }
+    ModelEditor(draft, exists, otherModels,
+        onBack = { owner.close(); onBack() },
+        onSave = { model, makeDefault -> owner.close(); onSave(model, makeDefault) },
+        onDelete = { owner.close(); onDelete() })
+}
+
+@Composable
+internal fun ModelEditor(
+    draft: ModelEditDraft, exists: Boolean, otherModels: List<ProviderModel>,
+    onBack: () -> Unit, onSave: (ProviderModel, Boolean) -> Unit, onDelete: () -> Unit,
+    fadeScrollEdges: Boolean = false,
+) {
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var discard by rememberSaveable { mutableStateOf(false) }
     var deleting by rememberSaveable { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     val pageStates = rememberSaveableStateHolder()
-    val exit = { focus.clearFocus(); owner.close(); onBack() }
+    val exit = { focus.clearFocus(); onBack() }
     val requestExit = { if (draft.dirty) discard = true else exit() }
     val save = {
         val problem = draft.error(otherModels)
@@ -48,7 +60,6 @@ internal fun ModelEditor(
             val edited = draft.buildModel()
             val default = draft.type != ModelType.Embedding && draft.makeDefault
             focus.clearFocus()
-            owner.close()
             onSave(edited, default)
         }
     }
@@ -78,7 +89,9 @@ internal fun ModelEditor(
     }
     error?.let { Text(it, Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     pageStates.SaveableStateProvider(draft.page.name) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(vertical = 14.dp),
+        val scroll = rememberScrollState()
+        val edges = if (fadeScrollEdges) Modifier.modelConfigEdgeFades(scroll, MaterialTheme.colorScheme.background) else Modifier
+        Column(Modifier.fillMaxWidth().then(edges).verticalScroll(scroll).padding(vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             when (draft.page) {
                 ModelPage.Basic -> ModelBasicTab(draft)
@@ -96,9 +109,8 @@ internal fun ModelEditor(
         }
     }
     if (discard) DiscardChanges(onKeep = { discard = false }, onDiscard = exit)
-    if (deleting) ConfirmRemoval("从供应商移除“${initial.name}”？", { deleting = false }) {
+    if (deleting) ConfirmRemoval("从供应商移除“${draft.initial.name}”？", { deleting = false }) {
         focus.clearFocus()
-        owner.close()
         onDelete()
     }
 }

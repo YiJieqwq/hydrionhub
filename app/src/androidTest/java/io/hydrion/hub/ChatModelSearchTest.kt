@@ -4,6 +4,7 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -23,6 +24,7 @@ import io.hydrion.hub.model.RemoteModel
 import io.hydrion.hub.provider.ModelProfile
 import io.hydrion.hub.provider.Provider
 import io.hydrion.hub.provider.ProviderModel
+import io.hydrion.hub.provider.ProviderStore
 import io.hydrion.hub.provider.deepSeekProvider
 import java.util.UUID
 import org.junit.Assert.assertEquals
@@ -427,4 +429,181 @@ class ChatModelSearchTest {
         control("card").assertIsDisplayed()
         screen.runOnIdle { assertEquals(RemoteModel(first.id, "last"), vm.providers.catalog.value.active[Mode.Chat]) }
     }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun longPressEditsTheBrowsedProviderWithoutSelectingItAndRestoresTheSearch() =
+        withProviders(includeAttachment = true) { vm, first, second ->
+            val beforeTarget = List(14) { ProviderModel("batch-alpha-before-$it", "Before $it") }
+            val afterTarget = List(18) { ProviderModel("batch-alpha-after-$it", "After $it") }
+            screen.runOnIdle {
+                vm.providers.save(second.copy(models = beforeTarget + second.models + afterTarget), "", null)
+            }
+            val draft = "first line\nsecond line"
+            val selection = TextRange(2, 8)
+            editor.performTouchInput { click(center) }
+            screen.waitUntil(15_000) { imeIsVisible() }
+            editor.performTextReplacement(draft)
+            editor.performTextInputSelection(selection)
+            val savedDraft = screen.runOnIdle { vm.state.value.draft }
+
+            openControls()
+            enterSearch("select")
+            val providerRow = reveal("provider-trigger")
+            providerRow.assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnLongClick))
+            providerRow.performClick()
+            val providerTag = "chat-model-provider:${second.id}"
+            val providers = hasTestTag("chat-provider-list")
+            screen.onNode(hasScrollAction() and (providers or hasAnyAncestor(providers)))
+                .performScrollToNode(hasTestTag(providerTag))
+            screen.onNodeWithTag(providerTag).performClick()
+            val search = enterSearch("search")
+            val query = "batch-alpha"
+            val querySelection = TextRange(2, 6)
+            search.performTextReplacement(query)
+            search.performTextInputSelection(querySelection)
+            val row = reveal(option(second, query)).assertIsNotSelected()
+            val results = control("results")
+            fun rowOffset() = row.fetchSemanticsNode().positionInRoot.y - results.fetchSemanticsNode().positionInRoot.y
+            val inset = 7 * screen.activity.resources.displayMetrics.density
+            val delta = rowOffset() + inset
+            results.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, delta) }
+            val savedOffset = rowOffset()
+            assertEquals("First visible model should be partly scrolled", -inset, savedOffset, 1f)
+            assertTrue(imeIsVisible())
+            row.performTouchInput { longClick(center) }
+            control("editor").assertIsDisplayed()
+            screen.waitUntil(15_000) { !imeIsVisible() }
+            // The other provider uses the same local model ID but has external ID "vendor/atlas-v3".
+            screen.onNodeWithContentDescription("模型 ID").assertTextContains("Nimbus")
+            val active = RemoteModel(first.id, query)
+            screen.runOnIdle { assertEquals(active, vm.providers.catalog.value.active[Mode.Chat]) }
+
+            val name = screen.onNodeWithContentDescription("模型名称").performScrollTo()
+            name.performTextReplacement("Renamed on B")
+            hideKeyboard()
+            screen.onNodeWithContentDescription("保存模型").performClick()
+            control("editor").assertDoesNotExist()
+            screen.waitUntil(15_000) { imeIsVisible() }
+            search.assertIsFocused().assertTextEquals(query)
+            assertEquals(querySelection, search.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            control(option(second, query)).assertIsDisplayed().assertIsNotSelected().assertTextContains("Renamed on B")
+            assertEquals("The same model keeps its pixel offset in the filtered list", savedOffset, rowOffset(), 1f)
+            control(option(first, query)).assertDoesNotExist()
+            screen.runOnIdle {
+                val catalog = vm.providers.catalog.value
+                assertEquals(active, catalog.active[Mode.Chat])
+                assertEquals(first, catalog.providers.single { it.id == first.id })
+                assertEquals("Renamed on B", catalog.providers.single { it.id == second.id }.models.single { it.id == query }.name)
+                val saved = ProviderStore(screen.activity.applicationContext).catalog.value
+                assertEquals(catalog.providers.single { it.id == second.id }, saved.providers.single { it.id == second.id })
+            }
+            assertImeStays(true) { control("search-close").performClick() }
+            editor.assertIsFocused().assertTextEquals(draft)
+            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            screen.onNodeWithText("draft-only.txt").assertIsDisplayed()
+            screen.runOnIdle { assertEquals(savedDraft, vm.state.value.draft) }
+        }
+
+    @Test fun longPressFromScrolledListWithClosedKeyboardSlidesInAndReturnsToTheSameRow() =
+        withProviders { vm, first, _ ->
+            screen.runOnIdle { vm.setDraft("parked") }
+            openControls()
+            enterSearch("select")
+            control("search-close").performClick()
+            val row = reveal(option(first, "extra-9")).assertIsNotSelected()
+            val list = control("results")
+            fun scrollPosition() = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+            val scrollBefore = scrollPosition()
+            assertTrue(scrollBefore > 0f)
+            assertTrue(!imeIsVisible())
+            val panel = control("editor")
+            // A bounded intermediate frame checks motion without tying it to the keyboard's duration.
+            // Trigger the same long-click semantic here; the keyboard-open case above uses a real pointer.
+            val earlyBottom = try {
+                screen.mainClock.autoAdvance = false
+                row.performSemanticsAction(SemanticsActions.OnLongClick)
+                repeat(3) { screen.mainClock.advanceTimeByFrame() }
+                // The top is clipped while the panel enters from above. Its bottom remains observable.
+                panel.fetchSemanticsNode().boundsInRoot.bottom
+            } finally {
+                screen.mainClock.autoAdvance = true
+            }
+            screen.waitForIdle()
+            assertTrue("Configuration moves down from the top", earlyBottom < panel.fetchSemanticsNode().boundsInRoot.bottom)
+            screen.onNodeWithContentDescription("模型名称").assertTextContains("Other model 9")
+            assertImeStays(false) {
+                try {
+                    screen.mainClock.autoAdvance = false
+                    screen.onNodeWithContentDescription("返回").performClick()
+                    repeat(2) { screen.mainClock.advanceTimeByFrame() }
+                    control("list").assertDoesNotExist() // The moving chat cannot expose the picker early.
+                } finally {
+                    screen.mainClock.autoAdvance = true
+                }
+            }
+            panel.assertDoesNotExist()
+            row.assertIsDisplayed().assertIsNotSelected()
+            assertEquals(scrollBefore, scrollPosition(), .001f)
+            control("search").assertIsDisplayed()
+            control("search-field").assertDoesNotExist()
+            editor.assertTextEquals("parked")
+            screen.runOnIdle {
+                assertEquals(RemoteModel(first.id, "batch-alpha"), vm.providers.catalog.value.active[Mode.Chat])
+            }
+
+            enterSearch("search").performTouchInput { click(center) }
+            screen.waitUntil(15_000) { imeIsVisible() }
+            val search = control("search-field")
+            search.performTextReplacement("extra-9")
+            hideKeyboard()
+            row.performTouchInput { longClick(center) }
+            control("editor").assertIsDisplayed()
+            assertImeStays(false) { screen.onNodeWithContentDescription("返回").performClick() }
+            control("editor").assertDoesNotExist()
+            search.assertIsDisplayed().assertTextEquals("extra-9")
+            row.assertIsDisplayed().assertIsNotSelected()
+        }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun returningToTheDraftRestoresItsKeyboardWithoutRollingBackNewConversationMessages() =
+        withProviders { vm, first, _ ->
+            val previous = screen.runOnIdle { vm.state.value.current.id }
+            val conversation = screen.runOnIdle { vm.newConversation(); vm.state.value.current.id }
+            try {
+                val draft = "keep my selection"
+                val selection = TextRange(2, 6)
+                editor.performTouchInput { click(center) }
+                screen.waitUntil(15_000) { imeIsVisible() }
+                editor.performTextReplacement(draft)
+                editor.performTextInputSelection(selection)
+                openControls()
+                enterSearch("select")
+                control("search-close").performClick()
+                editor.assertIsFocused()
+                reveal(option(first, "batch-beta")).performTouchInput { longClick(center) }
+                control("editor").assertIsDisplayed()
+                screen.waitUntil(15_000) { !imeIsVisible() }
+
+                // Exercise a real local session update while the configuration page covers the chat.
+                val messages = screen.runOnIdle {
+                    vm.setDraft("offline background fixture")
+                    vm.send("Hydrion", remoteModel = null)
+                    vm.stop()
+                    vm.state.value.current.messages
+                }
+                assertTrue(messages.any { it.text == "offline background fixture" })
+                InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+                control("editor").assertDoesNotExist()
+                screen.waitUntil(15_000) { imeIsVisible() }
+                editor.assertIsFocused().assertTextEquals(draft)
+                assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+                control("search").assertIsDisplayed()
+                screen.runOnIdle {
+                    assertEquals(conversation, vm.state.value.current.id)
+                    assertEquals(messages, vm.state.value.current.messages)
+                }
+            } finally {
+                screen.runOnIdle { vm.deleteConversation(conversation); vm.openConversation(previous) }
+            }
+        }
 }

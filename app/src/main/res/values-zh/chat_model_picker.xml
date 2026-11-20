@@ -5,6 +5,7 @@
     <string name="chat_picker_back_to_controls">返回推理档位选择器</string>
     <string name="chat_picker_provider">供应商</string>
     <string name="chat_picker_models">模型</string>
+    <string name="chat_picker_edit_model">编辑模型配置</string>
     <string name="chat_picker_provider_empty">这个供应商没有已启用的聊天模型。</string>
     <string name="chat_picker_search">搜索模型</string>
     <string name="chat_picker_search_hint">输入模型名称…</string>

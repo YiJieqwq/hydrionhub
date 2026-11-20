@@ -129,6 +129,22 @@ internal class ConversationSession(
     }
 
     fun setDraft(text: String) = changeDraft(screen.draft.copy(text = text))
+
+    /** Restore only the picker source and its draft, keeping live conversations and messages. */
+    fun restoreModelPickerDraft(id: String, draft: Draft): Boolean {
+        if (screen.current.id != id) {
+            if (screen.history.any { it.id == id }) {
+                openConversation(id)
+            } else {
+                val parked = parkedEmpty?.takeIf { it.id == id } ?: return false
+                parkedEmpty = null
+                choose(parked)
+            }
+        }
+        changeDraft(draft)
+        return true
+    }
+
     fun setSearch(value: String) = changeDraft(screen.draft.copy(search = value))
     fun setImageTool(value: String) = changeDraft(screen.draft.copy(imageTool = value))
     fun addAttachment(attachment: Attachment) {

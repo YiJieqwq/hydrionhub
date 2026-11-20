@@ -28,7 +28,7 @@ import io.hydrion.hub.model.Mode
 
 @Composable
 internal fun WorkspaceDrawer(
-    mode: Mode, drawer: DrawerState, onClose: () -> Unit,
+    mode: Mode, drawer: DrawerState, onClose: () -> Unit, workspaceCovered: Boolean = false,
     drawerContent: @Composable (width: Dp, visible: Boolean) -> Unit,
     content: @Composable () -> Unit
 ) {
@@ -52,7 +52,7 @@ internal fun WorkspaceDrawer(
             }) {
                 Box(Modifier.fillMaxSize().testTag("drawer-workspace")) {
                     val drawerActive = drawer.isOpen || drawer.targetValue == DrawerValue.Open
-                    DrawerPane(disabled = drawerActive, modifier = Modifier.fillMaxSize()) { workspace(content) }
+                    DrawerPane(disabled = drawerActive || workspaceCovered, modifier = Modifier.fillMaxSize()) { workspace(content) }
                     if (drawerActive) {
                         // This target moves with the body. Only the exposed strip is inside the viewport.
                         Box(Modifier.matchParentSize().clickable(

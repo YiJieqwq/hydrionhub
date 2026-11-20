@@ -94,6 +94,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         clearError(id)
     }
     fun setDraft(text: String) = session.setDraft(text)
+    internal fun restoreModelPickerDraft(id: String, draft: Draft) = session.restoreModelPickerDraft(id, draft)
     fun setSearch(value: String) = session.setSearch(value)
     fun setImageTool(value: String) = session.setImageTool(value)
     fun addAttachment(attachment: Attachment) = session.addAttachment(attachment)

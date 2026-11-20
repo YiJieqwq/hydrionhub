@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.LocalIndication
@@ -66,6 +67,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -97,6 +99,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.round
 import androidx.compose.ui.unit.dp
@@ -120,6 +123,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlin.math.roundToInt
 
 private enum class ToolsPanel { Closed, WaitingForIme, Open }
 
@@ -177,6 +181,8 @@ internal fun HubComposer(
     toolsAvailable: Boolean = true,
     allowImeReturn: Boolean = true,
     chatPicker: ChatModelPickerState? = null,
+    modelEditorBridge: ModelEditorComposerBridge? = null,
+    forceReturnFolded: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val darkComposer = colors.onSurface.luminance() > colors.surfaceContainerHigh.luminance()
@@ -295,7 +301,7 @@ internal fun HubComposer(
         )
     }
     // Legacy keyboards may jump straight to zero before the flow collector sees the final inset.
-    val expansion = if (hasImeHeight || hasImeTarget || hardwareOnly) shapeProgress.value else 0f
+    val expansion = if (!forceReturnFolded && (hasImeHeight || hasImeTarget || hardwareOnly)) shapeProgress.value else 0f
     if (chatPicker != null) {
         // The floating panel belongs to this composer even while its toolbar trigger is folded away.
         DisposableEffect(chatPicker) {
@@ -306,9 +312,16 @@ internal fun HubComposer(
         }
     }
     val hasContent = draft.text.isNotEmpty() || draft.attachments.isNotEmpty()
-    val rowGate by animateFloatAsState(if (hasContent || searchPicker != null) 1f else 0f,
-        tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerDraftRow")
-    val toolbar = maxOf(expansion, rowGate)
+    val hasRowContent = hasContent || searchPicker != null
+    val rowGate by animateFloatAsState(if (!forceReturnFolded && hasRowContent) 1f else 0f,
+        if (forceReturnFolded) snap() else tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerDraftRow")
+    val toolbar = if (forceReturnFolded) 0f else maxOf(expansion, rowGate)
+    val returning = modelEditorBridge?.returning != null
+    val returnFrame = remember(modelEditorBridge) { mutableStateOf<ModelEditorReturnFrame?>(null) }
+    if (modelEditorBridge != null) {
+        ObserveModelEditorReturn(modelEditorBridge, returnFrame.value)
+        DisposableEffect(modelEditorBridge) { onDispose { modelEditorBridge.hasLayout = false } }
+    }
     val canSend = searchPicker == null && (modelAvailable || state.current.mode == Mode.Image) &&
         (draft.text.isNotBlank() || draft.attachments.isNotEmpty())
     val active = searchPicker == null && state.isGenerating
@@ -347,6 +360,18 @@ internal fun HubComposer(
         val shape = if (toolbar == 0f) CircleShape else RoundedCornerShape(24.dp)
         Surface(
             modifier = Modifier.fillMaxWidth().testTag("composer-capsule")
+                .then(if (modelEditorBridge == null) Modifier else Modifier.layout { measurable, constraints ->
+                    val capsule = measurable.measure(constraints)
+                    layout(capsule.width, capsule.height) {
+                        capsule.place(0, 0)
+                        modelEditorBridge.hasLayout = capsule.width > 0 && capsule.height > 0
+                        returnFrame.value = if (returning) ModelEditorReturnFrame(
+                            capsule.width, capsule.height, (current.getBottom(density) - nav).coerceAtLeast(0),
+                            (source.getBottom(density) - nav).coerceAtLeast(0), (target.getBottom(density) - nav).coerceAtLeast(0),
+                            imeVisible, expansion, rowGate, hasRowContent, forceReturnFolded,
+                        ) else null
+                    }
+                })
                 .then(if (chatPicker == null) Modifier else Modifier.onGloballyPositioned {
                     chatPicker.composerBounds = IntRect(it.positionInWindow().round(), it.size)
                 })
@@ -355,10 +380,11 @@ internal fun HubComposer(
             color = colors.surfaceContainerHigh,
         ) {
             Column {
-                if (draft.attachments.isNotEmpty()) {
+                if (draft.attachments.isNotEmpty() && !forceReturnFolded) {
                     val imageAndText = draft.text.isNotEmpty() && draft.attachments.any { it.hasImagePreview }
                     // Let the editor and toolbar measure first in short windows above the IME.
                     BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth()
+                        .then(if (returning) Modifier.revealHeight(toolbar, 0.dp) else Modifier)
                         .padding(start = 8.dp, end = 8.dp, top = 3.dp, bottom = if (imageAndText) 0.dp else 3.dp)) {
                         val previewWidth = maxWidth
                         val previewHeight = minOf(120.dp, maxHeight)
@@ -378,6 +404,12 @@ internal fun HubComposer(
                         ComposerEditorSlot(
                             picker = chatPicker, minHeight = editorMinHeight, textStyle = editorTextStyle,
                             draftFocus = editorFocus,
+                            modelEditorBridge = modelEditorBridge,
+                            readDraft = { fieldValue },
+                            restoreSelection = { fieldValue = fieldValue.copy(selection = it, composition = null) },
+                            interactive = allowImeReturn,
+                            foldedVisual = forceReturnFolded,
+                            dismissForModelEditor = ::collapse,
                             retainEditorFocus = { windowFocused && allowImeReturn && !hiding && (imeVisible || opening) },
                             onEditorFocusChanged = { nowFocused ->
                                 if (nowFocused && !focused) {
@@ -386,7 +418,8 @@ internal fun HubComposer(
                                 }
                                 focused = nowFocused
                             },
-                            modifier = if (pickerOpen) Modifier.weight(1f, fill = false) else Modifier,
+                            modifier = (if (pickerOpen) Modifier.weight(1f, fill = false) else Modifier)
+                                .then(if (returning || forceReturnFolded) Modifier.revealHeight(toolbar, 49.25.dp) else Modifier),
                         ) { draftFocusModifier ->
                             BasicTextField(
                                 value = editorValue,
@@ -402,7 +435,7 @@ internal fun HubComposer(
                                     .then(draftFocusModifier).semantics { contentDescription = "消息输入框" },
                                 textStyle = editorTextStyle.copy(color = colors.onSurface),
                                 cursorBrush = SolidColor(colors.primary),
-                                maxLines = if (hasContent || focused) 5 else 1,
+                                maxLines = if (!forceReturnFolded && (hasContent || focused)) 5 else 1,
                                 decorationBox = { editor ->
                                     Box(Modifier.fillMaxWidth()
                                         .trackPickerEditor(chatPicker, search = false)
@@ -537,6 +570,15 @@ internal fun HubComposer(
             onDismiss = { toolsPanel = ToolsPanel.Closed },
         )
     }
+}
+
+// During a configuration return, attachments and multi-line drafts reveal with the existing
+// toolbar gate instead of adding their entire measured height on the first unfolded frame.
+private fun Modifier.revealHeight(fraction: Float, folded: Dp) = clipToBounds().layout { child, constraints ->
+    val measured = child.measure(constraints)
+    val start = minOf(folded.roundToPx(), measured.height)
+    val height = constraints.constrainHeight(start + ((measured.height - start) * fraction).roundToInt())
+    layout(measured.width, height) { measured.place(0, 0) }
 }
 
 @Composable

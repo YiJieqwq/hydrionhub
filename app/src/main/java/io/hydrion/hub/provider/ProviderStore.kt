@@ -77,6 +77,12 @@ class ProviderStore(context: Context) {
         update(state.value.withProvider(provider, defaults))
     }
 
+    internal fun editModel(route: RemoteModel, model: ProviderModel?, makeDefault: Boolean = false) {
+        val current = state.value
+        val edited = current.withEditedModel(route, model, makeDefault)
+        if (edited != current) update(edited)
+    }
+
     fun remove(providerId: String) {
         sessionKeys.remove(providerId)
         update(state.value.copy(providers = state.value.providers.filterNot { it.id == providerId }))

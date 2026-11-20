@@ -10,6 +10,49 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConversationSessionTest {
+    @Test fun pickerReturnRestoresDraftToItsConversationAfterABackgroundReplyFinishes() = runBlocking {
+        val steps = Channel<Unit>(Channel.UNLIMITED)
+        val session = ConversationSession(this, FakeGenerationRepository { steps.receive() }, {})
+        val other = Conversation(title = "another chat")
+        session.restore(SavedWorkspace(listOf(other)))
+        session.setDraft("local reply")
+        session.send("local", emptyMap(), null, null)
+        val id = session.state.value.current.id
+        val reply = session.state.value.current.messages.last().id
+        session.setDraft("original input")
+        session.addAttachment(Attachment("image", "original.png", mimeType = "image/png"))
+        val draft = session.state.value.draft
+
+        session.setDraft("temporary")
+        session.removeAttachment("image")
+        session.openConversation(other.id)
+        session.setDraft("unrelated input")
+        repeat(100) { steps.trySend(Unit) }
+        yield()
+        val latest = session.state.value.history.single { it.id == id }
+        assertEquals(Generation.Completed, latest.messages.single { it.id == reply }.status)
+
+        assertTrue(session.restoreModelPickerDraft(id, draft))
+        assertEquals(latest, session.state.value.current)
+        assertEquals(draft, session.state.value.draft)
+        session.openConversation(other.id)
+        assertEquals("unrelated input", session.state.value.draft.text)
+    }
+
+    @Test fun missingPickerOwnerCannotOverwriteTheCurrentDraftOrRecreateADeletedChat() = runBlocking {
+        val session = ConversationSession(this, FakeGenerationRepository {}, {})
+        val deleted = Conversation()
+        val next = Conversation()
+        session.restore(SavedWorkspace(listOf(deleted, next)))
+        session.openConversation(next.id)
+        session.setDraft("keep this")
+        session.addAttachment(Attachment("keep", "keep.txt"))
+        session.deleteConversation(deleted.id)
+        val before = session.state.value
+        assertFalse(session.restoreModelPickerDraft(deleted.id, Draft("wrong conversation")))
+        assertEquals(before, session.state.value)
+    }
+
     @Test fun retryOfAnOnlineImageUsesItsRecordedRouteAndKeepsThePreviousResultOnFailure() = runBlocking {
         val saved = ImageInvocation("Studio", mapOf("model" to "gpt-image-2", "n" to "1"), RemoteModel("images", "studio"))
         val user = Message(role = Role.User, text = "mountain", imageInvocation = saved)

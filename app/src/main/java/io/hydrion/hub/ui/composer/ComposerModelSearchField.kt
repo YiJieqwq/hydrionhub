@@ -41,7 +41,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntRect
@@ -71,6 +73,12 @@ internal fun ComposerEditorSlot(
     minHeight: Dp,
     textStyle: TextStyle,
     draftFocus: FocusRequester,
+    modelEditorBridge: ModelEditorComposerBridge?,
+    readDraft: () -> TextFieldValue,
+    restoreSelection: (TextRange) -> Unit,
+    interactive: Boolean,
+    foldedVisual: Boolean,
+    dismissForModelEditor: () -> Unit,
     retainEditorFocus: () -> Boolean,
     onEditorFocusChanged: (Boolean) -> Unit,
     modifier: Modifier,
@@ -83,6 +91,25 @@ internal fun ComposerEditorSlot(
     var draftFocused by remember { mutableStateOf(false) }
     var searchFocused by remember(picker) { mutableStateOf(false) }
     val editorFocused = draftFocused || searchFocused
+    var placed by remember(picker, searching, foldedVisual) { mutableStateOf(false) }
+    val activePlacement = if (modelEditorBridge == null) Modifier else Modifier.onGloballyPositioned {
+        placed = it.isAttached && it.size.width > 0 && it.size.height > 0
+    }
+    if (modelEditorBridge != null) {
+        BindModelEditorComposer(
+            modelEditorBridge, readDraft, restoreSelection,
+            focusedInput = {
+                when {
+                    searchFocused -> ModelEditorInput.Search
+                    draftFocused -> ModelEditorInput.Draft
+                    else -> null
+                }
+            },
+            visibleInput = if (searching) ModelEditorInput.Search else ModelEditorInput.Draft,
+            focus = if (searching) searchFocus else draftFocus,
+            placed = placed, interactive = interactive, dismiss = dismissForModelEditor,
+        )
+    }
 
     // Both native editors remain attached during a handoff. Transfer directly in the same
     // apply pass to avoid starting a new keyboard after disposing the active input session.
@@ -99,17 +126,21 @@ internal fun ComposerEditorSlot(
     }
 
     Box(modifier.fillMaxWidth()) {
-        Box(if (searching) Modifier.withoutPlacement() else Modifier) {
+        // A returning capsule first displays the ordinary folded draft. Keep the query,
+        // selection and search editor mounted while that temporary pose is on screen.
+        val showSearch = searching && !foldedVisual
+        Box(if (showSearch) Modifier.withoutPlacement() else Modifier) {
             draftEditor(Modifier.focusRequester(draftFocus).focusProperties {
                 canFocus = !searching || !previousSearch
-            }.onFocusChanged { draftFocused = it.isFocused })
+            }.onFocusChanged { draftFocused = it.isFocused }.then(if (searching) Modifier else activePlacement))
         }
         if (picker != null && (searching || previousSearch)) {
             // Keep the outgoing search field until focus transfers or the hidden keyboard is released.
-            val visibility = if (searching) Modifier else Modifier.withoutPlacement()
+            val visibility = if (showSearch) Modifier else Modifier.withoutPlacement()
             Box(Modifier.matchParentSize().then(visibility).padding(start = 15.dp, end = 16.dp)) {
                 ComposerModelSearchField(picker, minHeight, textStyle,
-                    Modifier.focusRequester(searchFocus).onFocusChanged { searchFocused = it.isFocused })
+                    Modifier.focusRequester(searchFocus).onFocusChanged { searchFocused = it.isFocused }
+                        .then(if (searching) activePlacement else Modifier))
             }
         }
     }

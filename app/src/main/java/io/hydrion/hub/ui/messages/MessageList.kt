@@ -156,20 +156,21 @@ private fun Modifier.chatEdgeFades(
     val header = bands.headerStop
     val topBrush = if (bands.topLength > 0f) Brush.verticalGradient(
         0f to background, header * .45f to background.copy(alpha = .94f),
-        header to background.copy(alpha = .52f), (header + (1f - header) * .70f) to background.copy(alpha = .10f),
+        header to background.copy(alpha = ChatEdgeFade.HeaderEdgeAlpha),
+        (header + (1f - header) * ChatEdgeFade.TopTailStop) to background.copy(alpha = ChatEdgeFade.TopTailAlpha),
         1f to clear, endY = bands.topLength,
     ) else null
     val bottomStart = size.height - bands.bottomLength
     val bottomBrush = if (bands.bottomLength > 0f) {
         val stops = buildList {
             add(0f to clear)
-            add(bands.capsuleTopStop to background.copy(alpha = .45f))
+            add(bands.capsuleTopStop to background.copy(alpha = ChatEdgeFade.ComposerEdgeAlpha))
             add(bands.capsuleBottomStop to background.copy(alpha = .88f))
             if (bands.capsuleBottomStop < 1f) add(1f to background)
         }
         Brush.verticalGradient(*stops.toTypedArray(), startY = bottomStart, endY = size.height)
     } else null
-    val reveal = 24.dp.toPx()
+    val reveal = ChatEdgeFade.ScrollRevealDp.dp.toPx()
     onDrawWithContent {
         drawContent()
         // Ease the mask away as the first or last item reaches its resting padding.

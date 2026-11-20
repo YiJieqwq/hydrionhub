@@ -12,6 +12,53 @@ class ChatModelMenuSearchTest {
     private val second = ProviderModel("local-02", "常用模型")
     private val choices = listOf(first, second)
 
+    @Test fun editorReturnKeepsActiveOrPausedQueryAndConsumesItsScrollSnapshotOnce() {
+        val picker = ChatModelPickerState()
+        val query = TextFieldValue("  Atlas  ", selection = TextRange(5, 2))
+        val browsing = PickerScrollAnchor("model:provider/second", 4, 13)
+        val filtered = PickerScrollAnchor("model:provider/first", 2, 7)
+        for (page in listOf(ChatModelPickerState.Page.Search, ChatModelPickerState.Page.Models)) {
+            picker.open()
+            picker.models("provider", startSearching = true)
+            picker.updateSearchQuery(TextFieldValue("old"))
+            assertEquals(ChatModelPickerState.SearchScroll.Filter, picker.pendingSearchScroll)
+            val snapshot = PickerBrowseSnapshot(page, "provider", query, browsing, filtered, 240f)
+            picker.restoreBrowsing(snapshot)
+            assertEquals(page, picker.page)
+            assertEquals("provider", picker.browsedProviderId)
+            assertEquals(query, picker.searchQuery)
+            assertEquals(null, picker.pendingSearchScroll)
+            val nextVisit = PickerBrowseSnapshot(page, "provider", query, browsing, filtered, 240f)
+            picker.restoreBrowsing(nextVisit)
+            picker.consumeBrowseRestore(snapshot) // A late layout from the first visit cannot consume the second.
+            assertSame(nextVisit, picker.pendingBrowseRestore)
+            picker.consumeBrowseRestore(nextVisit)
+            assertEquals(null, picker.pendingBrowseRestore)
+            assertEquals(query, picker.searchQuery)
+            if (page == ChatModelPickerState.Page.Models) {
+                picker.search()
+                assertEquals(query, picker.searchQuery)
+            }
+            picker.updateSearchQuery(query.copy(selection = TextRange(1, 3)))
+            assertEquals(null, picker.pendingSearchScroll)
+            picker.updateSearchQuery(TextFieldValue("Atlas X"))
+            assertEquals(ChatModelPickerState.SearchScroll.Filter, picker.pendingSearchScroll)
+            picker.consumeSearchScroll()
+            assertEquals(null, picker.pendingSearchScroll)
+            picker.submitSearch()
+            assertEquals(ChatModelPickerState.SearchScroll.Submit, picker.pendingSearchScroll)
+        }
+    }
+
+    @Test fun returnScrollAnchorFollowsTheModelAcrossReorderAndFallsBackIfRemoved() {
+        val anchor = PickerScrollAnchor("model:p/b", 2, 15)
+        assertEquals(0, anchor.resolveIndex(listOf("model:p/b", "model:p/a", "model:p/c")))
+        assertEquals(2, anchor.resolveIndex(listOf("model:q/b", "model:p/a", "model:p/c", "model:p/d")))
+        assertEquals(1, anchor.resolveIndex(listOf("model:p/a", "model:p/c")))
+        assertEquals(0, anchor.resolveIndex(emptyList()))
+        assertEquals(15, anchor.offset)
+    }
+
     @Test fun enteringFromTheEffortCardSearchesOnceAndCancelReturnsToBrowsing() {
         val picker = ChatModelPickerState()
         picker.open()
@@ -37,14 +84,14 @@ class ChatModelMenuSearchTest {
         val query = TextFieldValue("  模型名  ", selection = TextRange(4, 2), composition = TextRange(2, 5))
         picker.updateSearchQuery(query)
         picker.submitSearch()
-        assertEquals(1, picker.searchSubmissions)
+        assertEquals(ChatModelPickerState.SearchScroll.Submit, picker.pendingSearchScroll)
 
         picker.back()
         picker.updateSearchQuery(TextFieldValue("late IME edit"))
         picker.submitSearch()
         val parked = query.copy(composition = null)
         assertEquals(parked, picker.searchQuery)
-        assertEquals(0, picker.searchSubmissions)
+        assertEquals(null, picker.pendingSearchScroll)
         picker.search()
         assertEquals(parked, picker.searchQuery)
 

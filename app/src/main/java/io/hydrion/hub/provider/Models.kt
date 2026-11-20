@@ -88,7 +88,21 @@ data class ModelCatalog(
         return ModelSelection(model.name, model.requestParameters(parameters(model, owner), mode))
     }
 
-    fun withProvider(provider: Provider, requestedDefaults: Map<Mode, String>): ModelCatalog {
+    internal fun withEditedModel(route: RemoteModel, model: ProviderModel?, makeDefault: Boolean = false): ModelCatalog {
+        val provider = providers.singleOrNull { it.id == route.providerId } ?: return this
+        val original = provider.models.singleOrNull { it.id == route.modelId } ?: return this
+        if (model != null && model.id != original.id) return this
+        val models = if (model == null) provider.models - original
+            else provider.models.map { if (it.id == original.id) model else it }
+        val defaultMode = model?.selectableMode(provider)?.takeIf { makeDefault }
+        val requested = defaultMode?.let { mapOf(it to route.modelId) }.orEmpty()
+        return withProvider(provider.copy(models = models), requested, activateNewDefault = false)
+    }
+
+    fun withProvider(provider: Provider, requestedDefaults: Map<Mode, String>): ModelCatalog =
+        withProvider(provider, requestedDefaults, activateNewDefault = true)
+
+    private fun withProvider(provider: Provider, requestedDefaults: Map<Mode, String>, activateNewDefault: Boolean): ModelCatalog {
         val updated = if (providers.any { it.id == provider.id }) providers.map {
             if (it.id == provider.id) provider else it
         } else providers + provider
@@ -97,7 +111,13 @@ data class ModelCatalog(
                 (provider.enabled && it.enabled || defaults[mode] == RemoteModel(provider.id, id)) }
         }.mapValues { (_, id) -> RemoteModel(provider.id, id) }
         val changed = valid.filter { (mode, route) -> defaults[mode] != route }.keys
-        return copy(providers = updated, defaults = defaults + valid, active = active - changed).normalized()
+        val nextActive = if (activateNewDefault) active - changed else {
+            // A chat may still be using its implicit default. Keep that choice when editing another model.
+            active + changed.filterNot { it in active }.mapNotNull { mode ->
+                selectedEntry(mode)?.route?.takeIf { it != valid[mode] }?.let { mode to it }
+            }
+        }
+        return copy(providers = updated, defaults = defaults + valid, active = nextActive).normalized()
     }
 
     fun normalized(): ModelCatalog {

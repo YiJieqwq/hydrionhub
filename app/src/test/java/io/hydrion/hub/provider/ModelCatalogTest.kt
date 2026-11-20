@@ -6,6 +6,32 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ModelCatalogTest {
+    @Test fun editingFromThePickerChangesOnlyTheExactProviderAndModel() {
+        val a = ProviderModel("shared", "First")
+        val b = a.copy(name = "Second")
+        val other = ProviderModel("other", "Untouched")
+        val first = Provider("a", Mode.Chat, "First provider", "local", "", listOf(a))
+        val second = first.copy(id = "b", name = "Updated provider name", models = listOf(b, other))
+        val selected = RemoteModel(first.id, a.id)
+        val target = RemoteModel(second.id, b.id)
+        val original = ModelCatalog(listOf(first, second), defaults = mapOf(Mode.Chat to selected)).normalized()
+        val edited = b.copy(name = "Edited")
+        val saved = original.withEditedModel(target, edited)
+        assertEquals(listOf(first, second.copy(models = listOf(edited, other))), saved.providers)
+        assertEquals(original.defaults, saved.defaults)
+        assertEquals(selected, saved.selectedEntry(Mode.Chat)?.route)
+        assertSame(original, original.withEditedModel(RemoteModel("absent", b.id), edited))
+        assertSame(original, original.withEditedModel(target, edited.copy(id = "different")))
+
+        val newDefault = original.withEditedModel(target, edited, makeDefault = true)
+        assertEquals(target, newDefault.defaults[Mode.Chat])
+        assertEquals(selected, newDefault.selectedEntry(Mode.Chat)?.route)
+        val deleted = newDefault.withEditedModel(target, null)
+        assertEquals(listOf(first, second.copy(models = listOf(other))), deleted.providers)
+        assertEquals(selected, deleted.selectedEntry(Mode.Chat)?.route)
+        assertNotEquals(target, deleted.defaults[Mode.Chat])
+    }
+
     @Test fun parametersOnlyIncludeDeclaredChoices() {
         val model = ProviderModel("m", "任意名称", listOf(Capability("custom", "风格", listOf("墨色", "水彩"))))
         val provider = Provider("p", Mode.Image, "供应商", "custom", "", listOf(model))

@@ -5,6 +5,7 @@
     <string name="chat_picker_back_to_controls">Back to reasoning controls</string>
     <string name="chat_picker_provider">Provider</string>
     <string name="chat_picker_models">Models</string>
+    <string name="chat_picker_edit_model">Edit model configuration</string>
     <string name="chat_picker_provider_empty">No enabled chat models for this provider.</string>
     <string name="chat_picker_search">Search models</string>
     <string name="chat_picker_search_hint">Enter model name…</string>
