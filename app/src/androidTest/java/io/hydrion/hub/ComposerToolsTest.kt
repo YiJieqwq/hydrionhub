@@ -2,6 +2,8 @@ package io.hydrion.hub
 
 import android.graphics.Color
 import android.view.KeyEvent
+import androidx.activity.compose.setContent
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -12,6 +14,7 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -20,7 +23,9 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.hydrion.hub.ui.composer.AwaitToolsImeDismissal
 import kotlin.math.abs
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -33,13 +38,14 @@ class ComposerToolsTest {
 
     private fun openTools(checkColors: Boolean = false) {
         screen.onNodeWithContentDescription("消息输入框").performClick()
+        screen.waitUntil(10_000) { screen.onNodeWithContentDescription("打开工具箱").isDisplayed() }
         if (checkColors) {
             screen.onNodeWithContentDescription("添加附件").assertGlyphGray("添加附件", 255)
             screen.onNodeWithContentDescription("打开工具箱").assertGlyphGray("打开工具箱", 175)
             screen.onNodeWithContentDescription("工作区终端").assertGlyphGray("工作区终端", 175)
         }
         screen.onNodeWithContentDescription("打开工具箱").assertIsEnabled().performTouchInput { click(center) }
-        screen.onNodeWithText("Tools").assertIsDisplayed()
+        screen.waitUntil(10_000) { screen.onNodeWithText("Tools").isDisplayed() }
     }
 
     private fun choice(label: String) =
@@ -47,6 +53,80 @@ class ComposerToolsTest {
 
     private fun enabledCount(count: Int) =
         screen.onNodeWithContentDescription("已启用 $count 个工具，共 2 个")
+
+    @Test fun handoffWaitsForImeDismissalAndDropsCancelledRequests() {
+        val pending = mutableStateOf(false)
+        val imeActive = mutableStateOf(true)
+        val eligible = mutableStateOf(true)
+        val decisions = mutableListOf<Boolean>()
+        screen.runOnUiThread {
+            screen.activity.setContent {
+                if (pending.value) {
+                    AwaitToolsImeDismissal(imeActive = imeActive.value, eligible = eligible.value) { present ->
+                        decisions += present
+                        pending.value = false
+                    }
+                }
+            }
+        }
+        screen.waitForIdle()
+        val view = screen.activity.window.decorView
+        screen.waitUntil(5_000) { screen.runOnUiThread { view.hasWindowFocus() } }
+        val clock = screen.mainClock
+        clock.autoAdvance = false
+        fun change(block: () -> Unit) {
+            screen.runOnUiThread(block)
+            clock.advanceTimeByFrame()
+            screen.waitForIdle()
+        }
+        fun assertDecisions(vararg expected: Boolean) {
+            assertEquals(expected.toList(), screen.runOnUiThread { decisions.toList() })
+        }
+        try {
+            change { pending.value = true }
+            clock.advanceTimeBy(400)
+            assertDecisions()
+            change { imeActive.value = false }
+            assertDecisions(true)
+            clock.advanceTimeBy(1100)
+            assertDecisions(true)
+
+            // Disposing the request cancels its timer. Even a later hidden-inset signal must do nothing.
+            change {
+                imeActive.value = true
+                pending.value = true
+            }
+            clock.advanceTimeBy(160)
+            change { pending.value = false }
+            change { imeActive.value = false }
+            clock.advanceTimeBy(1100)
+            assertDecisions(true)
+
+            // The initiating route becomes ineligible on the same frame Android reports dismissal.
+            change {
+                imeActive.value = true
+                pending.value = true
+            }
+            change {
+                eligible.value = false
+                imeActive.value = false
+            }
+            assertDecisions(true, false)
+            clock.advanceTimeByFrame() // Dispose the completed request before issuing another.
+
+            change {
+                eligible.value = true
+                imeActive.value = true
+                pending.value = true
+            }
+            clock.advanceTimeBy(900)
+            assertDecisions(true, false)
+            clock.advanceTimeBy(160)
+            assertDecisions(true, false, true)
+        } finally {
+            clock.autoAdvance = true
+        }
+    }
 
     @Test
     fun independentlySelectToolsAndKeepChoicesAfterDismissal() {

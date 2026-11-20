@@ -34,6 +34,8 @@ import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -51,9 +54,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.hydrion.hub.model.CUSTOM_IMAGE_TOOL
 import io.hydrion.hub.model.Draft
 import io.hydrion.hub.model.Mode
+import kotlinx.coroutines.delay
+
+// Some keyboards never acknowledge a hide request. Keep the tools reachable in that case.
+private const val ToolsImeFallbackMillis = 1_000L
+
+@Composable
+internal fun AwaitToolsImeDismissal(imeActive: Boolean, eligible: Boolean, onFinish: (present: Boolean) -> Unit) {
+    val finish by rememberUpdatedState(onFinish)
+    val view = LocalView.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { finish(false) }
+    LaunchedEffect(imeActive, eligible) {
+        if (eligible && imeActive) delay(ToolsImeFallbackMillis)
+        finish(eligible && view.hasWindowFocus() && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+    }
+}
 
 private const val Disabled = "禁用"
 private data class ToolChoice(val label: String, val icon: ImageVector)

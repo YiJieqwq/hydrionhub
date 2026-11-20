@@ -114,6 +114,8 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
+private enum class ToolsPanel { Closed, WaitingForIme, Open }
+
 private const val ComposerTransitionMillis = 33
 private val ComposerSecondary = Color(0xFFAFAFAF)
 private val ToolbarGlyphGapReduction = 3.dp
@@ -194,15 +196,21 @@ internal fun HubComposer(
     var focused by remember { mutableStateOf(false) }
     var sawKeyboard by remember { mutableStateOf(false) }
     var sawHideAnimation by remember { mutableStateOf(false) }
-    var showTools by remember(state.current.id) { mutableStateOf(false) }
+    var toolsPanel by remember(state.current.id, state.current.mode) { mutableStateOf(ToolsPanel.Closed) }
+    val toolsRequested = toolsPanel != ToolsPanel.Closed
+    fun cancelPendingTools() {
+        if (toolsPanel == ToolsPanel.WaitingForIme) toolsPanel = ToolsPanel.Closed
+    }
     var importError by remember(state.current.id) { mutableStateOf<String?>(null) }
     val launchPicker = rememberAttachmentPicker(vm) { importError = it }
     fun pick() {
+        cancelPendingTools()
         imeReturn.cancel()
         launchPicker()
     }
 
     fun collapse() {
+        cancelPendingTools()
         imeReturn.cancel()
         focusManager.clearFocus()
         keyboard?.hide()
@@ -224,10 +232,10 @@ internal fun HubComposer(
     }
     ComposerImeReturnEffect(
         controller = imeReturn,
-        enabled = allowImeReturn && !showTools && !hardwareKeyboardOnly,
+        enabled = allowImeReturn && !toolsRequested && !hardwareKeyboardOnly,
         editorFocused = focused, windowFocused = windowFocused,
         imeShown = imeVisible || hasImeHeight, dismissing = hiding, opening = opening,
-        clearAfterDismissal = hiddenAfterEditing && !showTools,
+        clearAfterDismissal = hiddenAfterEditing && !toolsRequested,
         selection = ComposerEditorSelection(editorValue.text, editorValue.selection.start, editorValue.selection.end),
         onRestore = {
             sawKeyboard = hasImeHeight
@@ -244,9 +252,16 @@ internal fun HubComposer(
         onDismissed = { focusManager.clearFocus() },
     )
     val pickerOpen = chatPicker?.page != null
-    BackHandler(enabled = focused && !showTools && !pickerOpen) { collapse() }
+    if (toolsPanel == ToolsPanel.WaitingForIme) {
+        AwaitToolsImeDismissal(imeActive, windowFocused && allowImeReturn && toolsAvailable && !pickerOpen) { present ->
+            if (toolsPanel == ToolsPanel.WaitingForIme) toolsPanel = if (present) ToolsPanel.Open else ToolsPanel.Closed
+        }
+    }
+    BackHandler(enabled = toolsPanel == ToolsPanel.WaitingForIme || (focused && !toolsRequested && !pickerOpen)) {
+        if (toolsPanel == ToolsPanel.WaitingForIme) cancelPendingTools() else collapse()
+    }
     // A system overlay can take window focus while the editor still owns a visible IME.
-    val editing = focused && !showTools && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
+    val editing = focused && !toolsRequested && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
     val shapeProgress = rememberComposerShape {
         ComposerMotionInput(
             (current.getBottom(density) - nav).coerceAtLeast(0),
@@ -364,9 +379,13 @@ internal fun HubComposer(
                             }.then(if (interactive) Modifier else Modifier.clearAndSetSemantics { })
                             Row(reveal, verticalAlignment = Alignment.CenterVertically) {
                                 ComposerIconButton("打开工具箱", onClick = {
-                                    imeReturn.cancel()
-                                    showTools = true
-                                    keyboard?.hide()
+                                    if (toolsPanel == ToolsPanel.WaitingForIme) {
+                                        cancelPendingTools()
+                                    } else {
+                                        imeReturn.cancel()
+                                        toolsPanel = if (imeActive) ToolsPanel.WaitingForIme else ToolsPanel.Open
+                                        if (imeActive) keyboard?.hide()
+                                    }
                                 }, enabled = interactive && toolsAvailable) {
                                     ToolGlyph()
                                 }
@@ -391,6 +410,7 @@ internal fun HubComposer(
                                         contentDescription = actionLabel
                                         stateDescription = modelLabel
                                     }.clickable(enabled = interactive, role = Role.Button) {
+                                        cancelPendingTools()
                                         if (chatPicker != null) chatPicker.open() else {
                                             collapse()
                                             onConfigure()
@@ -412,7 +432,7 @@ internal fun HubComposer(
             }
         }
     }
-    if (showTools) {
+    if (toolsPanel == ToolsPanel.Open) {
         ComposerTools(
             mode = state.current.mode,
             draft = draft,
@@ -420,15 +440,15 @@ internal fun HubComposer(
             onSearch = vm::setSearch,
             onImageTool = vm::setImageTool,
             onPickReference = {
-                showTools = false
+                toolsPanel = ToolsPanel.Closed
                 pick()
             },
             onConfigure = {
-                showTools = false
+                toolsPanel = ToolsPanel.Closed
                 collapse()
                 onConfigure()
             },
-            onDismiss = { showTools = false },
+            onDismiss = { toolsPanel = ToolsPanel.Closed },
         )
     }
 }
