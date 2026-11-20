@@ -1,6 +1,4 @@
 <resources>
-    <string name="chat_controls_select_effort">选择推理档位</string>
-    <string name="chat_controls_selecting">选择中</string>
     <string name="chat_controls_select_model">选择模型</string>
     <string name="chat_controls_reset">恢复默认</string>
     <string name="chat_controls_effort">推理强度</string>

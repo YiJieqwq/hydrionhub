@@ -66,7 +66,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -98,10 +97,12 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.onImeAction
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -113,6 +114,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
+import io.hydrion.hub.provider.ChatTriggerLabel
+import io.hydrion.hub.provider.ChatTriggerText
+import io.hydrion.hub.ui.pickerModelLabelBounds
 import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.provider.pickerBubbleHighlight
 import io.hydrion.hub.provider.pickerComposerMaxHeight
@@ -135,6 +139,13 @@ import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
 
 private enum class ToolsPanel { Closed, WaitingForIme, Open }
+
+private const val ChatDraftHint = "Chat with AI"
+private val FoldedTextStart = 48.dp
+private val OpenTextStart = 15.dp
+private val OpenTextEnd = 16.dp
+private val OpenTextTop = 16.dp
+private val TextBottom = 4.dp
 
 private val ComposerSecondary = Color(0xFFAFAFAF)
 private val ComposerGlyphSize = 18.dp
@@ -180,7 +191,7 @@ internal fun rememberComposerShape(input: () -> ComposerMotionInput): State<Floa
 internal fun HubComposer(
     vm: HubViewModel,
     state: HubState,
-    modelLabel: String,
+    modelLabel: ChatTriggerLabel,
     modelAvailable: Boolean,
     fast: Boolean,
     onConfigure: () -> Unit,
@@ -192,6 +203,7 @@ internal fun HubComposer(
     modelEditorBridge: ModelEditorComposerBridge? = null,
     forceReturnFolded: Boolean = false,
     chatTools: ToolsPageState? = null,
+    modelBrowseProgress: () -> Float = { 0f },
 ) {
     val colors = MaterialTheme.colorScheme
     val darkComposer = colors.onSurface.luminance() > colors.surfaceContainerHigh.luminance()
@@ -221,9 +233,20 @@ internal fun HubComposer(
     }
     val tools = chatTools?.takeIf { state.current.mode == Mode.Chat }
     val toolEditor = tools?.takeIf { it.active }
-    val toolsProgress = tools?.progress ?: 0f
+    val browseProgress = if (chatPicker != null) modelBrowseProgress() else 0f
+    val browsing = chatPicker?.modelListNavigation == true
+    // Keep both endpoints unavailable until the reverse flight has landed.
+    val modelSearch = chatPicker?.takeIf { browsing || browseProgress > 0f }
+    val editingQuery = toolEditor != null || modelSearch != null
+    var lastModelQuery by remember(chatPicker) { mutableStateOf(TextFieldValue()) }
+    val modelQuery = if (browsing) chatPicker!!.searchQuery else lastModelQuery
+    SideEffect {
+        if (browsing) lastModelQuery = modelQuery.copy(composition = null)
+        else if (modelSearch == null && lastModelQuery.text.isNotEmpty()) lastModelQuery = TextFieldValue()
+    }
+    val pageProgress = if (modelSearch != null) browseProgress else tools?.progress ?: 0f
     // A pending background restore belongs to its editing role, not a later tool query or draft.
-    val imeReturn = remember(state.current.id, state.current.mode, toolEditor) { ComposerImeReturn() }
+    val imeReturn = remember(state.current.id, state.current.mode, toolEditor, modelSearch) { ComposerImeReturn() }
     val editorFocus = remember { FocusRequester() }
     val draft = state.draft
     var fieldValue by remember(state.current.id, state.current.mode) {
@@ -264,32 +287,28 @@ internal fun HubComposer(
     }
     val pickerOpen = chatPicker?.page != null
     val hardwareOnly = hardwareKeyboardOnly && !pickerOpen && !hiddenAfterEditing && !sawHideAnimation
-    val searchPicker = chatPicker?.takeIf { it.page == ChatModelPickerState.Page.Search }
-    var lastSearchHintVisible by remember(chatPicker) { mutableStateOf(false) }
-    val queryEmpty = searchPicker?.searchQuery?.text?.isEmpty() ?: lastSearchHintVisible
     SideEffect {
-        if (searchPicker != null) lastSearchHintVisible = queryEmpty
         if (fieldValue.text != draft.text) fieldValue = editorValue
         // Composing spans belong to the outgoing IME session; keep the draft text and selection.
-        if ((searchPicker != null || toolEditor != null) && fieldValue.composition != null) fieldValue = fieldValue.copy(composition = null)
+        if (editingQuery && fieldValue.composition != null) fieldValue = fieldValue.copy(composition = null)
         if (focused && hasImeHeight) sawKeyboard = true
         if (hiding && hasImeHeight) sawHideAnimation = true
     }
     val editing = focused && !toolsRequested && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
     // A delayed click or text callback must still belong to this draft-editing session.
-    val draftSession = remember(imeReturn, searchPicker, toolEditor) { mutableStateOf(true) }
+    val draftSession = remember(imeReturn, modelSearch, toolEditor) { mutableStateOf(true) }
     DisposableEffect(draftSession) { onDispose { draftSession.value = false } }
     fun acceptsDraftInput(): Boolean {
         val conversation = vm.state.value.current
-        return draftSession.value && searchPicker == null && tools?.active != true && conversation.id == state.current.id &&
-            conversation.mode == state.current.mode && chatPicker?.page != ChatModelPickerState.Page.Search
+        return draftSession.value && !editingQuery && tools?.active != true && conversation.id == state.current.id &&
+            conversation.mode == state.current.mode && chatPicker?.modelListNavigation != true
     }
     ComposerImeReturnEffect(
         controller = imeReturn,
-        enabled = allowImeReturn && !toolsRequested && !hardwareKeyboardOnly && searchPicker == null && toolEditor == null,
+        enabled = allowImeReturn && !toolsRequested && !hardwareKeyboardOnly && !editingQuery,
         editorFocused = focused, windowFocused = windowFocused,
         imeShown = imeVisible || hasImeHeight, dismissing = hiding, opening = opening,
-        clearAfterDismissal = hiddenAfterEditing && !toolsRequested && searchPicker == null && toolEditor == null,
+        clearAfterDismissal = hiddenAfterEditing && !toolsRequested && !editingQuery,
         selection = ComposerEditorSelection(editorValue.text, editorValue.selection.start, editorValue.selection.end),
         onRestore = {
             sawKeyboard = hasImeHeight
@@ -310,7 +329,7 @@ internal fun HubComposer(
             if (toolsPanel == ToolsPanel.WaitingForIme) toolsPanel = if (present) ToolsPanel.Open else ToolsPanel.Closed
         }
     }
-    BackHandler(enabled = toolsPanel == ToolsPanel.WaitingForIme || (focused && !toolsRequested && !pickerOpen && toolEditor == null)) {
+    BackHandler(enabled = toolsPanel == ToolsPanel.WaitingForIme || (focused && !toolsRequested && !pickerOpen && !editingQuery)) {
         if (toolsPanel == ToolsPanel.WaitingForIme) cancelPendingTools() else collapse()
     }
     val shapeProgress = rememberComposerShape {
@@ -334,18 +353,18 @@ internal fun HubComposer(
         }
     }
     val hasContent = draft.text.isNotEmpty() || draft.attachments.isNotEmpty()
-    val hasRowContent = hasContent || searchPicker != null
-    val rowTarget = composerRowTarget(forceReturnFolded, hasContent, searchPicker != null,
-        chatPicker?.modelListNavigation == true, imeActive)
-    val searching = searchPicker != null
-    val motion = rememberComposerHintMotion(rowTarget, searching)
-    val blendingHint by remember(motion, searching) {
-        derivedStateOf(structuralEqualityPolicy()) { motion.search != (if (searching) 1f else 0f) }
-    }
-    val transientHint = blendingHint && chatPicker != null && toolEditor == null && !forceReturnFolded
-    val rowGate = motion.row
+    // The underlying draft retains its ordinary IME/draft shape. Only the page's shared
+    // progress drives the transformation into the one-line search capsule.
+    val rowGate = rememberDraftRowMotion(hasContent, forceReturnFolded).fraction
     val chatToolbar = if (forceReturnFolded) 0f else maxOf(expansion, rowGate)
-    val toolbar = chatToolbar * (1f - toolsProgress)
+    // A keyboard may hide halfway through the panel flight. Continue measuring its source label
+    // until landing; when opening from an already folded composer the picker uses its fallback.
+    var hadModelRow by remember(chatPicker) { mutableStateOf(false) }
+    SideEffect {
+        chatPicker?.modelRowFraction = chatToolbar
+        if (modelSearch == null || chatToolbar > 0f) hadModelRow = chatToolbar > 0f
+    }
+    val toolbar = chatToolbar * (1f - pageProgress)
     val returning = modelEditorBridge?.returning != null
     val overlay: Any? = if (chatPicker == null || forceReturnFolded || returning || !allowImeReturn) null
         else chatPicker.page ?: tools?.takeIf { it.targetOpen }
@@ -370,9 +389,9 @@ internal fun HubComposer(
         ObserveModelEditorReturn(modelEditorBridge, returnFrame.value)
         DisposableEffect(modelEditorBridge) { onDispose { modelEditorBridge.hasLayout = false } }
     }
-    val canSend = searchPicker == null && (modelAvailable || state.current.mode == Mode.Image) &&
+    val canSend = (modelAvailable || state.current.mode == Mode.Image) &&
         (draft.text.isNotBlank() || draft.attachments.isNotEmpty())
-    val active = searchPicker == null && state.isGenerating
+    val active = state.isGenerating
     val onAction: () -> Unit = {
         if (acceptsDraftInput() && vm.state.value.isGenerating == active) {
             if (active) vm.stop() else if (canSend) {
@@ -390,14 +409,6 @@ internal fun HubComposer(
     val controlRowHeight = 47.75.dp
     val editorTextStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
     val textTop = lerp(5.dp, OpenTextTop, toolbar)
-    // An empty draft can be folded, parked with attachments, or expanded over the IME.
-    val draftPose = if (hasContent) 1f else expansion
-    val draftStart = lerp(FoldedTextStart, OpenTextStart, draftPose)
-    val searchIconGap = modelSearchIconGap(draftStart)
-    val hintOverlay = if (transientHint) Modifier.modelSearchHint(
-        motion, searching, editorValue.text.isEmpty(), queryEmpty, draftStart, searchIconGap,
-        lerp(FoldedTextStart, OpenTextEnd, draftPose), textTop, editorMinHeight, editorTextStyle,
-    ) else Modifier
     var draftOverflowPx by remember(state.current.id, state.current.mode) { mutableIntStateOf(0) }
     val safeArea = WindowInsets.safeDrawing
     val pickerRoom = if (!pickerOpen) Modifier else Modifier.layout { measurable, limits ->
@@ -407,7 +418,7 @@ internal fun HubComposer(
         layout(composer.width, composer.height) { composer.place(0, 0) }
     }
     Column(modifier.then(pickerRoom).fillMaxWidth().padding(start = sideInset, end = sideInset, bottom = bottomGap)) {
-        importError?.takeIf { toolEditor == null }?.let { error ->
+        importError?.takeIf { !editingQuery }?.let { error ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(error, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = colors.error)
                 IconButton(onClick = { importError = null }) {
@@ -427,7 +438,7 @@ internal fun HubComposer(
                         returnFrame.value = if (returning) ModelEditorReturnFrame(
                             capsule.width, capsule.height, (current.getBottom(density) - nav).coerceAtLeast(0),
                             (source.getBottom(density) - nav).coerceAtLeast(0), (target.getBottom(density) - nav).coerceAtLeast(0),
-                            imeVisible, expansion, rowGate, hasRowContent, forceReturnFolded,
+                            imeVisible, expansion, rowGate, hasContent, forceReturnFolded,
                         ) else null
                     }
                 })
@@ -439,12 +450,12 @@ internal fun HubComposer(
             color = colors.surfaceContainerHigh,
         ) {
             Column {
-                if (draft.attachments.isNotEmpty() && !forceReturnFolded && toolsProgress < 1f) {
+                if (draft.attachments.isNotEmpty() && !forceReturnFolded && pageProgress < 1f) {
                     val imageAndText = draft.text.isNotEmpty() && draft.attachments.any { it.hasImagePreview }
                     // Let the editor and toolbar measure first in short windows above the IME.
                     BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth()
                         .then(when {
-                            toolEditor != null -> Modifier.clearAndSetSemantics { }.revealHeight(1f - toolsProgress, 0.dp)
+                            editingQuery -> Modifier.clearAndSetSemantics { }.revealHeight(1f - pageProgress, 0.dp)
                             returning -> Modifier.revealHeight(toolbar, 0.dp)
                             else -> Modifier
                         })
@@ -458,7 +469,7 @@ internal fun HubComposer(
                         ) {
                             items(draft.attachments, key = { it.id }) { attachment ->
                                 DraftAttachment(attachment, previewWidth, previewHeight) {
-                                    if (tools?.active != true) vm.removeAttachment(attachment.id)
+                                    if (!editingQuery && tools?.active != true && chatPicker?.modelListNavigation != true) vm.removeAttachment(attachment.id)
                                 }
                             }
                         }
@@ -467,17 +478,11 @@ internal fun HubComposer(
                 Box(Modifier.fillMaxWidth()) {
                     Column {
                         ComposerEditorSlot(
-                            picker = chatPicker, minHeight = editorMinHeight, textStyle = editorTextStyle,
-                            hintOverlay = hintOverlay, blendingHint = transientHint, searchMotion = motion, searchIconGap = searchIconGap,
-                            draftFocus = editorFocus,
-                            modelEditorBridge = modelEditorBridge,
+                            searching = browsing, editorFocus = editorFocus, modelEditorBridge = modelEditorBridge,
                             readDraft = { fieldValue },
                             restoreSelection = { fieldValue = fieldValue.copy(selection = it, composition = null) },
                             interactive = allowImeReturn,
-                            textLine = textLine,
-                            foldedVisual = forceReturnFolded,
                             dismissForModelEditor = ::collapse,
-                            retainEditorFocus = { windowFocused && allowImeReturn && !hiding && (imeVisible || opening) },
                             onEditorFocusChanged = { nowFocused ->
                                 if (nowFocused && !focused) {
                                     sawKeyboard = false
@@ -488,17 +493,25 @@ internal fun HubComposer(
                             modifier = (if (pickerOpen) Modifier.weight(1f, fill = false) else Modifier)
                                 .then(if (returning || forceReturnFolded) Modifier.revealHeight(toolbar, 49.25.dp) else Modifier),
                         ) { draftFocusModifier ->
-                            val shown = toolEditor?.query ?: editorValue
+                            val modelHint = stringResource(R.string.chat_picker_search_hint)
                             val toolHint = stringResource(R.string.tools_search_hint)
+                            val visibleModelQuery = modelSearch != null && !forceReturnFolded
+                            val shown = if (visibleModelQuery) modelQuery else toolEditor?.query ?: editorValue
+                            val inputHint = if (visibleModelQuery) modelHint else if (toolEditor != null) toolHint
+                                else if (state.current.mode == Mode.Chat) ChatDraftHint else "描述想生成的图片"
                             BasicTextField(
                                 // The same field, FocusRequester and native IME options serve both roles.
                                 value = shown,
                                 onValueChange = { updated ->
-                                    if (toolEditor != null) {
+                                    if (modelSearch != null) {
+                                        if (draftSession.value && modelSearch.modelListNavigation && allowImeReturn) {
+                                            // Some IMEs commit a literal newline for Enter with the draft's native options.
+                                            if (isQuerySubmitEdit(modelSearch.searchQuery, updated)) modelSearch.submitSearch()
+                                            else modelSearch.updateSearchQuery(updated.singleLineQuery())
+                                        }
+                                    } else if (toolEditor != null) {
                                         if (draftSession.value && toolEditor.targetOpen) {
-                                            toolEditor.query = if ('\n' in updated.text || '\r' in updated.text)
-                                                updated.copy(text = updated.text.replace('\r', ' ').replace('\n', ' '), composition = null)
-                                            else updated
+                                            toolEditor.query = updated.singleLineQuery()
                                         }
                                     } else if (acceptsDraftInput()) {
                                         fieldValue = updated
@@ -507,42 +520,53 @@ internal fun HubComposer(
                                 },
                                 modifier = Modifier.fillMaxWidth().padding(
                                     start = lerp(FoldedTextStart, OpenTextStart, toolbar), end = lerp(FoldedTextStart, OpenTextEnd, toolbar)
-                                ).then(if (toolEditor == null) Modifier else Modifier.testTag("tools-search-field")
+                                ).then(if (!editingQuery) Modifier else Modifier
+                                    .testTag(if (modelSearch != null) "chat-model-search-field" else "tools-search-field")
                                     .onPreviewKeyEvent { event ->
-                                        val code = event.nativeKeyEvent.keyCode
-                                        code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER
+                                        val key = event.nativeKeyEvent
+                                        if (key.keyCode != KeyEvent.KEYCODE_ENTER && key.keyCode != KeyEvent.KEYCODE_NUMPAD_ENTER) false
+                                        else {
+                                            if (key.action == KeyEvent.ACTION_UP && !key.isCanceled) modelSearch?.submitSearch()
+                                            true
+                                        }
                                     })
                                     .chatModelPickerPreImeBack((pickerOpen && chatPicker?.modelListNavigation == false) || toolEditor != null) {
-                                        if (toolEditor != null) toolEditor.close() else chatPicker?.back()
+                                        if (toolEditor != null) toolEditor.close() else chatPicker?.systemBack()
                                     }
                                     .then(draftFocusModifier)
-                                    .semantics { contentDescription = if (toolEditor != null) toolHint else "消息输入框" },
+                                    .semantics {
+                                        contentDescription = if (editingQuery) inputHint else "消息输入框"
+                                        if (visibleModelQuery) onImeAction(ImeAction.Search) {
+                                            modelSearch?.submitSearch()
+                                            true
+                                        }
+                                    },
                                 textStyle = editorTextStyle.copy(color = colors.onSurface),
                                 cursorBrush = SolidColor(colors.primary),
-                                maxLines = if (toolEditor == null && !forceReturnFolded && (hasContent || focused)) 5 else 1,
-                                keyboardActions = if (toolEditor != null) KeyboardActions(onSearch = {}, onDone = {}, onSend = {})
+                                maxLines = if (!editingQuery && !forceReturnFolded && (hasContent || focused)) 5 else 1,
+                                keyboardActions = if (editingQuery) KeyboardActions(onSearch = { modelSearch?.submitSearch() },
+                                    onDone = { modelSearch?.submitSearch() }, onSend = { modelSearch?.submitSearch() })
                                     else KeyboardActions.Default,
                                 decorationBox = { editor ->
                                     Box(Modifier.fillMaxWidth()
-                                        .trackPickerEditor(chatPicker, search = false)
+                                        .trackPickerEditor(chatPicker)
                                         .layout { content, limits ->
                                             val field = content.measure(limits)
                                             // Switching to a blank query must not drop the old draft's wrapped lines in one frame.
-                                            if (toolEditor == null) draftOverflowPx = (field.height - editorMinHeight.roundToPx()).coerceAtLeast(0)
-                                            val extra = if (toolEditor == null) 0 else (draftOverflowPx * (1f - toolsProgress)).roundToInt()
+                                            if (!editingQuery) draftOverflowPx = (field.height - editorMinHeight.roundToPx()).coerceAtLeast(0)
+                                            val extra = if (!editingQuery) 0 else (draftOverflowPx * (1f - pageProgress)).roundToInt()
                                             layout(field.width, limits.constrainHeight(field.height + extra)) { field.place(0, 0) }
                                         }.heightIn(min = editorMinHeight)
                                         .padding(top = textTop, bottom = TextBottom),
                                         contentAlignment = Alignment.CenterStart) {
-                                        val visibleTextLine = if (searchPicker == null && !forceReturnFolded && chatPicker != null)
+                                        val visibleTextLine = if (!forceReturnFolded && chatPicker != null)
                                             textLine else Modifier
-                                        Box(Modifier.fillMaxWidth().trackPickerEditor(chatPicker, search = false, textOnly = true)
+                                        Box(Modifier.fillMaxWidth().trackPickerEditor(chatPicker, textOnly = true)
                                             .then(visibleTextLine), contentAlignment = Alignment.CenterStart) {
                                             if (shown.text.isEmpty()) {
                                                 val isChat = state.current.mode == Mode.Chat
                                                 Text(
-                                                    if (toolEditor != null) toolHint else if (isChat) ChatDraftHint else "描述想生成的图片",
-                                                    modifier = if (transientHint) MeasuredHintOnly else Modifier,
+                                                    inputHint,
                                                     color = HubStyle.ComposerHint,
                                                     style = if (isChat) editorTextStyle else editorTextStyle.copy(fontSize = 17.sp),
                                                     maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -557,16 +581,17 @@ internal fun HubComposer(
                         Spacer(Modifier.height(controlRowHeight * toolbar))
                     }
                     ToolsToolbarMorph(
-                        progress = toolsProgress, toolsOpen = tools?.targetOpen == true,
-                        hasClearableTools = toolEditor?.query?.text?.isNotEmpty() == true,
+                        progress = pageProgress, toolsOpen = browsing || tools?.targetOpen == true, modelSearch = modelSearch != null,
+                        hasClearableTools = (modelSearch?.searchQuery ?: toolEditor?.query)?.text?.isNotEmpty() == true,
                         generating = active, canSend = canSend,
-                        onAttach = { if (tools?.active != true) pick() }, onSend = onAction,
-                        onClear = { toolEditor?.clearQuery() }, onBack = { toolEditor?.close() },
+                        onAttach = { if (acceptsDraftInput()) pick() }, onSend = onAction,
+                        onClear = { if (modelSearch != null) modelSearch.clearSearchQuery() else toolEditor?.clearQuery() },
+                        onBack = { if (modelSearch?.modelListNavigation == true) modelSearch.open() else toolEditor?.close() },
                         modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                             .height(lerp(editorMinHeight, controlRowHeight, toolbar)).padding(horizontal = 3.dp),
                     ) { leading, trailing ->
-                        if (chatToolbar > 0f && toolsProgress < 1f) {
-                            val interactive = chatToolbar >= 0.6f && toolEditor == null
+                        if ((chatToolbar > 0f || modelSearch != null && hadModelRow) && (pageProgress < 1f || modelSearch != null)) {
+                            val interactive = chatToolbar >= 0.6f && !editingQuery
                             val reveal = Modifier.graphicsLayer {
                                 alpha = chatToolbar
                                 translationX = -8.dp.toPx() * (1f - chatToolbar)
@@ -591,7 +616,7 @@ internal fun HubComposer(
                                     ToolGlyph(toolTrack, toolThumb,
                                         Modifier.offset(x = -ToolbarGlyphGapReduction))
                                 }
-                                Box(Modifier.width(42.dp).height(48.dp).clearAndSetSemantics {
+                                Box(Modifier.width(ToolbarActionSlot).height(48.dp).clearAndSetSemantics {
                                     contentDescription = "工作区终端"
                                     role = Role.Button
                                     disabled()
@@ -615,26 +640,30 @@ internal fun HubComposer(
                                     Modifier.testTag("chat-model-trigger").then(bounds)
                                 }
                                 // The former chevron and its gap contribute 17 dp to the trigger’s hit area.
+                                // At 39dp between glyph centers the leading icons leave about 22dp of visible space.
+                                // Subtract the space already inside the send slot; keep the trigger's total padding.
+                                val sendSlotGap = (ToolbarActionSlot - HubStyle.ComposerActionDiameter) / 2 -
+                                    (if (active) 0.dp else SendFaceInset)
+                                val labelEndPadding = if (chatPicker != null) 22.dp - sendSlotGap else 4.dp
                                 val actionLabel = if (chatPicker != null) stringResource(R.string.chat_controls_select_model)
                                     else "配置模型"
-                                val effortLabel = if (chatPicker != null) stringResource(R.string.chat_controls_select_effort) else null
+                                val closePickerLabel = stringResource(R.string.chat_picker_close)
                                 val labelStyle = MaterialTheme.typography.labelLarge
-                                val triggerWidth = if (effortLabel != null) {
-                                    val measurer = rememberTextMeasurer()
-                                    val width = remember(measurer, modelLabel, effortLabel, labelStyle, fast, density) {
-                                        fun labelWidth(text: String) = with(density) {
-                                            measurer.measure(text, labelStyle, maxLines = 1, softWrap = false).size.width.toDp()
-                                        }
-                                        // Keep the original touch width and trailing alignment in both states.
-                                        val closedLabel = labelWidth(modelLabel) + if (fast) 17.dp else 0.dp
-                                        25.dp + maxOf(closedLabel, labelWidth(effortLabel) + 16.dp)
+                                val measurer = rememberTextMeasurer()
+                                val modelWordGap = if (modelLabel.effort == null) 0 else remember(measurer, labelStyle) {
+                                    measurer.measure(" ", labelStyle, maxLines = 1, softWrap = false).size.width
+                                }
+                                val triggerWidth = if (chatPicker != null) {
+                                    val width = remember(measurer, modelLabel, labelStyle, fast, density) {
+                                        (25.dp + with(density) { modelLabel.width(measurer, labelStyle, modelWordGap).toDp() } + if (fast) 17.dp else 0.dp)
+                                            .coerceAtLeast(44.dp)
                                     }
                                     Modifier.width(width)
                                 } else Modifier
                                 Row(
                                     trailing.then(trigger).then(if (pickerOpen) Modifier else Modifier.clip(CircleShape)).semantics {
-                                        contentDescription = if (pickerOpen && effortLabel != null) effortLabel else actionLabel
-                                        stateDescription = modelLabel
+                                        contentDescription = if (pickerOpen) closePickerLabel else actionLabel
+                                        stateDescription = modelLabel.text
                                     }.clickable(interactionSource = presses,
                                         indication = if (chatPicker == null) LocalIndication.current else null,
                                         enabled = interactive, role = Role.Button) {
@@ -644,15 +673,19 @@ internal fun HubComposer(
                                             collapse()
                                             onConfigure()
                                         }
-                                    }.heightIn(min = 44.dp).then(triggerWidth).padding(start = 21.dp, end = 4.dp),
+                                    }.heightIn(min = 44.dp).then(triggerWidth)
+                                        .padding(start = 25.dp - labelEndPadding, end = labelEndPadding),
                                     horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.End),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    if (fast && !pickerOpen) Icon(Icons.Outlined.Bolt, "快速", Modifier.size(15.dp), tint = colors.onSurface)
+                                    if (fast) {
+                                        if (pickerOpen) Spacer(Modifier.size(15.dp))
+                                        else Icon(Icons.Outlined.Bolt, "快速", Modifier.size(15.dp), tint = colors.onSurface)
+                                    }
                                     Box(Modifier.weight(1f, fill = false)) {
                                         if (chatPicker != null) {
                                             // The initial highlight hands its shape and color to the moving shell.
-                                            // Keep the open label's press feedback local to “Selecting”.
+                                            // Keep the open label's press feedback on its measured text.
                                             val feedback = if (pickerOpen) Modifier.indication(presses, ripple(bounded = false))
                                             else {
                                                 val pressed = presses.collectIsPressedAsState()
@@ -660,17 +693,14 @@ internal fun HubComposer(
                                             }
                                             Spacer(Modifier.matchParentSize().clip(CircleShape).then(feedback))
                                         }
-                                        Text(if (pickerOpen) stringResource(R.string.chat_controls_selecting) else modelLabel,
-                                            modifier = when {
-                                                pickerOpen -> Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                                interactive && chatPicker != null -> Modifier.testTag("chat-model-source-label")
-                                                    .onGloballyPositioned {
-                                                        modelText.label = it
-                                                        modelText.record(chatPicker)
-                                                    }
-                                                else -> Modifier
-                                            },
-                                            style = labelStyle, color = if (pickerOpen) colors.onSurfaceVariant else colors.onSurface,
+                                        val textBounds = if (interactive && chatPicker != null)
+                                            Modifier.testTag("chat-model-source-label").onGloballyPositioned {
+                                                modelText.label = it
+                                                modelText.record(chatPicker)
+                                            } else Modifier
+                                        if (chatPicker != null) ChatTriggerText(modelLabel, darkComposer, labelStyle, modelWordGap,
+                                            Modifier.pickerModelLabelBounds().then(textBounds))
+                                        else Text(modelLabel.name, style = labelStyle, color = colors.onSurface,
                                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
@@ -684,7 +714,7 @@ internal fun HubComposer(
     if (state.current.mode == Mode.Image && toolsPanel == ToolsPanel.Open) {
         ImageComposerTools(
             draft = draft,
-            modelLabel = modelLabel,
+            modelLabel = modelLabel.text,
             onPickReference = {
                 toolsPanel = ToolsPanel.Closed
                 pick()
@@ -708,14 +738,12 @@ private fun Modifier.revealHeight(fraction: Float, folded: Dp) = clipToBounds().
     layout(measured.width, height) { measured.place(0, 0) }
 }
 
-// The open trigger says "Selecting". Keep the closed model text's clipped bounds relative
-// to the button so the animation can return to the name even as the IME moves the toolbar.
+// Keep current text bounds relative to the trigger, including model changes while the picker is open.
 private class ModelLabelMeasurement {
     var trigger: LayoutCoordinates? = null
     var label: LayoutCoordinates? = null
 
     fun record(picker: ChatModelPickerState) {
-        if (picker.page != null) return
         val button = trigger?.takeIf { it.isAttached } ?: return
         val text = label?.takeIf { it.isAttached } ?: return
         val visible = button.localBoundingBoxOf(text).roundToIntRect()
@@ -727,7 +755,7 @@ private class ModelLabelMeasurement {
 @Composable
 private fun ComposerIconButton(label: String, onClick: () -> Unit, enabled: Boolean = true,
                                modifier: Modifier = Modifier, glyph: @Composable () -> Unit) {
-    Box(modifier.width(42.dp).height(48.dp).clip(CircleShape)
+    Box(modifier.width(ToolbarActionSlot).height(48.dp).clip(CircleShape)
         .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = label }, contentAlignment = Alignment.Center) { glyph() }
 }

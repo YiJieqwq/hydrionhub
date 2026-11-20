@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -55,36 +56,35 @@ import org.junit.runner.RunWith
 class ChatModelPickerAnchorTest {
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
 
-    @Test fun reasoningAndListsShareTheMultilineComposerTopAndTrailingEdge() {
+    private fun bounds(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+
+    private fun exposedTextPoint(text: Rect, card: Rect, towardsEnd: Boolean): Offset {
+        val y = text.center.y
+        val pieces = if (y !in card.top..card.bottom) listOf(text.left to text.right) else
+            listOf(text.left to minOf(text.right, card.left), maxOf(text.left, card.right) to text.right)
+        val (left, right) = pieces.maxBy { (start, end) -> end - start }
+        assertTrue("Some of the editor line must remain exposed: $text, $card", right - left > 4f)
+        return Offset(if (towardsEnd) right - 2 else left + 2, y) - text.topLeft
+    }
+
+    @Test fun reasoningTracksTheModelLabelInFrontOfTheMultilineComposer() {
         val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
         val previous = screen.runOnIdle { vm.state.value.draft.text }
         try {
             screen.runOnIdle { vm.setDraft("first line\nsecond line\nthird line") }
             screen.onNodeWithTag("chat-model-trigger").performClick()
             val density = screen.activity.resources.displayMetrics.density
-            val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
-            fun checkPage(tag: String): Float {
-                val composerNode = screen.onNodeWithTag("composer-capsule", useUnmergedTree = true).fetchSemanticsNode()
-                val pageNode = screen.onNodeWithTag(tag).fetchSemanticsNode()
-                // Measure both live nodes in the same layout frame.
-                return screen.runOnIdle {
-                    val composer = composerNode.boundsInRoot
-                    val page = pageNode.boundsInRoot
-                    assertEquals(if (rtl) composer.left else composer.right, if (rtl) page.left else page.right, 2f)
-                    assertEquals(11.5f * density, composer.top - page.bottom, 2f)
-                    page.width
-                }
-            }
-            val viewport = screen.onNodeWithTag("chat-picker-viewport", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-            assertEquals(minOf(288f * density, viewport.width - 24f * density), checkPage("chat-model-card"), 2f)
-            screen.onNodeWithTag("chat-model-select").performClick()
-            screen.onNodeWithTag("chat-model-search-field").assertIsDisplayed()
-            val width = checkPage("chat-model-list")
-            screen.onNodeWithTag("chat-model-search-close").performClick()
-            screen.onNodeWithTag("chat-model-search-field").assertDoesNotExist()
-            assertEquals(width, checkPage("chat-model-list"), 1f)
-            screen.onNodeWithTag("chat-model-provider-trigger").performClick()
-            assertEquals(width, checkPage("chat-provider-list"), 1f)
+            val viewport = bounds("chat-picker-viewport")
+            val source = bounds("chat-model-source-label")
+            val card = bounds("chat-model-card")
+            val composer = bounds("composer-capsule")
+            assertEquals(minOf(288f * density, viewport.width - 24f * density), card.width, 2f)
+            assertTrue("The effort card floats over the editable area but clears its label",
+                card.bottom > composer.top && card.bottom < source.top && card.contains(Offset(source.center.x, card.center.y)))
+            assertEquals(6f * density, source.top - card.bottom, 2f)
+            val editor = screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction())
+            val overlap = card.intersect(editor.fetchSemanticsNode().boundsInRoot)
+            assertTrue("This fixture places the effort card over the editing field", !overlap.isEmpty)
         } finally {
             screen.runOnIdle { vm.setDraft(previous) }
         }
@@ -110,21 +110,24 @@ class ChatModelPickerAnchorTest {
             assertTrue("The draft must start parked", !keyboardVisible())
             val parkedBottom = card.assertIsDisplayed().fetchSemanticsNode().boundsInRoot.bottom
             val textLine = screen.onNodeWithTag("composer-editable-text", useUnmergedTree = true)
-            textLine.performTouchInput { click(center) }
+            val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+            fun caretPoint(towardsEnd: Boolean) = exposedTextPoint(textLine.fetchSemanticsNode().boundsInRoot,
+                card.fetchSemanticsNode().boundsInRoot, towardsEnd)
+            var tap = caretPoint(!rtl)
+            textLine.performTouchInput { click(tap) }
             editor.assertIsFocused()
             card.assertIsDisplayed()
             screen.waitUntil(15_000) {
                 keyboardVisible() && card.fetchSemanticsNode().boundsInRoot.bottom < parkedBottom
             }
-            val cardNode = card.fetchSemanticsNode()
-            val composerNode = composer.fetchSemanticsNode()
-            screen.runOnIdle {
-                assertEquals(11.5f * density, composerNode.boundsInRoot.top - cardNode.boundsInRoot.bottom, 2f)
-            }
+            val raised = card.fetchSemanticsNode().boundsInRoot
+            val label = bounds("chat-model-source-label")
+            assertTrue(raised.bottom < label.top && raised.bottom > composer.fetchSemanticsNode().boundsInRoot.top)
+            assertTrue(label.center.x in raised.left..raised.right)
 
             val firstCaret = editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
-            val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
-            editor.performTouchInput { click(Offset(if (rtl) width - 1.dp.toPx() else 1.dp.toPx(), centerY)) }
+            tap = caretPoint(rtl)
+            textLine.performTouchInput { click(tap) }
             val secondCaret = editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
             assertTrue("Each tap should position the cursor",
                 firstCaret.collapsed && secondCaret.collapsed && firstCaret != secondCaret)
@@ -136,9 +139,10 @@ class ChatModelPickerAnchorTest {
 
             val beforeDoubleTap = TextRange(1, 3)
             editor.performTextInputSelection(beforeDoubleTap)
+            tap = caretPoint(rtl)
             textLine.performTouchInput {
                 advanceEventTime(ViewConfiguration.getDoubleTapTimeout().toLong() + 1)
-                doubleClick(center)
+                doubleClick(tap)
             }
             card.assertDoesNotExist()
             editor.assertIsFocused()
@@ -162,7 +166,8 @@ class ChatModelPickerAnchorTest {
             screen.onNodeWithTag("chat-model-trigger").performTouchInput { click(center) }
             card.assertIsDisplayed()
             assertTrue("Start the double tap with the keyboard hidden", !keyboardVisible())
-            textLine.performTouchInput { doubleClick(center) }
+            tap = caretPoint(rtl)
+            textLine.performTouchInput { doubleClick(tap) }
             card.assertDoesNotExist()
             screen.runOnIdle { assertEquals(expected, vm.state.value.draft.text) }
         } finally {
@@ -231,14 +236,16 @@ class ChatModelPickerAnchorTest {
             val card = screen.onNodeWithTag("chat-model-card").fetchSemanticsNode().boundsInRoot
             editor.assertIsNotFocused()
             val field = editor.fetchSemanticsNode().boundsInRoot
-            assertTrue("The card must clear the multiline editor", card.bottom <= field.top)
+            val covered = card.intersect(field)
+            assertTrue("The resting effort card is in front of the multiline editor", !covered.isEmpty)
+            assertTrue(card.bottom < bounds("chat-model-source-label").top)
             val root = screen.onRoot()
             val origin = root.fetchSemanticsNode().boundsInRoot.topLeft
             screen.mainClock.autoAdvance = false
             trigger.performTouchInput { click(center) }
             screen.mainClock.advanceTimeByFrame()
             screen.mainClock.advanceTimeByFrame()
-            root.performTouchInput { click(field.center - origin) }
+            root.performTouchInput { click(covered.center - origin) }
             screen.mainClock.advanceTimeByFrame()
             editor.assertIsFocused()
         } finally {

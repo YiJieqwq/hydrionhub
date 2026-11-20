@@ -35,16 +35,21 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.R
-import io.hydrion.hub.ui.composerActionFace
+import io.hydrion.hub.ui.pickerModelTravel
+import io.hydrion.hub.ui.measureOnlyPickerToolbar
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.composerActionFill
 import io.hydrion.hub.ui.theme.composerActionInk
 import kotlin.math.roundToInt
 
+internal val ToolbarActionSlot = 42.dp
+internal val SendFaceInset = 1.75.dp
+
 @Composable
 internal fun ToolsToolbarMorph(
     progress: Float,
     toolsOpen: Boolean,
+    modelSearch: Boolean = false,
     hasClearableTools: Boolean,
     generating: Boolean,
     canSend: Boolean,
@@ -59,19 +64,29 @@ internal fun ToolsToolbarMorph(
     val density = LocalDensity.current
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     BoxWithConstraints(modifier) {
-        val pose = ToolsToolbarPose(constraints.maxWidth.toFloat(), with(density) { 42.dp.roundToPx().toFloat() }, progress, rtl)
+        val pose = ToolsToolbarPose(constraints.maxWidth.toFloat(), with(density) { ToolbarActionSlot.roundToPx().toFloat() }, progress, rtl)
         val p = pose.fraction
         val actions = pose.actions(toolsOpen)
         val ordinary = actions == ToolsToolbarActions.Composer
         val tools = actions == ToolsToolbarActions.Tools
         val slot = with(density) { pose.slotWidth.toDp() }
-        if (p < 1f) {
-            fun motion(leading: Boolean) = Modifier.graphicsLayer {
-                translationX = pose.moveToCenter(size.width, leading)
-                alpha = pose.middleAlpha
+        if (p < 1f || modelSearch) {
+            fun motion(leading: Boolean): Modifier {
+                if (modelSearch && !leading) {
+                    // Place the model group at its actual travelling position so the parent
+                    // can use its bounds and displacement in the very same measure pass.
+                    return Modifier.pickerModelTravel { width -> pose.moveToCenter(width.toFloat(), false).roundToInt() }
+                        .graphicsLayer { alpha = pose.middleAlpha }
+                }
+                return Modifier.graphicsLayer {
+                    translationX = pose.moveToCenter(size.width, leading)
+                    alpha = pose.middleAlpha
+                }
             }
             val semantics = if (ordinary) Modifier else Modifier.clearAndSetSemantics {}
-            Row(Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = slot).then(semantics),
+            Row(Modifier.align(Alignment.Center).fillMaxWidth()
+                .then(if (p == 1f) Modifier.measureOnlyPickerToolbar() else Modifier)
+                .padding(horizontal = slot).then(semantics),
                 verticalAlignment = Alignment.CenterVertically) {
                 middle(motion(true), motion(false))
             }
@@ -85,13 +100,13 @@ internal fun ToolsToolbarMorph(
             })
         }
         val clear = stringResource(R.string.chat_tools_clear)
-        val back = stringResource(R.string.chat_tools_back)
+        val back = stringResource(if (modelSearch) R.string.chat_picker_back_to_controls else R.string.chat_tools_back)
         val newInk = colors.onSurface
         val endpoint = Modifier.align(AbsoluteAlignment.CenterLeft)
         Box(endpoint.absoluteOffset { IntOffset(pose.attachmentX.roundToInt(), 0) }
             .width(slot).height(48.dp).testTag("chat-toolbar-attach-glyph-slot"), contentAlignment = Alignment.Center) {
             ToolbarAction(
-                tag = if (tools) "chat-tools-clear" else "chat-composer-attach",
+                tag = if (!tools) "chat-composer-attach" else if (modelSearch) "chat-model-search-clear" else "chat-tools-clear",
                 label = if (tools) clear else "添加附件", interactive = actions != ToolsToolbarActions.Moving, keepEditorFocus = tools,
                 enabled = ordinary || hasClearableTools, onClick = if (tools) onClear else onAttach,
             ) {
@@ -107,7 +122,7 @@ internal fun ToolsToolbarMorph(
         Box(endpoint.absoluteOffset { IntOffset(pose.sendX.roundToInt(), 0) }
             .width(slot).height(48.dp).testTag("chat-toolbar-send-glyph-slot"), contentAlignment = Alignment.Center) {
             ToolbarAction(
-                tag = if (tools) "chat-tools-back" else "chat-composer-send",
+                tag = if (!tools) "chat-composer-send" else if (modelSearch) "chat-model-list-back" else "chat-tools-back",
                 label = if (tools) back else if (generating) "停止生成" else "发送消息",
                 interactive = actions != ToolsToolbarActions.Moving, keepEditorFocus = tools, enabled = tools || generating || canSend,
                 onClick = if (tools) onBack else onSend,
@@ -115,9 +130,9 @@ internal fun ToolsToolbarMorph(
                 val fill = if (generating) Color.White else colors.composerActionFill(canSend)
                 val startInk = if (generating) Color.Black else colors.composerActionInk(canSend)
                 val ink = if (p == 0f) startInk else lerp(startInk, newInk, p)
-                val inset = if (generating) 0.dp else (-1.75).dp * (1f - p)
+                val inset = if (generating) 0.dp else -SendFaceInset * (1f - p)
                 Box(Modifier.size(HubStyle.ComposerActionDiameter).offset(x = inset)
-                    .composerActionFace().testTag("chat-composer-action-face")
+                    .testTag("chat-composer-action-face")
                     .background(fill.copy(alpha = fill.alpha * (1f - p)), CircleShape),
                     contentAlignment = Alignment.Center) {
                     if (generating && p == 0f) {

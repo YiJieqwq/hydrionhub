@@ -1,195 +1,75 @@
 package io.hydrion.hub.ui.composer
 
-import android.view.KeyEvent
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.round
-import io.hydrion.hub.R
 import io.hydrion.hub.provider.ChatModelPickerState
 
-internal fun Modifier.trackPickerEditor(picker: ChatModelPickerState?, search: Boolean, textOnly: Boolean = false): Modifier =
+internal fun Modifier.trackPickerEditor(picker: ChatModelPickerState?, textOnly: Boolean = false): Modifier =
     if (picker == null) this else onGloballyPositioned {
-        if ((picker.page == ChatModelPickerState.Page.Search) == search) {
-            val bounds = IntRect(it.positionInWindow().round(), it.size)
-            if (textOnly) picker.editorTextBounds = bounds else picker.editorBounds = bounds
-        }
+        val bounds = IntRect(it.positionInWindow().round(), it.size)
+        if (textOnly) picker.editorTextBounds = bounds else picker.editorBounds = bounds
     }
 
-// The inactive draft still reserves its multiline height. Its text, gestures and selection
-// handles must not be exposed in model search.
-private fun Modifier.withoutPlacement(): Modifier = clearAndSetSemantics { }.layout { child, constraints ->
-    val measured = child.measure(constraints)
-    layout(measured.width, measured.height) {}
+internal fun TextFieldValue.singleLineQuery(): TextFieldValue =
+    if ('\n' in text || '\r' in text) copy(text = text.replace('\r', ' ').replace('\n', ' '), composition = null) else this
+
+/** A soft IME with the draft's multiline options can commit a newline in place of an action. */
+internal fun isQuerySubmitEdit(previous: TextFieldValue, updated: TextFieldValue): Boolean {
+    if ('\n' !in updated.text && '\r' !in updated.text) return false
+    val range = previous.selection
+    val entered = updated.text.length - (previous.text.length - range.length)
+    return entered in 1..2 && updated.text.regionMatches(0, previous.text, 0, range.min) &&
+        updated.text.regionMatches(range.min + entered, previous.text, range.max, previous.text.length - range.max) &&
+        updated.text.substring(range.min, range.min + entered) in setOf("\n", "\r", "\r\n")
 }
 
+// All editing roles share the same native editor, requester and IME options. Changing the
+// displayed TextFieldValue preserves keyboard visibility, even during a page reversal.
 @Composable
 internal fun ComposerEditorSlot(
-    picker: ChatModelPickerState?,
-    minHeight: Dp,
-    textStyle: TextStyle,
-    hintOverlay: Modifier, blendingHint: Boolean, searchMotion: ComposerHintMotion, searchIconGap: Dp,
-    draftFocus: FocusRequester,
+    searching: Boolean,
+    editorFocus: FocusRequester,
     modelEditorBridge: ModelEditorComposerBridge?,
     readDraft: () -> TextFieldValue,
     restoreSelection: (TextRange) -> Unit,
     interactive: Boolean,
-    foldedVisual: Boolean,
     dismissForModelEditor: () -> Unit,
-    retainEditorFocus: () -> Boolean,
     onEditorFocusChanged: (Boolean) -> Unit,
-    textLine: Modifier,
     modifier: Modifier,
-    draftEditor: @Composable (Modifier) -> Unit,
+    editor: @Composable (Modifier) -> Unit,
 ) {
-    val focusManager = LocalFocusManager.current
-    val searchFocus = remember(picker) { FocusRequester() }
-    val searching = picker?.page == ChatModelPickerState.Page.Search
-    var previousSearch by remember(picker) { mutableStateOf(false) }
-    var draftFocused by remember { mutableStateOf(false) }
-    var searchFocused by remember(picker) { mutableStateOf(false) }
-    val editorFocused = draftFocused || searchFocused
-    var placed by remember(picker, searching, foldedVisual) { mutableStateOf(false) }
-    val activePlacement = if (modelEditorBridge == null) Modifier else Modifier.onGloballyPositioned {
+    var focused by remember { mutableStateOf(false) }
+    var placed by remember(modelEditorBridge) { mutableStateOf(false) }
+    val placement = if (modelEditorBridge == null) Modifier else Modifier.onGloballyPositioned {
         placed = it.isAttached && it.size.width > 0 && it.size.height > 0
     }
     if (modelEditorBridge != null) {
+        val input = if (searching) ModelEditorInput.Search else ModelEditorInput.Draft
         BindModelEditorComposer(
             modelEditorBridge, readDraft, restoreSelection,
-            focusedInput = {
-                when {
-                    searchFocused -> ModelEditorInput.Search
-                    draftFocused -> ModelEditorInput.Draft
-                    else -> null
-                }
-            },
-            visibleInput = if (searching) ModelEditorInput.Search else ModelEditorInput.Draft,
-            focus = if (searching) searchFocus else draftFocus,
-            placed = placed, interactive = interactive, dismiss = dismissForModelEditor,
+            focusedInput = { input.takeIf { focused } }, visibleInput = input,
+            focus = editorFocus, placed = placed, interactive = interactive, dismiss = dismissForModelEditor,
         )
     }
-
-    // Both native editors remain attached during a handoff. Transfer directly in the same
-    // apply pass to avoid starting a new keyboard after disposing the active input session.
-    SideEffect {
-        if (previousSearch != searching) {
-            when (editorHandoff(if (previousSearch) searchFocused else draftFocused, retainEditorFocus())) {
-                EditorHandoff.TransferFocus -> (if (searching) searchFocus else draftFocus).requestFocus()
-                EditorHandoff.ClearFocus -> focusManager.clearFocus()
-                EditorHandoff.None -> Unit
-            }
-            previousSearch = searching
-        }
-        onEditorFocusChanged(editorFocused)
+    Box(modifier.fillMaxWidth()) {
+        editor(Modifier.focusRequester(editorFocus).onFocusChanged {
+            focused = it.isFocused
+            onEditorFocusChanged(it.isFocused)
+        }.then(placement))
     }
-
-    Box(modifier.fillMaxWidth().then(hintOverlay)) {
-        // A returning capsule first displays the ordinary folded draft. Keep the query,
-        // selection and search editor mounted while that temporary pose is on screen.
-        val showSearch = searching && !foldedVisual
-        Box(if (showSearch) Modifier.withoutPlacement() else Modifier) {
-            draftEditor(Modifier.focusRequester(draftFocus).focusProperties {
-                canFocus = !searching || !previousSearch
-            }.onFocusChanged { draftFocused = it.isFocused }.then(if (searching) Modifier else activePlacement))
-        }
-        if (picker != null && (searching || previousSearch)) {
-            // Keep the outgoing search field until focus transfers or the hidden keyboard is released.
-            val visibility = if (showSearch) Modifier else Modifier.withoutPlacement()
-            Box(Modifier.matchParentSize().then(visibility).padding(start = OpenTextStart, end = OpenTextEnd)) {
-                ComposerModelSearchField(picker, minHeight, textStyle, blendingHint, searchMotion, searchIconGap, if (showSearch) textLine else Modifier,
-                    Modifier.focusRequester(searchFocus).onFocusChanged { searchFocused = it.isFocused }
-                        .then(if (searching) activePlacement else Modifier))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ComposerModelSearchField(picker: ChatModelPickerState, minHeight: Dp, textStyle: TextStyle,
-                                    blendingHint: Boolean, motion: ComposerHintMotion, iconGap: Dp,
-                                    textLine: Modifier, modifier: Modifier) {
-    val colors = MaterialTheme.colorScheme
-    val hint = stringResource(R.string.chat_picker_search_hint)
-    var attached by remember(picker) { mutableStateOf(true) }
-    DisposableEffect(picker) { onDispose { attached = false } }
-    fun submit() { if (attached) picker.submitSearch() }
-
-    BasicTextField(
-        value = picker.searchQuery,
-        onValueChange = { if (attached) picker.updateSearchQuery(it) },
-        modifier = Modifier.fillMaxWidth().testTag("chat-model-search-field").trackPickerEditor(picker, search = true)
-            .semantics { contentDescription = hint }
-            .then(modifier)
-            .onPreviewKeyEvent { event ->
-                val key = event.nativeKeyEvent
-                if (key.keyCode != KeyEvent.KEYCODE_ENTER && key.keyCode != KeyEvent.KEYCODE_NUMPAD_ENTER) false
-                else {
-                    if (key.action == KeyEvent.ACTION_UP && !key.isCanceled) submit()
-                    true
-                }
-            },
-        singleLine = true,
-        textStyle = textStyle.copy(color = colors.onSurface),
-        cursorBrush = SolidColor(colors.primary),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { submit() }),
-        decorationBox = { input ->
-            Row(Modifier.fillMaxWidth().heightIn(min = minHeight).padding(top = OpenTextTop, bottom = TextBottom),
-                horizontalArrangement = Arrangement.spacedBy(iconGap), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Search, null, Modifier.size(SearchIconSize).graphicsLayer { alpha = motion.search },
-                    tint = colors.onSurfaceVariant)
-                Box(Modifier.weight(1f).trackPickerEditor(picker, search = true, textOnly = true).then(textLine),
-                    contentAlignment = Alignment.CenterStart) {
-                    if (picker.searchQuery.text.isEmpty()) Text(hint, if (blendingHint) MeasuredHintOnly else Modifier,
-                        style = textStyle, color = colors.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    input()
-                }
-            }
-        },
-    )
 }

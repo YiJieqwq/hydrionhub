@@ -154,6 +154,7 @@ class ChatModelPickerTest {
                 store.configure(Mode.Chat, reason, before.overrides[reason].orEmpty())
                 vm.setDraft("model picker")
             }
+            fun currentTrigger() = control("trigger").fetchSemanticsNode().config[SemanticsProperties.StateDescription]
             control("trigger").performClick()
             control("select").performClick()
             option(reason).assertIsSelected()
@@ -186,9 +187,7 @@ class ChatModelPickerTest {
             control("list").assertIsDisplayed()
             control("search-field").assertIsDisplayed()
             assertTrue("Browsing from a parked draft keeps the keyboard down", !softwareKeyboardIsOpen())
-            control("search-close").performTouchInput { click(center) }
-            control("search-field").assertDoesNotExist()
-            control("search").assertIsDisplayed()
+            control("search-clear").assertIsDisplayed()
             control("list-back").performTouchInput { click(center) }
             val effort = control("effort").assertIsDisplayed()
             val initial = store.selection(Mode.Chat).parameters
@@ -203,6 +202,7 @@ class ChatModelPickerTest {
             control("select").performClick()
             option(mini).performClick()
             screen.runOnIdle { assertEquals(mini, store.catalog.value.active[Mode.Chat]) }
+            assertEquals(store.selection(Mode.Chat).label, currentTrigger())
             control("card").assertIsDisplayed()
             control("effort").assertDoesNotExist()
             control("fast").assertIsNotEnabled()
@@ -310,19 +310,19 @@ class ChatModelPickerTest {
         }
         val triggerSize = control("trigger").fetchSemanticsNode().size
         val closedLabel = control("trigger").fetchSemanticsNode().config[SemanticsProperties.Text]
-        val effortLabel = screen.activity.getString(R.string.chat_controls_select_effort)
-        val selecting = screen.activity.getString(R.string.chat_controls_selecting)
+        val closeLabel = screen.activity.getString(R.string.chat_picker_close)
         val modelDescription = control("trigger").fetchSemanticsNode().config[SemanticsProperties.StateDescription]
         control("trigger").performTouchInput { click(center) }
         control("card").assertIsDisplayed()
-        control("trigger").assertTextEquals(selecting).assertContentDescriptionEquals(effortLabel)
+        control("trigger").assertContentDescriptionEquals(closeLabel)
+        assertEquals(closedLabel, control("trigger").fetchSemanticsNode().config[SemanticsProperties.Text])
         assertEquals(modelDescription, control("trigger").fetchSemanticsNode().config[SemanticsProperties.StateDescription])
         assertEquals(triggerSize, control("trigger").fetchSemanticsNode().size)
         assertEditing()
         control("select").performTouchInput { click(center) }
         control("list").assertIsDisplayed()
         control("search-field").assertIsFocused()
-        control("search-close").assertIsDisplayed()
+        control("search-clear").assertIsDisplayed()
         option(active).assertIsSelected().performTouchInput { click(center) }
         control("card").assertIsDisplayed()
         assertEditing()
@@ -331,7 +331,8 @@ class ChatModelPickerTest {
         control("search-field").assertIsFocused()
         control("provider-trigger").performTouchInput { click(center) }
         provider(active.providerId).assertIsSelected()
-        assertEditing()
+        control("search-field").assertIsFocused()
+        assertTrue(softwareKeyboardIsOpen())
         // Exercise the Back delivered to the app; a physical Back can be consumed by the IME first.
         screen.runOnUiThread { screen.activity.onBackPressedDispatcher.onBackPressed() }
         screen.onNodeWithTag("chat-provider-list").assertDoesNotExist()
@@ -355,7 +356,7 @@ class ChatModelPickerTest {
         val density = screen.activity.resources.displayMetrics.density
         val rtl = screen.activity.resources.configuration.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL
         val edge = Offset(if (rtl) trigger.width - 3f * density else 3f * density, trigger.height / 2f)
-        val label = screen.onNodeWithText(selecting, useUnmergedTree = true)
+        val label = screen.onNodeWithTag("chat-model-source-label", useUnmergedTree = true)
             .fetchSemanticsNode().boundsInRoot.translate(-trigger.topLeft).inflate(10f * density)
         assertTrue("The test press is in the trigger's empty margin", !label.contains(edge))
         fun pixels(bitmap: Bitmap) = IntArray(bitmap.width * bitmap.height).also {

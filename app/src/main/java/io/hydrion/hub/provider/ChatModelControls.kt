@@ -96,7 +96,11 @@ internal fun ChatModelControls(
     val palette = remember(levels, shown, dark) { effortPalette(levels, shown, dark) }
     val accelerated = speeds.selected != null && speeds.selected == speeds.fast
     val titleTint by animateColorAsState(
-        targetValue = if (effort == null) colors.onSurface else palette.ink,
+        targetValue = when {
+            effort == null -> colors.onSurface
+            palette.isPeak -> PeakEffortLabelColor
+            else -> palette.ink
+        },
         animationSpec = tween(200, easing = EffortTintEase), label = "effortTitle",
     )
     val selectLabel = stringResource(R.string.chat_controls_select_model)

@@ -1,18 +1,15 @@
 package io.hydrion.hub
 
-import android.animation.ValueAnimator
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -28,13 +25,11 @@ import io.hydrion.hub.provider.ModelProfile
 import io.hydrion.hub.provider.Provider
 import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.provider.ProviderStore
-import io.hydrion.hub.ui.ChatPanelMotionMillis
 import io.hydrion.hub.ui.ModelEditorMotionMillis
 import io.hydrion.hub.provider.deepSeekProvider
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -110,21 +105,22 @@ class ChatModelSearchTest {
         button.performTouchInput { click(center) }
     }
 
-    private fun enterSearch(button: String, expectedQuery: String = ""): SemanticsNodeInteraction {
+    private fun enterModels(): SemanticsNodeInteraction {
         val keyboardWasOpen = imeIsVisible()
-        control(button).performTouchInput { click(center) }
+        control("select").performTouchInput { click(center) }
         control("list").assertIsDisplayed()
-        val field = screen.onNode(hasTestTag("chat-model-search-field") and
-            hasAnyAncestor(hasTestTag("composer-capsule")))
+        val inCapsule = hasAnyAncestor(hasTestTag("composer-capsule"))
+        val field = screen.onNode(hasTestTag("chat-model-search-field") and inCapsule)
             .assertIsDisplayed().assert(hasImeAction(ImeAction.Search))
         if (keyboardWasOpen) field.assertIsFocused()
-        assertEquals("Entering search preserves keyboard visibility", keyboardWasOpen, imeIsVisible())
-        screen.onAllNodes(hasSetTextAction() and hasAnyAncestor(hasTestTag("chat-model-list")),
+        assertEquals("Entering the model page preserves the keyboard", keyboardWasOpen, imeIsVisible())
+        assertEquals("", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        screen.onNode(hasTestTag("chat-model-list-back") and inCapsule).assertIsDisplayed().assertHasClickAction()
+        screen.onNode(hasTestTag("chat-model-search-clear") and inCapsule).assertIsDisplayed().assertIsNotEnabled()
+        val inResultsPage = hasAnyAncestor(hasTestTag("chat-model-list"))
+        screen.onAllNodes(inResultsPage and (hasSetTextAction() or hasTestTag("chat-model-list-back")),
             useUnmergedTree = true).assertCountEquals(0)
-        assertEquals(expectedQuery, field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        control("search-close").assertIsDisplayed()
-        control("search").assertDoesNotExist()
-        send.assertIsDisplayed().assertIsNotEnabled()
+        send.assertDoesNotExist()
         return field
     }
 
@@ -144,31 +140,6 @@ class ChatModelSearchTest {
 
     private fun capsule() = screen.onNodeWithTag("composer-capsule", useUnmergedTree = true)
         .fetchSemanticsNode().boundsInRoot
-
-    private fun assertSearchFaceMatchesSend(searchControl: String): Rect {
-        fun bounds(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true).assertIsDisplayed()
-            .fetchSemanticsNode().boundsInRoot
-        val face = screen.onNodeWithTag("chat-model-search-face", useUnmergedTree = true)
-            .assertIsDisplayed().fetchSemanticsNode()
-        val search = face.boundsInRoot
-        val send = bounds("chat-composer-action-face")
-        val panel = bounds("chat-picker-bubble")
-        val composer = capsule()
-        val rtl = face.layoutInfo.layoutDirection == LayoutDirection.Rtl
-        fun endInset(outer: Rect, inner: Rect) = if (rtl) inner.left - outer.left else outer.right - inner.right
-        val diameter = with(face.layoutInfo.density) { 32.dp.roundToPx().toFloat() }
-        for (circle in listOf(send, search)) {
-            assertEquals("Visible face width", diameter, circle.width, 1f)
-            assertEquals("Visible face height", diameter, circle.height, 1f)
-        }
-        assertEquals("Visible trailing inset", endInset(composer, send), endInset(panel, search), 1f)
-        assertEquals("Visible bottom inset", composer.bottom - send.bottom, panel.bottom - search.bottom, 1f)
-        val hit = control(searchControl).assertHasClickAction().fetchSemanticsNode().boundsInRoot
-        val minimum = with(face.layoutInfo.density) { 48.dp.roundToPx() - 1f }
-        assertTrue("Search touch target: $hit", hit.width >= minimum && hit.height >= minimum)
-        assertTrue("Model results must be reachable beside the touch target", !hit.overlaps(bounds("chat-model-results")))
-        return hit
-    }
 
     private fun assertAnchored(tag: String) {
         val density = screen.activity.resources.displayMetrics.density
@@ -200,80 +171,31 @@ class ChatModelSearchTest {
         }
     }
 
-    @Test fun closedImeSearchAndListShareTheCapsuleEdgeOnIntermediateAndReversedFrames() = withProviders { vm, _, _ ->
-        assumeTrue(ValueAnimator.areAnimatorsEnabled())
-        screen.runOnIdle { vm.setDraft("") }
-        hideKeyboard()
-        val folded = capsule()
-        screen.runOnIdle { vm.setDraft("open the controls") }
-        openControls()
-        enterSearch("select")
-        screen.runOnIdle { vm.setDraft("") }
-        val parked = capsule()
-        assertComposerHint(searchHint)
-        val bubble = screen.onNodeWithTag("chat-picker-bubble", useUnmergedTree = true)
-        val gap = parked.top - bubble.fetchSemanticsNode().boundsInRoot.bottom
-        val clock = screen.mainClock
-        try {
-            clock.autoAdvance = false
-            control("search-close").performClick()
-            var previous = parked.top
-            fun sample(down: Boolean) {
-                clock.advanceTimeBy(ChatPanelMotionMillis / 8L)
-                val edge = capsule().top
-                assertTrue("Intermediate frame between parked and folded", edge > parked.top && edge < folded.top)
-                assertTrue("Expected travel in requested direction", if (down) edge > previous else edge < previous)
-                assertEquals("Menu bottom and capsule top must be from the same frame",
-                    gap, edge - bubble.fetchSemanticsNode().boundsInRoot.bottom, 1f)
-                assertComposerHint(if (down) "Chat with AI" else searchHint)
-                assertTrue("Browsing and searching keep the keyboard hidden", !imeIsVisible())
-                previous = edge
-            }
-            repeat(4) { sample(down = true) }
-            control("search").performClick()
-            repeat(2) { sample(down = false) }
-            clock.autoAdvance = true
-            screen.waitForIdle()
-            assertEquals(parked, capsule())
-        } finally {
-            clock.autoAdvance = true
-        }
-    }
-
-    @Test fun emptyDraftFoldsUnderTheCardAndListButAnEmptySearchParksUntilTapped() = withProviders { vm, _, _ ->
+    @Test fun emptyModelQueryKeepsTheKeyboardClosedUntilTappedAndClearDoesNotExit() = withProviders { vm, _, _ ->
         screen.runOnIdle { vm.setDraft("") }
         val compact = capsule()
-        screen.runOnIdle { vm.setDraft("x") }
-        val parked = capsule()
-        assertTrue(parked.height > compact.height)
-        assertEquals(compact.bottom, parked.bottom, 1f)
-        screen.runOnIdle { vm.setDraft("") }
-
         editor.performTouchInput { click(center) }
-        screen.waitUntil(15_000) { imeIsVisible() && capsule().width > parked.width }
+        screen.waitUntil(15_000) { imeIsVisible() }
         openControls()
         hideKeyboard()
         screen.waitUntil(15_000) { capsule() == compact }
         assertAnchored("card")
-        assertImeStays(false) { enterSearch("select") }
-        screen.waitUntil(15_000) { capsule() == parked }
-        assertAnchored("list")
-        assertSearchFaceMatchesSend("search-close")
-
+        assertImeStays(false) { enterModels() }
+        assertComposerHint(searchHint)
         val query = control("search-field")
         query.performTouchInput { click(center) }
-        screen.waitUntil(15_000) { imeIsVisible() && capsule().width > parked.width }
+        screen.waitUntil(15_000) { imeIsVisible() }
+        query.performTextReplacement("No such model")
+        reveal("search-empty")
+        assertImeStays(true) { control("search-clear").performTouchInput { click(center) } }
         query.assertIsFocused()
         assertComposerHint(searchHint)
-        assertAnchored("list")
-        assertSearchFaceMatchesSend("search-close")
-        assertImeStays(true) { control("search-close").performTouchInput { click(center) } }
+        control("results").assertIsDisplayed()
+        assertImeStays(true) { control("list-back").performTouchInput { click(center) } }
+        control("card").assertIsDisplayed()
         assertComposerHint("Chat with AI")
-        control("list").assertIsDisplayed()
         hideKeyboard()
         screen.waitUntil(15_000) { capsule() == compact }
-        assertAnchored("list")
-        assertSearchFaceMatchesSend("search")
         send.assertIsNotEnabled()
     }
 
@@ -289,30 +211,19 @@ class ChatModelSearchTest {
             screen.waitUntil(15_000) { imeIsVisible() && capsule().width > parked.width }
             editor.performTextInputSelection(selection)
             openControls()
-            assertImeStays(true) { enterSearch("select").performTextReplacement("Nimbus") }
+            assertImeStays(true) { enterModels().performTextReplacement("Nimbus") }
             assertComposerHint(null)
             hideKeyboard()
-            screen.waitUntil(15_000) { capsule() == parked }
-            assertAnchored("list")
-            assertSearchFaceMatchesSend("search-close")
-
-            assertImeStays(false) { control("search-close").performTouchInput { click(center) } }
+            assertImeStays(false) { control("list-back").performTouchInput { click(center) } }
+            control("list").assertDoesNotExist()
             editor.assertTextEquals(draft)
             assertComposerHint(null)
-            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-            assertEquals(parked, capsule())
-            screen.onNodeWithText("draft-only.txt").assertIsDisplayed()
-            screen.runOnIdle { assertEquals(attachments, vm.state.value.draft.attachments) }
-            assertImeStays(false) { enterSearch("search", expectedQuery = "Nimbus") }
-            assertImeStays(false) { control("search-close").performTouchInput { click(center) } }
-            assertImeStays(false) { tapBackArrow("chat-model-list-back") }
-            control("list").assertDoesNotExist()
             assertAnchored("card")
             assertEquals(parked, capsule())
 
-            // Returning from ordinary browsing ends even a paused search.
-            assertImeStays(false) { enterSearch("select") }
-            assertImeStays(false) { tapBackArrow("chat-model-list-back") }
+            // The capsule's back arrow ends the whole model selection; re-entry starts empty.
+            assertImeStays(false) { enterModels() }
+            assertImeStays(false) { control("list-back").performTouchInput { click(center) } }
             assertImeStays(false) { tapBackArrow("chat-effort-back") }
             control("card").assertDoesNotExist()
             editor.assertTextEquals(draft)
@@ -333,16 +244,16 @@ class ChatModelSearchTest {
             val before = screen.runOnIdle { vm.state.value.draft }
 
             openControls()
-            enterSearch("select").performTextReplacement("Nimbus")
-            assertImeStays(true) { tapBackArrow("chat-model-list-back") }
+            enterModels().performTextReplacement("Nimbus")
+            assertImeStays(true) { control("list-back").performTouchInput { click(center) } }
             control("search-field").assertDoesNotExist()
             control("list").assertDoesNotExist()
             assertAnchored("card")
             editor.assertIsFocused().assertTextEquals(draft)
             assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
 
-            enterSearch("select")  // A new selection starts with an empty query.
-            assertImeStays(true) { tapBackArrow("chat-model-list-back") }
+            enterModels()  // A new selection starts with an empty query.
+            assertImeStays(true) { control("list-back").performTouchInput { click(center) } }
             assertImeStays(true) { tapBackArrow("chat-effort-back") }
             control("card").assertDoesNotExist()
             editor.assertIsFocused().assertTextEquals(draft)
@@ -362,19 +273,9 @@ class ChatModelSearchTest {
             editor.performTextInputSelection(selection)
             val original = screen.runOnIdle { vm.state.value }
             openControls()
-            val search = enterSearch("select")
+            val search = enterModels()
             search.performTextReplacement("Nimbus")
             val textLine = screen.onNodeWithTag("composer-editable-text", useUnmergedTree = true)
-            // The magnifier is part of the input decoration, outside the editable text line.
-            val fieldBox = search.fetchSemanticsNode().boundsInRoot
-            val textBox = textLine.fetchSemanticsNode().boundsInRoot
-            val iconX = if (screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL)
-                (textBox.right + fieldBox.right) / 2 else (fieldBox.left + textBox.left) / 2
-            val icon = Offset(iconX, textBox.center.y)
-            assertTrue(fieldBox.contains(icon) && !textBox.contains(icon))
-            search.performTouchInput { doubleClick(icon - fieldBox.topLeft) }
-            control("list").assertIsDisplayed()
-            assertEquals("Nimbus", search.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
             assertImeStays(true) { textLine.performTouchInput { doubleClick(center) } }
             control("search-field").assertDoesNotExist()
             control("list").assertDoesNotExist()
@@ -387,33 +288,31 @@ class ChatModelSearchTest {
                 assertEquals(original.current.messages, vm.state.value.current.messages)
             }
             openControls()
-            enterSearch("select") // A new search has no retained query.
+            enterModels() // A new search has no retained query.
         }
 
-    @Test fun systemBackHidesTheKeyboardBeforeClosingActiveAndPausedModelSearch() = withProviders { vm, _, _ ->
+    @Test fun systemBackHidesTheKeyboardBeforeDismissingTheModelPageDirectly() = withProviders { vm, _, _ ->
         screen.runOnIdle { vm.setDraft("parked draft") }
         val parked = capsule()
-        for (pauseSearch in listOf(false, true)) {
-            openControls()
-            val field = enterSearch("select")
-            field.performTouchInput { click(center) }
-            screen.waitUntil(15_000) { imeIsVisible() }
-            field.performTextReplacement("Nimbus")
-            if (pauseSearch) control("search-close").performTouchInput { click(center) }
-            assertTrue(imeIsVisible())
-            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-            screen.waitUntil(15_000) { !imeIsVisible() && capsule() == parked }
-            control("list").assertIsDisplayed()
-            assertImeStays(false) {
-                InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-                control("list").assertDoesNotExist()
-                control("search-field").assertDoesNotExist()
-                control("card").assertDoesNotExist()
-            }
-            editor.assertTextEquals("parked draft")
-        }
         openControls()
-        enterSearch("select")
+        val field = enterModels()
+        field.performTouchInput { click(center) }
+        screen.waitUntil(15_000) { imeIsVisible() }
+        field.performTextReplacement("Nimbus")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        screen.waitUntil(15_000) { !imeIsVisible() }
+        control("list").assertIsDisplayed()
+        field.assertTextEquals("Nimbus")
+        assertImeStays(false) {
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            control("list").assertDoesNotExist()
+            control("search-field").assertDoesNotExist()
+            control("card").assertDoesNotExist()
+        }
+        editor.assertTextEquals("parked draft")
+        assertEquals(parked, capsule())
+        openControls()
+        enterModels()
     }
 
     @OptIn(ExperimentalTestApi::class)
@@ -447,7 +346,7 @@ class ChatModelSearchTest {
 
         openControls()
         assertEditing()
-        val field = enterSearch("select")
+        val field = enterModels()
         // The first search has no filter; its first and last provider models must both be reachable.
         reveal(option(first, "batch-alpha")).assertIsSelected()
         reveal(option(first, "last"))
@@ -475,108 +374,50 @@ class ChatModelSearchTest {
         control(option(first, "batch-beta")).assertDoesNotExist()
         field.performTextReplacement("other-only")
         reveal("search-empty")
-        val querySelection = TextRange(1, 5)
-        field.performTextInputSelection(querySelection)
         control(option(second, "other-only")).assertDoesNotExist()
         assertActive(active)
-        control("search-close").performTouchInput { click(center) }
-        control("search-field").assertDoesNotExist()
-        control("search").assertIsDisplayed()
-        assertEditing()
-        reveal(option(first, "last"))
-        val resumed = enterSearch("search", "other-only")
-        assertEquals(querySelection, resumed.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-        reveal("search-empty")
-        resumed.performTextReplacement("draft stays")
+        field.performTextReplacement("draft stays")
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_ENTER)
-        resumed.assertIsFocused().assertTextEquals("draft stays")
-        send.assertIsNotEnabled()
+        field.assertIsFocused().assertTextEquals("draft stays")
+        send.assertDoesNotExist()
         assertDraftUntouched()
-        val viewport = screen.onNodeWithTag("chat-picker-viewport")
-        // Tap a blank corner outside both the model list and the composer's query hit area.
-        val offset = 2f * screen.activity.resources.displayMetrics.density
-        val corner = viewport.fetchSemanticsNode().boundsInRoot.topLeft + Offset(offset, offset)
-        assertTrue(!control("list").fetchSemanticsNode().boundsInRoot.contains(corner))
-        assertTrue(!screen.onNodeWithTag("composer-capsule").fetchSemanticsNode().boundsInRoot.contains(corner))
-        viewport.performTouchInput { click(Offset(2.dp.toPx(), 2.dp.toPx())) }
-        control("search-field").assertDoesNotExist()
-        control("list").assertDoesNotExist()
-        control("card").assertDoesNotExist()
-        assertEditing()
-        openControls()
-        enterSearch("select").performTextReplacement("Nimbus")
+        assertImeStays(true) { control("search-clear").performClick() }
+        reveal(option(first, "last"))
+        field.performTextReplacement("Nimbus")
         reveal("provider-trigger").performTouchInput { click(center) }
         val providerTag = "chat-model-provider:${second.id}"
         val providerList = hasTestTag("chat-provider-list")
         screen.onNode(hasScrollAction() and (providerList or hasAnyAncestor(providerList)))
             .performScrollToNode(hasTestTag(providerTag))
         screen.onNodeWithTag(providerTag).performTouchInput { click(center) }
-        control("search-field").assertDoesNotExist()
-        reveal(option(second, "other-only"))
+        field.assertIsFocused().assertTextEquals("Nimbus")
+        control(option(second, "other-only")).assertDoesNotExist()
         assertActive(active)
-
-        enterSearch("search", "Nimbus").performTextReplacement("batch-alpha")
+        field.performTextReplacement("batch-alpha")
         control(option(first, "batch-alpha")).assertDoesNotExist()
         reveal(option(second, "batch-alpha")).assertIsNotSelected().performTouchInput { click(center) }
         control("card").assertIsDisplayed()
         control("search-field").assertDoesNotExist()
         assertActive(RemoteModel(second.id, "batch-alpha"))
         assertEditing()
-        enterSearch("select")
+        enterModels()
         reveal(option(second, "other-only"))
-        control("search-close").performTouchInput { click(center) }
+        control("list-back").performTouchInput { click(center) }
         assertEditing()
     }
 
-    @Test fun floatingSearchKeepsItsTouchAreaAndTheLastModelCanBePicked() = withProviders { vm, first, _ ->
+    @Test fun lastModelIsReachableAboveTheSearchCapsuleAndCanBePicked() = withProviders { vm, first, _ ->
         screen.runOnIdle { vm.setDraft("model list") }
         editor.performTouchInput { click(center) }
         screen.waitUntil(15_000) { imeIsVisible() }
         openControls()
-        val field = enterSearch("select")
-        val card = control("list").fetchSemanticsNode().boundsInRoot
-        val close = control("search-close")
-        val closeBounds = assertSearchFaceMatchesSend("search-close")
-        val minimum = 48f * screen.activity.resources.displayMetrics.density - 1f
-        val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
-        assertTrue("The X must be inside the lower part of the card",
-            card.contains(closeBounds.center) && closeBounds.center.y > card.center.y)
-        assertTrue("The X must be on the trailing side",
-            if (rtl) closeBounds.center.x < card.center.x else closeBounds.center.x > card.center.x)
-        field.performTextReplacement("Zeta")
-        close.performTouchInput { click(center) }
-        control("search-field").assertDoesNotExist()
-        control("list").assertIsDisplayed()
-        val search = assertSearchFaceMatchesSend("search")
-        assertEquals("Search and close use the same left edge", search.left, closeBounds.left, 1f)
-        assertEquals("Search and close use the same top edge", search.top, closeBounds.top, 1f)
-        assertEquals("Search and close use the same right edge", search.right, closeBounds.right, 1f)
-        assertEquals("Search and close use the same bottom edge", search.bottom, closeBounds.bottom, 1f)
-        editor.assertIsFocused().assertTextEquals("model list")
-        send.assertIsEnabled()
-        reveal(option(first, "batch-beta"))
-
-        val beforeTap = screen.runOnIdle { vm.state.value }
-        enterSearch("search", "Zeta").performTextReplacement("must not send")
-        send.assertIsNotEnabled().performTouchInput { click(center) }
-        control("search-field").assertDoesNotExist()
-        control("list").assertDoesNotExist()
-        control("card").assertDoesNotExist()
-        editor.assertIsFocused().assertTextEquals("model list")
-        screen.runOnIdle {
-            assertEquals(beforeTap.current, vm.state.value.current)
-            assertEquals(beforeTap.draft, vm.state.value.draft)
-        }
-        openControls()
-        enterSearch("select")
-        control("search-close").performTouchInput { click(center) }
-        val results = control("results")
-        results.performScrollToNode(hasTestTag("chat-model-option:${first.id}/last"))
-        results.performTouchInput { swipeUp() }
-        val last = control(option(first, "last")).assertIsDisplayed()
+        enterModels()
+        val last = reveal(option(first, "last"))
+        control("results").performTouchInput { swipeUp() }
         val row = last.fetchSemanticsNode().boundsInRoot
-        assertTrue("Last option must be fully available beside the search target: $row",
-            row.height >= minimum && !row.overlaps(control("search").fetchSemanticsNode().boundsInRoot))
+        val minimum = 48f * screen.activity.resources.displayMetrics.density - 1f
+        assertTrue("Last model's tap target is fully available above the live editor", row.height >= minimum && row.bottom <= capsule().top + 1f)
+        val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
         last.performTouchInput { click(Offset(if (rtl) 4.dp.toPx() else width - 4.dp.toPx(), centerY)) }
         control("card").assertIsDisplayed()
         screen.runOnIdle { assertEquals(RemoteModel(first.id, "last"), vm.providers.catalog.value.active[Mode.Chat]) }
@@ -599,7 +440,7 @@ class ChatModelSearchTest {
             val savedDraft = screen.runOnIdle { vm.state.value.draft }
 
             openControls()
-            enterSearch("select")
+            enterModels()
             val providerRow = reveal("provider-trigger")
             providerRow.assert(SemanticsMatcher.keyNotDefined(SemanticsActions.OnLongClick))
             providerRow.performClick()
@@ -608,7 +449,7 @@ class ChatModelSearchTest {
             screen.onNode(hasScrollAction() and (providers or hasAnyAncestor(providers)))
                 .performScrollToNode(hasTestTag(providerTag))
             screen.onNodeWithTag(providerTag).performClick()
-            val search = enterSearch("search")
+            val search = control("search-field").assertIsDisplayed()
             val query = "batch-alpha"
             val querySelection = TextRange(2, 6)
             search.performTextReplacement(query)
@@ -649,7 +490,7 @@ class ChatModelSearchTest {
                 val saved = ProviderStore(screen.activity.applicationContext).catalog.value
                 assertEquals(catalog.providers.single { it.id == second.id }, saved.providers.single { it.id == second.id })
             }
-            assertImeStays(true) { control("search-close").performClick() }
+            assertImeStays(true) { control("list-back").performTouchInput { click(center) } }
             editor.assertIsFocused().assertTextEquals(draft)
             assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
             screen.onNodeWithText("draft-only.txt").assertIsDisplayed()
@@ -660,8 +501,7 @@ class ChatModelSearchTest {
         withProviders { vm, first, _ ->
             screen.runOnIdle { vm.setDraft("parked") }
             openControls()
-            enterSearch("select")
-            control("search-close").performClick()
+            enterModels()
             val row = reveal(option(first, "extra-9")).assertIsNotSelected()
             val list = control("results")
             fun scrollPosition() = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
@@ -696,14 +536,13 @@ class ChatModelSearchTest {
             panel.assertDoesNotExist()
             row.assertIsDisplayed().assertIsNotSelected()
             assertEquals(scrollBefore, scrollPosition(), .001f)
-            control("search").assertIsDisplayed()
-            control("search-field").assertDoesNotExist()
-            editor.assertTextEquals("parked")
+            control("search-field").assertIsDisplayed()
+            screen.runOnIdle { assertEquals("parked", vm.state.value.draft.text) }
             screen.runOnIdle {
                 assertEquals(RemoteModel(first.id, "batch-alpha"), vm.providers.catalog.value.active[Mode.Chat])
             }
 
-            enterSearch("search").performTouchInput { click(center) }
+            control("search-field").performTouchInput { click(center) }
             screen.waitUntil(15_000) { imeIsVisible() }
             val search = control("search-field")
             search.performTextReplacement("extra-9")
@@ -717,7 +556,7 @@ class ChatModelSearchTest {
         }
 
     @OptIn(ExperimentalTestApi::class)
-    @Test fun returningToTheDraftRestoresItsKeyboardWithoutRollingBackNewConversationMessages() =
+    @Test fun returningToModelSearchRestoresItsKeyboardWithoutRollingBackNewConversationMessages() =
         withProviders { vm, first, _ ->
             val previous = screen.runOnIdle { vm.state.value.current.id }
             val conversation = screen.runOnIdle { vm.newConversation(); vm.state.value.current.id }
@@ -729,9 +568,8 @@ class ChatModelSearchTest {
                 editor.performTextReplacement(draft)
                 editor.performTextInputSelection(selection)
                 openControls()
-                enterSearch("select")
-                control("search-close").performClick()
-                editor.assertIsFocused()
+                val search = enterModels()
+                search.assertIsFocused()
                 reveal(option(first, "batch-beta")).performTouchInput { longClick(center) }
                 control("editor").assertIsDisplayed()
                 screen.waitUntil(15_000) { !imeIsVisible() }
@@ -747,9 +585,11 @@ class ChatModelSearchTest {
                 InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
                 control("editor").assertDoesNotExist()
                 screen.waitUntil(15_000) { imeIsVisible() }
+                search.assertIsFocused()
+                control("list").assertIsDisplayed()
+                assertImeStays(true) { control("list-back").performTouchInput { click(center) } }
                 editor.assertIsFocused().assertTextEquals(draft)
                 assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-                control("search").assertIsDisplayed()
                 screen.runOnIdle {
                     assertEquals(conversation, vm.state.value.current.id)
                     assertEquals(messages, vm.state.value.current.messages)

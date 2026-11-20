@@ -54,10 +54,13 @@ internal fun ChatComposerLayers(
         // The selector's own Box applies vertical safeDrawing padding. Its origin is the
         // workspace's left edge and its first unconsumed safe row, including in split screen.
         val capsule = if (trackPickerAnchor()) bar.capsuleBounds() else null
-        val bounds = capsule?.translate(IntOffset(barLeft, barTop - safe.exclude(consumed).getTop(this)))
-        val actionInsets = capsule?.let { bar.actionInsets(it, layoutDirection) }
+        val pickerOffset = IntOffset(barLeft, barTop - safe.exclude(consumed).getTop(this))
+        val bounds = capsule?.translate(pickerOffset)
+        val label = capsule?.let { bar.pickerModelLabel()?.translate(pickerOffset) }
+        val modelTravelX = if (capsule != null) bar.pickerModelTravelX() else 0
         val overlay = subcompose(WorkspaceLayer.Picker) {
-            CompositionLocalProvider(LocalPickerComposerBounds provides bounds, LocalComposerActionInsets provides actionInsets,
+            CompositionLocalProvider(LocalPickerComposerBounds provides bounds, LocalPickerModelLabelBounds provides label,
+                LocalPickerModelTravelX provides modelTravelX,
                 content = picker)
         }.singleOrNull()?.measure(limits)
         layout(limits.maxWidth, page.height) {
@@ -77,6 +80,16 @@ internal fun ToolsPageOverlay(
     state: ToolsPageState, draft: Draft, composerHeight: Dp,
     onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
 ) {
+    ChatSlidingPage({ state.progress }, state.interactive, "chat-tools-surface") {
+        Box(Modifier.fillMaxSize().padding(bottom = composerHeight)) {
+            ChatToolsPage(draft, state.query.text, onSearch, onImageTool)
+        }
+    }
+}
+
+/** Both tool-style pages sit above the chat but below the single live composer. */
+@Composable
+internal fun ChatSlidingPage(progress: () -> Float, interactive: Boolean, tag: String, content: @Composable () -> Unit) {
     val shield = Modifier.fillMaxSize().pointerInput(Unit) {
         awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
     }
@@ -85,13 +98,14 @@ internal fun ToolsPageOverlay(
         Spacer(shield)
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)).clipToBounds()) {
             Box(Modifier.fillMaxSize().graphicsLayer {
-                translationY = (state.progress - 1f) * size.height
-                alpha = state.progress
-            }.testTag("chat-tools-surface").background(MaterialTheme.colorScheme.background).padding(bottom = composerHeight)
-                .behindToolsPage(!state.interactive)) {
-                ChatToolsPage(draft, state.query.text, onSearch, onImageTool)
+                val travel = progress()
+                translationY = (travel - 1f) * size.height
+                alpha = travel
+            }.testTag(tag).background(MaterialTheme.colorScheme.background)
+                .behindToolsPage(!interactive)) {
+                content()
             }
         }
-        if (!state.interactive) Spacer(shield)
+        if (!interactive) Spacer(shield)
     }
 }

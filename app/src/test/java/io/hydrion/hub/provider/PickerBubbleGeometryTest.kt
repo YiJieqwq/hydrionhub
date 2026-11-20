@@ -2,6 +2,7 @@ package io.hydrion.hub.provider
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import org.junit.Assert.assertEquals
@@ -34,7 +35,59 @@ class PickerBubbleGeometryTest {
         assertEquals(list, at(PickerBubbleFace.List.weights))
     }
 
-    @Test fun directModelExitHasNoEffortWaypoint() {
+    @Test fun modelPageUsesTheWholeToolbarsPhysicalTravelAtEveryQuarterFrameInBothDirections() {
+        val entrance = BrowseEffortLeg(0f, 1f, 1f, 0f, 1f, 0f)
+        for (dir in listOf(-1, 1)) {
+            for (quarter in 0..4) {
+                val p = quarter / 4f
+                val dx = dir * 20 * quarter
+                val y = (quarter * 9).toFloat()  // IME moves independently of the inward travel.
+                val inputLabel = source.translate(0f, -y)
+                val steadyCard = card.translate(0f, -y)
+                val frame = translatedPickerBounds(inputLabel, steadyCard, list, Offset(entrance.coverage(p), 0f), dx)
+                assertEquals(card.left + (source.left - card.left) * p + dx, frame.left, 0f)
+                assertEquals(card.right + (source.right - card.right) * p + dx, frame.right, 0f)
+                assertEquals(card.top + (source.top - card.top) * p - y, frame.top, 0f)
+                assertEquals(card.bottom + (source.bottom - card.bottom) * p - y, frame.bottom, 0f)
+                assertEquals(1f - p, entrance.alpha(p), 0f)
+                if (p == .5f) {
+                    val mistaken = pickerBubbleBounds(inputLabel.translate(dx.toFloat(), 0f), steadyCard, list, Offset(.5f, 0f))
+                    assertEquals(dx * .5f, frame.left - mistaken.left, 0f)
+                }
+            }
+        }
+    }
+
+    @Test fun reversingAnInterruptedHandoffKeepsItsBoundsAndOpacityWithTheSamePageClock() {
+        val forward = BrowseEffortLeg(0f, 1f, .75f, 0f, 1f, 0f)
+        val p = .5f
+        val back = BrowseEffortLeg(p, 0f, forward.coverage(p), 1f, forward.alpha(p), 1f)
+        val dx = -52
+        fun at(leg: BrowseEffortLeg, progress: Float) =
+            translatedPickerBounds(source, card, list, Offset(leg.coverage(progress), 0f), dx)
+        assertEquals(at(forward, p), at(back, p))
+        assertEquals(forward.alpha(p), back.alpha(p), 0f)
+        assertTrue(back.coverage(.25f) > back.coverage(.5f))
+        assertEquals(1f, back.alpha(0f), 0f)
+        assertEquals(card.translate(dx.toFloat(), 0f), at(back, 0f))
+        val interrupted = BrowseEffortLeg(.25f, 1f, back.coverage(.25f), 0f, back.alpha(.25f), 0f)
+        assertEquals(at(back, .25f), at(interrupted, .25f))
+        assertEquals(0f, interrupted.alpha(1f), 0f)
+    }
+
+    @Test fun independentCapabilityMenuAndEffortAnchorsInterpolateWithoutAFixedCorner() {
+        val fullList = Rect(12f, 94f, 400f, 618f)
+        for (i in 0..16) {
+            val fraction = i / 16f
+            val frame = pickerBubbleBounds(source, card, fullList, Offset(1f - fraction, fraction))
+            assertEquals(card.left + (fullList.left - card.left) * fraction, frame.left, 0f)
+            assertEquals(card.right + (fullList.right - card.right) * fraction, frame.right, 0f)
+            assertEquals(card.top + (fullList.top - card.top) * fraction, frame.top, 0f)
+            assertEquals(card.bottom + (fullList.bottom - card.bottom) * fraction, frame.bottom, 0f)
+        }
+    }
+
+    @Test fun directCapabilityMenuExitHasNoEffortWaypoint() {
         val middle = at(Offset(0f, .5f))
         assertEquals(Rect(186f, 530f, 351f, 712.5f), middle)
         assertTrue(middle.left > list.left && middle.right < list.right)
@@ -69,6 +122,8 @@ class PickerBubbleGeometryTest {
         assertEquals(Rect(233.5f, 732f, 233.5f, 732f), fallback)
         assertEquals(fallback, pickerBubbleLabel(null, button, composer, viewport))
         assertEquals(Rect(296f, 760f, 296f, 760f), pickerBubbleLabel(null, null, composer, viewport))
+        assertEquals(Rect(104f, 760f, 104f, 760f),
+            pickerBubbleLabel(null, null, composer, viewport, LayoutDirection.Rtl))
         assertEquals(Rect.Zero, pickerBubbleLabel(null, button, composer, IntSize.Zero))
     }
 }

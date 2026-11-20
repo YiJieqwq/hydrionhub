@@ -35,10 +35,13 @@ import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.provider.ChatModelPicker
+import io.hydrion.hub.provider.ChatModelBrowsePage
 import io.hydrion.hub.provider.ChatModelPickerBack
 import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.provider.ChatPickerEasing
 import io.hydrion.hub.provider.ConfigureSheet
+import io.hydrion.hub.provider.ChatTriggerLabel
+import io.hydrion.hub.provider.chatTriggerLabel
 import io.hydrion.hub.provider.chatSpeedControls
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.provider.ProviderSettings
@@ -92,6 +95,7 @@ private fun Workspace(vm: HubViewModel) {
     val view = LocalView.current
     var returnHeight by remember { mutableIntStateOf(0) }
     val returning = editVisit != null && !editTransition.targetState
+    val modelBrowse = rememberModelBrowseMotion(chatPicker, returning)
     val sourceAvailable = editVisit?.conversationId == current.id
     val returnMotion = rememberModelEditorReturnMotion(
         returning = returning,
@@ -165,7 +169,7 @@ private fun Workspace(vm: HubViewModel) {
     } else {
         WorkspaceDrawer(
             mode = current.mode, drawer = drawer, onClose = ::closeDrawer, workspaceCovered = blockEditorFocus,
-            gesturesEnabled = !toolsActive,
+            gesturesEnabled = !toolsActive && !modelBrowse.active,
             drawerContent = { width, visible ->
                 ConversationDrawer(
                     width = width,
@@ -193,19 +197,11 @@ private fun Workspace(vm: HubViewModel) {
             ) {
                 ChatComposerLayers(
                     modifier = Modifier.fillMaxSize(),
-                    trackPickerAnchor = { !toolsActive && editVisit == null && chatPicker.page != null },
+                    trackPickerAnchor = { !toolsActive && editVisit == null && (chatPicker.page != null || modelBrowse.active) },
                     picker = {
                         if (current.mode == Mode.Chat && !toolsActive) {
                             ChatModelPicker(providers, chatPicker, suspended = editVisit != null, hideForReturn = returning,
-                                onEditModel = edit@{ route, browse ->
-                                    val origin = vm.state.value
-                                    if (editVisit != null || origin.current.id != current.id) return@edit
-                                    val visibleBottom = view.height - ime.getBottom(density)
-                                    val dockTravel = (visibleBottom - (chatPicker.composerBounds?.top ?: visibleBottom)).coerceAtLeast(0)
-                                    val editor = composerBridge.captureAndDismiss() ?: return@edit
-                                    editVisit = ModelEditVisit(route, current.id, origin.draft, browse, editor, dockTravel.toFloat())
-                                    editTransition.targetState = true
-                                }, modifier = Modifier.fillMaxSize())
+                                modelBrowseProgress = { modelBrowse.progress }, modifier = Modifier.fillMaxSize())
                         }
                     },
                     composer = {
@@ -214,8 +210,8 @@ private fun Workspace(vm: HubViewModel) {
                             key(current.id) {
                                 errors[current.id]?.let { detail -> ComposerError(detail) { vm.clearError(current.id) } }
                                 val chipLabel = if (current.mode == Mode.Chat)
-                                    listOfNotNull(selection.label, selection.parameters["effort"]).joinToString(" ")
-                                else selection.label
+                                    catalog.chatTriggerLabel(selectedEntry, selection.label)
+                                else ChatTriggerLabel(selection.label)
                                 HubComposer(vm, state, chipLabel, selection.available,
                                     fast = remember(selectedEntry, selection.parameters) {
                                         selectedEntry?.let { (model, provider) ->
@@ -225,6 +221,7 @@ private fun Workspace(vm: HubViewModel) {
                                     chatPicker = chatPicker.takeIf { current.mode == Mode.Chat },
                                     modelEditorBridge = composerBridge,
                                     chatTools = toolsPage,
+                                    modelBrowseProgress = { modelBrowse.progress },
                                     forceReturnFolded = returnMotion.holdCollapsed,
                                     allowImeReturn = !blockEditorFocus && !drawerOpening && !configure && !finding && renameId == null && deleteId == null,
                                     toolsAvailable = selectedEntry?.second?.chatProtocol() == null,
@@ -239,7 +236,7 @@ private fun Workspace(vm: HubViewModel) {
                     },
                 ) { composerHeight ->
                     Scaffold(
-                        modifier = Modifier.fillMaxSize().behindToolsPage(toolsActive),
+                        modifier = Modifier.fillMaxSize().behindToolsPage(toolsActive || modelBrowse.active),
                         contentWindowInsets = WindowInsets(0, 0, 0, 0),
                         topBar = {
                             Column(chatReveal.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
@@ -276,6 +273,22 @@ private fun Workspace(vm: HubViewModel) {
                     }
                     if (toolsPage != null && toolsActive) {
                         ToolsPageOverlay(toolsPage, state.draft, composerHeight, vm::setSearch, vm::setImageTool)
+                    }
+                    modelBrowse.page?.let { browsePage ->
+                        ChatSlidingPage({ modelBrowse.progress }, modelBrowse.interactive && editVisit == null,
+                            "chat-model-browse-surface") {
+                            ChatModelBrowsePage(providers, chatPicker, browsePage, suspended = editVisit != null,
+                                hideForReturn = returning, composerPadding = composerHeight,
+                                onEditModel = edit@{ route, browse ->
+                                    val origin = vm.state.value
+                                    if (editVisit != null || origin.current.id != current.id) return@edit
+                                    val visibleBottom = view.height - ime.getBottom(density)
+                                    val dockTravel = (visibleBottom - (chatPicker.composerBounds?.top ?: visibleBottom)).coerceAtLeast(0)
+                                    val editor = composerBridge.captureAndDismiss() ?: return@edit
+                                    editVisit = ModelEditVisit(route, current.id, origin.draft, browse, editor, dockTravel.toFloat())
+                                    editTransition.targetState = true
+                                })
+                        }
                     }
                 }
             }

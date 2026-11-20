@@ -39,7 +39,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import io.hydrion.hub.R
 import io.hydrion.hub.model.Mode
-import io.hydrion.hub.model.RemoteModel
 import kotlin.math.roundToInt
 
 internal class ChatModelPickerState {
@@ -53,6 +52,7 @@ internal class ChatModelPickerState {
     var optionKey by mutableStateOf("")
         private set
     var composerBounds by mutableStateOf<IntRect?>(null)
+    var modelRowFraction by mutableFloatStateOf(0f)
     var editorBounds by mutableStateOf<IntRect?>(null)
     var editorTextBounds by mutableStateOf<IntRect?>(null)
     var triggerBounds by mutableStateOf<IntRect?>(null)
@@ -89,9 +89,6 @@ internal class ChatModelPickerState {
         pendingBrowseRestore = null
         if (next == null || next == Page.Controls || next == Page.Options) {
             searchQuery = TextFieldValue()
-        } else if (page == Page.Search && next != Page.Search && searchQuery.composition != null) {
-            // Keep the query and selection while browsing; composition belongs to the old IME session.
-            searchQuery = searchQuery.copy(composition = null)
         }
         if (next != Page.Search) pendingSearchScroll = null
         page = next
@@ -101,68 +98,68 @@ internal class ChatModelPickerState {
         if (startSearching && page != Page.Controls) return
         val changedProvider = providerId != browsedProviderId
         browsedProviderId = providerId
-        show(if (startSearching) Page.Search else Page.Models)
+        show(Page.Search)
         if (changedProvider && searchQuery.text.isNotBlank()) pendingSearchScroll = SearchScroll.Filter
     }
-    fun search() {
-        if (page == Page.Models) show(Page.Search)
+    fun clearSearchQuery() {
+        if (!modelListNavigation) return
+        searchQuery = TextFieldValue()
+        pendingSearchScroll = null
     }
     fun updateSearchQuery(value: TextFieldValue) {
-        if (page != Page.Search) return
+        if (!modelListNavigation) return
+        // A caret change does not navigate away from the provider choices.
+        if (value.text != searchQuery.text && page != Page.Search) show(Page.Search)
         val term = value.text.trim()
         if (term != searchQuery.text.trim()) pendingSearchScroll = if (term.isEmpty()) null else SearchScroll.Filter
         searchQuery = value
     }
     fun submitSearch() {
-        if (page == Page.Search) pendingSearchScroll = SearchScroll.Submit
+        if (!modelListNavigation) return
+        if (page != Page.Search) show(Page.Search)
+        pendingSearchScroll = SearchScroll.Submit
     }
     fun consumeSearchScroll() { pendingSearchScroll = null }
     fun providers() { show(Page.Providers) }
     fun options(cap: Capability) { optionKey = cap.key; show(Page.Options) }
     fun dismiss() { show(null) }
     fun systemBack() {
-        if (modelListNavigation) dismiss() else back()
-    }
-    fun back() {
-        show(when (page) {
-            Page.Providers, Page.Search -> Page.Models
-            Page.Models, Page.Options -> Page.Controls
-            else -> null
-        })
+        if (page == Page.Options) open() else dismiss()
     }
 }
 
 @Composable
 internal fun ChatModelPicker(
     store: ProviderStore, picker: ChatModelPickerState,
-    suspended: Boolean, hideForReturn: Boolean, onEditModel: (RemoteModel, PickerBrowseSnapshot) -> Unit,
+    suspended: Boolean, hideForReturn: Boolean, modelBrowseProgress: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     val page = picker.page
     val face = when (page) {
-        null -> PickerBubbleFace.Label
         ChatModelPickerState.Page.Controls -> PickerBubbleFace.Effort
-        else -> PickerBubbleFace.List
+        ChatModelPickerState.Page.Options -> PickerBubbleFace.List
+        else -> PickerBubbleFace.Label
     }
-    val modelList = page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Search
+    val showing = face != PickerBubbleFace.Label
     val paused = suspended || hideForReturn
+    val browseTravel by rememberUpdatedState(modelBrowseProgress)
+    val browsePageInFront by remember { derivedStateOf { browseTravel() > 0f } }
     val catalog by store.catalog.collectAsState()
-    val models = remember(catalog) { catalog.entries(Mode.Chat) }
     val entry = catalog.selectedEntry(Mode.Chat)
     val select = stringResource(R.string.chat_controls_select_model)
     val close = stringResource(R.string.chat_picker_close)
-    if (page != null && !paused) ChatModelPickerBack(onBack = picker::systemBack, imeFirst = picker.modelListNavigation)
+    if (showing && !paused) ChatModelPickerBack(onBack = picker::systemBack, imeFirst = browsePageInFront)
     val colors = MaterialTheme.colorScheme
     val dark = colors.onSurface.luminance() > colors.surface.luminance()
 
-    // Controls and search keep their original editor hit area. Other pages pass through only the text row.
-    val accessibility = if (paused) Modifier.clearAndSetSemantics {} else Modifier
+    // The reasoning card allows editing beneath it; Options only passes touches to the text row.
+    val accessibility = if (paused || browsePageInFront) Modifier.clearAndSetSemantics {} else Modifier
     var origin by remember { mutableStateOf<IntOffset?>(null) }
     Box(modifier.then(accessibility).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))) {
         // Measure inside the safe insets even while the picker is idle, before its first frame.
         Spacer(Modifier.matchParentSize().onGloballyPositioned { origin = it.positionInWindow().round() })
-        if (page != null && !paused) {
-            val editThrough = page == ChatModelPickerState.Page.Controls || page == ChatModelPickerState.Page.Search
+        if (showing && !paused && !browsePageInFront) {
+            val editThrough = page == ChatModelPickerState.Page.Controls
             PickerDismissLayer(
                 picker, close, Modifier.matchParentSize(),
                 fieldBounds = { origin?.let { (if (editThrough) picker.editorBounds else picker.editorTextBounds)?.translate(-it) } },
@@ -171,22 +168,17 @@ internal fun ChatModelPicker(
         }
         PickerBubbleLayout(
             picker = picker, face = face, origin = origin, hideForReturn = hideForReturn,
-            freezeListSize = suspended && modelList,
-            listColor = if (modelList || page == null) colors.surfaceContainerHigh else colors.surface,
+            modelBrowseProgress = modelBrowseProgress, browsingModels = picker.modelListNavigation,
+            listColor = colors.surface,
             effortColor = if (dark) Color(0xFF2A2B2E) else Color(0xFFF8F8F8),
             effortBorder = Color(0xFF3E3E3E),
             modifier = Modifier.fillMaxSize().testTag("chat-picker-viewport"),
             paneTitle = select,
         ) {
             if (entry == null) {
-                val restore = picker.pendingBrowseRestore
-                LaunchedEffect(restore, hideForReturn) {
-                    if (restore != null && hideForReturn) picker.consumeBrowseRestore(restore)
-                }
                 Row {
-                    PickerBackButton(stringResource(if (modelList) R.string.chat_picker_back_to_controls
-                        else R.string.chat_picker_back_to_message), if (modelList) picker::open else picker::dismiss,
-                        Modifier.testTag(if (modelList) "chat-model-list-back" else "chat-effort-back"))
+                    PickerBackButton(stringResource(R.string.chat_picker_back_to_message), picker::dismiss,
+                        Modifier.testTag("chat-effort-back"))
                     Text(stringResource(R.string.chat_picker_no_models), Modifier.padding(12.dp),
                         style = MaterialTheme.typography.bodyMedium)
                 }
@@ -195,34 +187,6 @@ internal fun ChatModelPicker(
                 val values = catalog.parameters(model, provider)
                 val cap = model.configureCapabilities().find { it.key == picker.optionKey }
                 when {
-                    modelList || page == ChatModelPickerState.Page.Providers -> {
-                        val providers = remember(catalog) { catalog.providers.filter { it.enabled && it.mode == Mode.Chat } }
-                        val browsing = providers.find { it.id == picker.browsedProviderId } ?: provider
-                        if (!paused && picker.pendingBrowseRestore == null &&
-                            page == ChatModelPickerState.Page.Search && browsing.id != picker.browsedProviderId) {
-                            LaunchedEffect(browsing.id) { picker.models(browsing.id) }
-                        }
-                        if (page == ChatModelPickerState.Page.Providers) {
-                            PickerList(stringResource(R.string.chat_picker_provider), Modifier.testTag("chat-provider-list"),
-                                selectedIndex = providers.indexOf(browsing)) {
-                                items(providers, key = { it.id }) { candidate ->
-                                    val label = if (providers.count { it.name == candidate.name } > 1)
-                                        "${candidate.name} · ${candidate.id}" else candidate.name
-                                    PickerOption(label, candidate.id == browsing.id,
-                                        Modifier.testTag("chat-model-provider:${candidate.id}")) {
-                                        picker.models(candidate.id)
-                                    }
-                                }
-                            }
-                        } else {
-                            ProviderModelsList(browsing, models.filter { it.second.id == browsing.id }.map { it.first },
-                                entry.route, picker, dark, paused, hideForReturn, onEditModel = onEditModel, onPick = { next ->
-                                    val route = (next to browsing).route
-                                    if (route != entry.route) store.configure(Mode.Chat, route, catalog.parameters(next, browsing))
-                                    picker.open()
-                                })
-                        }
-                    }
                     page == ChatModelPickerState.Page.Options && cap != null -> {
                         PickerList(chatCapabilityLabel(cap), selectedIndex = cap.choices.indexOf(values[cap.key])) {
                             items(cap.choices, key = { it }) { value ->
@@ -263,6 +227,7 @@ internal val ChatPickerEasing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
 internal data class PickerSpace(val left: Int, val edgeY: Int, val width: Int, val maxHeight: Int, val above: Boolean)
 
 private val PickerGap = 11.5.dp
+private val EffortLabelGap = 6.dp
 private val PickerMargin = 12.dp
 // A visible model option and the independent search button can share this height.
 private val PickerMinListHeight = 104.dp
@@ -274,22 +239,30 @@ internal fun Density.pickerComposerMaxHeight(available: Int, safeTop: Int, edito
 
 internal fun Density.pickerSpace(
     composer: IntRect, viewport: IntSize, direction: LayoutDirection, reasoning: Boolean = false,
+    modelLabel: IntRect? = null, modelRowFraction: Float = 1f,
 ): PickerSpace {
     val sideMargin = minOf(PickerMargin.roundToPx(), viewport.width / 2)
     val preferredWidth = if (reasoning) 288.dp.roundToPx()
         else (viewport.width * 0.6f).roundToInt().coerceIn(240.dp.roundToPx(), 248.dp.roundToPx())
     val width = minOf(preferredWidth, viewport.width - 2 * sideMargin)
     val endAligned = if (direction == LayoutDirection.Ltr) composer.right - width else composer.left
-    val left = endAligned.coerceIn(sideMargin, viewport.width - sideMargin - width)
-
-    val above = composer.top.coerceIn(0, viewport.height)
+    val label = if (reasoning) modelLabel?.intersect(composer)
+        ?.intersect(IntRect(0, 0, viewport.width, viewport.height))?.takeUnless { it.isEmpty } else null
+    val fraction = if (label == null) 0f else modelRowFraction.coerceIn(0f, 1f)
+    // The row reveals from the capsule. On its final folded frame the label is absent
+    // and the selector is already at the same end-aligned, above-capsule fallback.
+    val desiredLeft = if (label == null) endAligned.toFloat() else
+        endAligned + (label.center.x - width / 2 - endAligned) * fraction
+    val left = desiredLeft.roundToInt().coerceIn(sideMargin, viewport.width - sideMargin - width)
+    val anchorTop = composer.top + ((label?.top ?: composer.top) - composer.top) * fraction
+    val above = anchorTop.roundToInt().coerceIn(0, viewport.height)
     val below = viewport.height - composer.bottom.coerceIn(0, viewport.height)
     val minimum = PickerMinListHeight.roundToPx()
-    val gap = PickerGap.roundToPx()
+    val gap = (PickerGap.toPx() + (EffortLabelGap.toPx() - PickerGap.toPx()) * fraction).roundToInt()
     val margin = PickerMargin.roundToPx()
     val placeAbove = above >= minimum + gap + margin || above >= below
     val room = if (placeAbove) above else below
-    // Give up decorative space first in split screen. The card never borrows editor pixels.
+    // Give up decorative space first in split screen while keeping the anchor reachable.
     val spare = (room - minimum).coerceAtLeast(0)
     val actualGap = minOf(gap, spare)
     val maxHeight = room - actualGap - minOf(margin, spare - actualGap)
