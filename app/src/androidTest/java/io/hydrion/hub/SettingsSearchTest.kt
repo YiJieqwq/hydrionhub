@@ -5,8 +5,13 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.hydrion.hub.model.HubViewModel
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,6 +46,43 @@ class SettingsSearchTest {
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.EditableText, AnnotatedString("")))
         screen.onNodeWithContentDescription("退出搜索").assertDoesNotExist()
         screen.onNode(row("聊天模型")).assertExists()
+    }
+
+    @Test fun settingsHeaderCirclesAlignWithChatCapsuleEdgesAndRetainTouchTargets() {
+        assumeTrue(screen.activity.resources.configuration.fontScale == 1f)
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        val conversationId = screen.runOnIdle {
+            vm.newConversation()
+            vm.setDraft("顶栏位置")
+            vm.send("Hydrion")
+            vm.stop()
+            vm.state.value.current.id
+        }
+        try {
+            fun capsule(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true).assertIsDisplayed()
+            val menu = capsule("header-drawer-capsule").fetchSemanticsNode().boundsInWindow
+            val actions = capsule("header-actions-capsule").fetchSemanticsNode().boundsInWindow
+            openSettings()
+            for (label in listOf("返回", "关于应用")) {
+                screen.onNode(hasContentDescription(label) and hasClickAction()).assertIsDisplayed()
+                    .assertTouchWidthIsEqualTo(48.dp).assertTouchHeightIsEqualTo(48.dp)
+            }
+            fun circle(tag: String) = capsule(tag).assertWidthIsEqualTo(44.dp).assertHeightIsEqualTo(44.dp)
+                .fetchSemanticsNode().boundsInWindow
+            val back = circle("settings-back-circle")
+            val info = circle("settings-info-circle")
+            val menuIsLeft = menu.center.x < actions.center.x
+            assertEquals("menu outer edge", if (menuIsLeft) menu.left else menu.right,
+                if (menuIsLeft) back.left else back.right, 1f)
+            assertEquals("actions outer edge", if (menuIsLeft) actions.right else actions.left,
+                if (menuIsLeft) info.right else info.left, 1f)
+            for ((expected, actual) in listOf(menu to back, actions to info)) {
+                assertEquals("top", expected.top, actual.top, 1f)
+                assertEquals("bottom", expected.bottom, actual.bottom, 1f)
+            }
+        } finally {
+            screen.runOnIdle { vm.deleteConversation(conversationId) }
+        }
     }
 
     @Test fun filtersChineseAndEnglishAndExitsWithClearOrBack() {

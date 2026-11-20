@@ -29,12 +29,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.capsuleEdge
 
@@ -110,13 +112,33 @@ internal fun SettingsHome(
     }
 }
 
+private val SettingsButtonSize = 48.dp
+
 @Composable
 private fun SettingsHeader(onBack: () -> Unit, onInfo: () -> Unit) {
-    Box(Modifier.fillMaxWidth().heightIn(min = 62.dp).padding(horizontal = 14.dp, vertical = 5.dp)) {
-        RoundButton(Icons.AutoMirrored.Outlined.ArrowBack, "返回", onBack, Modifier.align(Alignment.CenterStart))
-        Text("设置", Modifier.align(Alignment.Center), style = MaterialTheme.typography.titleLarge,
+    val hitSlop = (SettingsButtonSize - ChatHeaderLayout.ActionSize) / 2
+    Box(Modifier.fillMaxWidth().heightIn(min = 62.dp)) {
+        Text("设置", Modifier.align(Alignment.Center).padding(horizontal = 14.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold, color = Color.White)
-        RoundButton(Icons.Outlined.Info, "关于应用", onInfo, Modifier.align(Alignment.CenterEnd))
+        Row(Modifier.align(Alignment.TopCenter).widthIn(max = ChatHeaderLayout.MaxWidth).fillMaxWidth()
+            .padding(start = ChatHeaderLayout.SidePadding - hitSlop, top = ChatHeaderLayout.TopPadding - hitSlop,
+                end = ChatHeaderLayout.SidePadding - hitSlop),
+            horizontalArrangement = Arrangement.SpaceBetween) {
+            HeaderButton(Icons.AutoMirrored.Outlined.ArrowBack, "返回", onBack, "settings-back-circle")
+            HeaderButton(Icons.Outlined.Info, "关于应用", onInfo, "settings-info-circle")
+        }
+    }
+}
+
+@Composable
+private fun HeaderButton(icon: ImageVector, description: String, onClick: () -> Unit, circleTag: String) {
+    IconButton(onClick = onClick, modifier = Modifier.size(SettingsButtonSize)) {
+        Box(Modifier.size(ChatHeaderLayout.ActionSize).testTag(circleTag).capsuleEdge().clip(CircleShape)
+            .background(HubStyle.Raised),
+            contentAlignment = Alignment.Center) {
+            Icon(icon, description, Modifier.size(22.dp), tint = Color.White)
+        }
     }
 }
 

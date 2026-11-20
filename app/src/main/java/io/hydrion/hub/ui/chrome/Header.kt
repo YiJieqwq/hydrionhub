@@ -30,6 +30,13 @@ import io.hydrion.hub.R
 import io.hydrion.hub.ui.theme.capsuleEdge
 import io.hydrion.hub.model.Mode
 
+internal object ChatHeaderLayout {
+    val MaxWidth = 900.dp
+    val SidePadding = 14.dp
+    val TopPadding = 12.dp
+    val ActionSize = 44.dp
+}
+
 @Composable
 internal fun Header(
     mode: Mode, locked: Boolean, title: String, pinned: Boolean, contextUsage: ContextUsage,
@@ -38,7 +45,8 @@ internal fun Header(
 ) {
     BoxWithConstraints(
         Modifier.fillMaxWidth().testTag("floating-header")
-            .padding(start = 14.dp, top = 12.dp, end = 14.dp, bottom = 6.dp),
+            .padding(start = ChatHeaderLayout.SidePadding, top = ChatHeaderLayout.TopPadding,
+                end = ChatHeaderLayout.SidePadding, bottom = 6.dp),
         contentAlignment = Alignment.CenterStart
     ) {
         if (locked) {
@@ -63,7 +71,7 @@ internal fun Header(
 private fun DrawerButton(onClick: () -> Unit) {
     Surface(modifier = Modifier.testTag("header-drawer-capsule").capsuleEdge(), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = MaterialTheme.colorScheme.onSurface) {
-        IconButton(onClick = onClick, modifier = Modifier.size(44.dp)) {
+        IconButton(onClick = onClick, modifier = Modifier.size(ChatHeaderLayout.ActionSize)) {
             Icon(
                 painterResource(R.drawable.ic_sidebar_menu),
                 contentDescription = "打开侧栏", modifier = Modifier.size(24.dp)
@@ -138,11 +146,11 @@ private fun ConversationActions(
     Surface(modifier = Modifier.testTag("header-actions-capsule").capsuleEdge(), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = MaterialTheme.colorScheme.onSurface) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (!compact) IconButton(onClick = onNew, modifier = Modifier.size(44.dp)) {
+            if (!compact) IconButton(onClick = onNew, modifier = Modifier.size(ChatHeaderLayout.ActionSize)) {
                 Icon(painterResource(R.drawable.ic_compose), "新建会话", Modifier.size(22.dp))
             }
             Box {
-                IconButton(onClick = { more = true }, modifier = Modifier.size(40.dp, 44.dp)) {
+                IconButton(onClick = { more = true }, modifier = Modifier.size(40.dp, ChatHeaderLayout.ActionSize)) {
                     Icon(Icons.Outlined.MoreVert, "更多会话操作", Modifier.size(23.dp))
                 }
                 DropdownMenu(expanded = more, onDismissRequest = { more = false }) {

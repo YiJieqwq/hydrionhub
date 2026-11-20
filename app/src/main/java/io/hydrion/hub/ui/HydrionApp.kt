@@ -31,6 +31,7 @@ import io.hydrion.hub.model.Mode
 import io.hydrion.hub.provider.ConfigureSheet
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.provider.ProviderSettings
+import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 import io.hydrion.hub.ui.chrome.Header
 import io.hydrion.hub.ui.chrome.contextUsage
 import io.hydrion.hub.ui.composer.HubComposer
@@ -128,7 +129,7 @@ private fun Workspace(vm: HubViewModel) {
                 contentAlignment = Alignment.TopCenter
             ) {
                 Scaffold(
-                    modifier = Modifier.widthIn(max = 900.dp).fillMaxSize(),
+                    modifier = Modifier.widthIn(max = ChatHeaderLayout.MaxWidth).fillMaxSize(),
                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     topBar = {
                         Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
