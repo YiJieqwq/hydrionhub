@@ -1,0 +1,25 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <!-- The central 48 units form the visible icon at rest. -->
+    <group android:translateX="12" android:translateY="12">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M15,15.5 H15.8 Q17.3,15.5 17.3,17
+                V22.9 Q17.3,23.6 18,23.6 H26 Q26.7,23.6 26.7,22.9
+                V17 Q26.7,15.5 28.2,15.5 H29 Q30.5,15.5 30.5,17
+                V34 Q30.5,35.5 29,35.5 H28.2 Q26.7,35.5 26.7,34
+                V27.5 Q26.7,26.8 26,26.8 H18 Q17.3,26.8 17.3,27.5
+                V34 Q17.3,35.5 15.8,35.5 H15 Q13.5,35.5 13.5,34
+                V17 Q13.5,15.5 15,15.5 Z" />
+        <path
+            android:fillColor="#78A8FF"
+            android:pathData="M36,10.4 Q37,10.4 37,11.4 V13.5
+                H39.1 Q40.1,13.5 40.1,14.5 Q40.1,15.5 39.1,15.5
+                H37 V17.6 Q37,18.6 36,18.6 Q35,18.6 35,17.6
+                V15.5 H32.9 Q31.9,15.5 31.9,14.5 Q31.9,13.5 32.9,13.5
+                H35 V11.4 Q35,10.4 36,10.4 Z" />
+    </group>
+</vector>
