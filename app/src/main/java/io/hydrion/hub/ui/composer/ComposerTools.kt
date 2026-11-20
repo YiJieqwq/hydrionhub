@@ -1,7 +1,6 @@
 package io.hydrion.hub.ui.composer
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -98,7 +97,7 @@ internal fun ChatToolsPage(
     val filtered = rememberScrollState()
     val term = query.trim()
     LaunchedEffect(term) { if (term.isNotEmpty()) filtered.scrollTo(0) }
-    Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).testTag("chat-tools-page")
+    Column(modifier.fillMaxSize().testTag("chat-tools-page")
         .verticalScroll(if (term.isEmpty()) browsing else filtered).padding(horizontal = 16.dp, vertical = 12.dp)) {
         ChatToolGroups(draft, term, onSearch, onImageTool)
     }

@@ -1,6 +1,5 @@
 package io.hydrion.hub.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
@@ -14,8 +13,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.SubcomposeLayout
@@ -24,6 +28,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 import io.hydrion.hub.model.Draft
 import io.hydrion.hub.ui.composer.ChatToolsPage
@@ -97,12 +102,28 @@ internal fun ChatSlidingPage(progress: () -> Float, interactive: Boolean, tag: S
     Box(Modifier.fillMaxSize()) {
         Spacer(shield)
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)).clipToBounds()) {
+            val material = MaterialTheme.colorScheme.background.copy(alpha = SlidingPageBackdrop.BodyOpacity)
+            Spacer(Modifier.matchParentSize().drawWithCache {
+                val backdrop = SlidingPageBackdrop(size.height, 36.dp.toPx())
+                val feather = if (backdrop.featherPx > 0f) Brush.verticalGradient(
+                    listOf(material, material.copy(alpha = 0f)), endY = backdrop.featherPx
+                ) else null
+                onDrawBehind {
+                    val solidBottom = backdrop.solidBottomPx(progress())
+                    val visibleBottom = minOf(size.height, solidBottom + backdrop.featherPx)
+                    if (solidBottom >= size.height) drawRect(material)
+                    else if (feather != null && visibleBottom > 0f) translate(top = solidBottom) {
+                        // The brush clamps to its first colour before the feather. One draw avoids
+                        // a raster seam where the flat material meets its fractional-pixel edge.
+                        drawRect(feather, topLeft = Offset(0f, -solidBottom), size = Size(size.width, visibleBottom))
+                    }
+                }
+            })
             Box(Modifier.fillMaxSize().graphicsLayer {
                 val travel = progress()
                 translationY = (travel - 1f) * size.height
                 alpha = travel
-            }.testTag(tag).background(MaterialTheme.colorScheme.background)
-                .behindToolsPage(!interactive)) {
+            }.testTag(tag).behindToolsPage(!interactive)) {
                 content()
             }
         }

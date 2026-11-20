@@ -256,6 +256,71 @@ class ComposerToolsTest {
         }
     }
 
+    @Test fun openingToolsKeepsTheLastMessageStillWhenTheEditorShrinks() {
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        val conversation = screen.runOnIdle {
+            check(vm.state.value.current.messages.isEmpty() && vm.state.value.draft.text.isEmpty())
+            vm.setDraft((1..48).joinToString("\n") { "offline line $it" })
+            vm.send("Hydrion")
+            vm.stop()
+            vm.editMessage(vm.state.value.current.messages.last().id, "end of transcript")
+            vm.setDraft("line one\nline two\nline three")
+            vm.state.value.current
+        }
+        val clock = screen.mainClock
+        val capsule = screen.onNodeWithTag("composer-capsule", true)
+        try {
+            for (keyboardOpen in listOf(false, true)) {
+                if (keyboardOpen) {
+                    editor.performTouchInput { click(center) }
+                    val view = screen.activity.window.decorView
+                    var lastInset = -1
+                    var stableSince = 0L
+                    screen.waitUntil(15_000) {
+                        val inset = screen.runOnUiThread {
+                            ViewCompat.getRootWindowInsets(view)?.getInsets(WindowInsetsCompat.Type.ime())?.bottom ?: 0
+                        }
+                        val now = android.os.SystemClock.uptimeMillis()
+                        if (lastInset != inset) {
+                            stableSince = now
+                            lastInset = inset
+                        }
+                        inset > 0 && now - stableSince >= 200
+                    }
+                }
+                screen.waitForIdle()
+                // The covering page hides chat semantics. Keep the actual, attached layout
+                // node to read the same message's screen position throughout the transition.
+                val tail = screen.onNodeWithTag("message-turn-${conversation.messages.last().id}", true)
+                    .fetchSemanticsNode()
+                val before = screen.runOnIdle { tail.boundsInRoot }
+                val editorHeight = capsule.fetchSemanticsNode().boundsInRoot.height
+                assertTrue("Tail message must be visible at the bottom", before.height > 0f)
+                fun assertUnmoved() {
+                    assertEquals("Tail message, IME open=$keyboardOpen", before, screen.runOnIdle { tail.boundsInRoot })
+                    assertEquals(keyboardOpen, imeVisible())
+                }
+                clock.autoAdvance = false
+                tools.performTouchInput { click(center) }
+                repeat(5) {
+                    clock.advanceTimeBy(100)
+                    assertUnmoved()
+                }
+                assertTrue("The tools editor must actually shrink",
+                    capsule.fetchSemanticsNode().boundsInRoot.height < editorHeight)
+                action("back").performTouchInput { click(center) }
+                repeat(5) {
+                    clock.advanceTimeBy(100)
+                    assertUnmoved()
+                }
+                clock.autoAdvance = true
+            }
+        } finally {
+            clock.autoAdvance = true
+            screen.runOnIdle { vm.deleteConversation(conversation.id) }
+        }
+    }
+
     @Test fun travellingAttachmentAndSendSwapEndsAndReverseFromTheDrawnPosition() {
         val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
         val before = screen.runOnIdle { vm.state.value }

@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -235,26 +236,36 @@ private fun Workspace(vm: HubViewModel) {
                         }
                     },
                 ) { composerHeight ->
+                    val covered = toolsActive || modelBrowse.active
+                    // Changing the chat's bottom padding would make a timeline at the end scroll as
+                    // the editor changes into a search field. Only the panel uses that live height.
+                    var lastChatDock by remember(current.id, current.mode) { mutableStateOf<Dp?>(null) }
+                    if (!covered && lastChatDock != composerHeight) SideEffect { lastChatDock = composerHeight }
+                    val timelineDock = if (covered && editVisit == null) lastChatDock ?: composerHeight else composerHeight
                     Scaffold(
-                        modifier = Modifier.fillMaxSize().behindToolsPage(toolsActive || modelBrowse.active),
+                        modifier = Modifier.fillMaxSize().behindToolsPage(covered),
                         contentWindowInsets = WindowInsets(0, 0, 0, 0),
                         topBar = {
-                            Column(chatReveal.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
-                                Header(
-                                    mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
-                                    contextUsage = contextUsage(current, selectedEntry),
-                                    onMode = vm::setMode, onNew = ::newChat,
-                                    onDrawer = { focus.clearFocus(); scope.launch { drawer.open() } },
-                                    onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },
-                                    onFind = { finding = true }, onDelete = { deleteId = current.id }
-                                )
+                            Column(chatReveal) {
+                                Box(Modifier.chatPageHeader {
+                                    if (modelBrowse.active) modelBrowse.progress else toolsPage?.progress ?: 0f
+                                }.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
+                                    Header(
+                                        mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
+                                        contextUsage = contextUsage(current, selectedEntry),
+                                        onMode = vm::setMode, onNew = ::newChat,
+                                        onDrawer = { focus.clearFocus(); scope.launch { drawer.open() } },
+                                        onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },
+                                        onFind = { finding = true }, onDelete = { deleteId = current.id }
+                                    )
+                                }
                                 if (finding) FindBar(query, { query = it }, index, hits.size,
                                     previous = { if (hits.isNotEmpty()) matchIndex = (index - 1 + hits.size) % hits.size },
                                     next = { if (hits.isNotEmpty()) matchIndex = (index + 1) % hits.size },
                                     onClose = { finding = false; query = ""; focus.clearFocus() })
                             }
                         },
-                        bottomBar = { Spacer(Modifier.height(composerHeight)) },
+                        bottomBar = { Spacer(Modifier.height(timelineDock)) },
                         snackbarHost = { SnackbarHost(snackbar) }
                     ) { bars ->
                         if (current.messages.isNotEmpty()) {
