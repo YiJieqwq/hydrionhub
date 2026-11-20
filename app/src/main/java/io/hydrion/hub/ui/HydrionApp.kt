@@ -179,7 +179,8 @@ private fun Workspace(vm: HubViewModel) {
                 ) { bars ->
                     if (current.messages.isNotEmpty()) {
                         timelines.SaveableStateProvider(current.id) {
-                            MessageList(vm, state, if (finding) query else "", index, floatingBars = bars)
+                            MessageList(vm, state, if (finding) query else "", index, floatingBars = bars,
+                                composerBoundsInWindow = { chatPicker.composerBounds })
                         }
                     } else if (current.mode == Mode.Image && !state.modeLocked &&
                         state.draft.text.isBlank() && state.draft.attachments.isEmpty()) {

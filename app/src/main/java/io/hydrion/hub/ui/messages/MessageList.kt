@@ -12,6 +12,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +32,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
@@ -41,7 +44,10 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.round
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.model.*
 import io.hydrion.hub.R
@@ -71,7 +77,8 @@ fun MessageList(
     searchQuery: String,
     matchIndex: Int,
     modifier: Modifier = Modifier,
-    floatingBars: PaddingValues = PaddingValues(0.dp)
+    floatingBars: PaddingValues = PaddingValues(0.dp),
+    composerBoundsInWindow: () -> IntRect? = { null },
 ) {
     val messages = state.current.messages
     val needle = searchQuery.trim()
@@ -109,7 +116,9 @@ fun MessageList(
     }
     MessageCanvas(LocalMessageStyle.current, modifier.fillMaxSize()) {
         val edges = if (state.current.mode == Mode.Chat) {
-            Modifier.chatEdgeFades(floatingBars, MaterialTheme.colorScheme.background)
+            val origin = remember { mutableStateOf<IntOffset?>(null) }
+            Modifier.onGloballyPositioned { origin.value = it.positionInWindow().round() }
+                .chatEdgeFades(floatingBars, MaterialTheme.colorScheme.background, list, origin, composerBoundsInWindow)
         } else Modifier
         LazyColumn(
             state = list, modifier = Modifier.fillMaxSize().testTag("message-timeline").then(edges), contentPadding = padding,
@@ -133,21 +142,50 @@ fun MessageList(
     }
 }
 
-private fun Modifier.chatEdgeFades(bars: PaddingValues, background: Color) = drawWithCache {
-    // Keep a clear reading area even with a tall composer or a small IME-resized viewport.
-    val maxBand = size.height / 3f
-    val top = bars.calculateTopPadding().toPx().coerceIn(0f, maxBand)
-    val bottom = bars.calculateBottomPadding().toPx().coerceIn(0f, maxBand)
+private fun Modifier.chatEdgeFades(
+    bars: PaddingValues, background: Color, list: LazyListState, origin: State<IntOffset?>,
+    composerBoundsInWindow: () -> IntRect?,
+) = drawWithCache {
+    val capsule = origin.value?.let { offset -> composerBoundsInWindow()?.translate(-offset) }
+        ?.takeIf { it.right > 0 && it.left < size.width }
+    val bands = chatFadeBands(
+        size.height, bars.calculateTopPadding().toPx(), bars.calculateBottomPadding().toPx(),
+        capsule?.top?.toFloat(), capsule?.bottom?.toFloat(), density,
+    )
     val clear = background.copy(alpha = 0f)
-    val topBrush = if (top > 0f) Brush.verticalGradient(listOf(background, clear), endY = top) else null
-    val bottomY = size.height - bottom
-    val bottomBrush = if (bottom > 0f) {
-        Brush.verticalGradient(listOf(clear, background), startY = bottomY, endY = size.height)
+    val header = bands.headerStop
+    val topBrush = if (bands.topLength > 0f) Brush.verticalGradient(
+        0f to background, header * .45f to background.copy(alpha = .94f),
+        header to background.copy(alpha = .52f), (header + (1f - header) * .70f) to background.copy(alpha = .10f),
+        1f to clear, endY = bands.topLength,
+    ) else null
+    val bottomStart = size.height - bands.bottomLength
+    val bottomBrush = if (bands.bottomLength > 0f) {
+        val stops = buildList {
+            add(0f to clear)
+            add(bands.capsuleTopStop to background.copy(alpha = .45f))
+            add(bands.capsuleBottomStop to background.copy(alpha = .88f))
+            if (bands.capsuleBottomStop < 1f) add(1f to background)
+        }
+        Brush.verticalGradient(*stops.toTypedArray(), startY = bottomStart, endY = size.height)
     } else null
+    val reveal = 24.dp.toPx()
     onDrawWithContent {
         drawContent()
-        if (topBrush != null) drawRect(topBrush, size = Size(size.width, top))
-        if (bottomBrush != null) drawRect(bottomBrush, Offset(0f, bottomY), Size(size.width, bottom))
+        // Ease the mask away as the first or last item reaches its resting padding.
+        // Reading scroll position here reuses the cached brushes during a drag.
+        if (topBrush != null && list.canScrollBackward) {
+            val alpha = if (list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / reveal).coerceIn(0f, 1f)
+            drawRect(topBrush, size = Size(size.width, bands.topLength), alpha = alpha)
+        }
+        if (bottomBrush != null && list.canScrollForward) {
+            val info = list.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()
+            val alpha = if (last != null && last.index == info.totalItemsCount - 1) {
+                ((last.offset + last.size + info.afterContentPadding - info.viewportEndOffset) / reveal).coerceIn(0f, 1f)
+            } else 1f
+            drawRect(bottomBrush, Offset(0f, bottomStart), Size(size.width, bands.bottomLength), alpha = alpha)
+        }
     }
 }
 

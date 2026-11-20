@@ -285,7 +285,17 @@ class FloatingChatChromeTest {
                 }
                 assertEquals("$tone middle of transcript", ink, pixel(timelineBounds.center.x, timelineBounds.center.y))
                 assertGradient("header gap", pixel(gapX, left.center.y), pixel(gapX, left.bottom))
+                fun assertShade(name: String, color: Int, expected: Float, tolerance: Float) {
+                    val chroma = Color.red(color) - Color.green(color)
+                    val shade = 1f - chroma.toFloat() / (Color.red(ink) - Color.green(ink))
+                    assertEquals("$tone $name", expected, shade, tolerance)
+                }
+                assertShade("below header", pixel(gapX, header.bottom + 12f * density), .39f, .08f)
+                assertEquals("$tone clears below header", ink, pixel(gapX, header.bottom + 58f * density))
                 for (x in listOf(capsule.left - 5f * density, capsule.right + 5f * density)) {
+                    assertEquals("$tone clear above composer", ink, pixel(x, capsule.top - 30f * density))
+                    assertShade("at composer top", pixel(x, capsule.top), .45f, .05f)
+                    assertShade("at composer bottom", pixel(x, capsule.bottom), .88f, .05f)
                     assertGradient("beside the composer", pixel(x, capsule.bottom + 3f * density), pixel(x, capsule.center.y))
                 }
                 val chrome = Color.parseColor("#303030")
