@@ -155,6 +155,7 @@ private fun Workspace(vm: HubViewModel) {
                                 else selection.label
                                 HubComposer(vm, state, chipLabel, selection.available,
                                     fast = current.mode == Mode.Chat && selection.parameters["speed"] == "Fast",
+                                    allowImeReturn = !drawerOpening && !configure && !finding && renameId == null && deleteId == null,
                                     toolsAvailable = selectedEntry?.second?.chatProtocol() == null,
                                     onConfigure = { focus.clearFocus(); configure = true },
                                     onSend = {

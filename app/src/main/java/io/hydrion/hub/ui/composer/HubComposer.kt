@@ -61,6 +61,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -80,6 +82,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -135,6 +139,7 @@ fun HubComposer(
     onSend: () -> Unit,
     modifier: Modifier = Modifier,
     toolsAvailable: Boolean = true,
+    allowImeReturn: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
     val focusManager = LocalFocusManager.current
@@ -151,14 +156,29 @@ fun HubComposer(
     val hiding by remember(source, target, density, nav) {
         derivedStateOf { source.getBottom(density) > nav && target.getBottom(density) <= nav }
     }
+    val opening by remember(source, target, density, nav) {
+        derivedStateOf { target.getBottom(density) > maxOf(nav, source.getBottom(density)) }
+    }
+    val imeReturn = remember(state.current.id, state.current.mode) { ComposerImeReturn() }
+    val editorFocus = remember { FocusRequester() }
+    val draft = state.draft
+    var fieldValue by remember(state.current.id, state.current.mode) {
+        mutableStateOf(TextFieldValue(draft.text))
+    }
+    val editorValue = if (fieldValue.text == draft.text) fieldValue else fieldValue.copy(text = draft.text, composition = null)
     var focused by remember { mutableStateOf(false) }
     var sawKeyboard by remember { mutableStateOf(false) }
     var sawHideAnimation by remember { mutableStateOf(false) }
     var showTools by remember(state.current.id) { mutableStateOf(false) }
     var importError by remember(state.current.id) { mutableStateOf<String?>(null) }
-    val pick = rememberAttachmentPicker(vm) { importError = it }
+    val launchPicker = rememberAttachmentPicker(vm) { importError = it }
+    fun pick() {
+        imeReturn.cancel()
+        launchPicker()
+    }
 
     fun collapse() {
+        imeReturn.cancel()
         focusManager.clearFocus()
         keyboard?.hide()
     }
@@ -173,14 +193,31 @@ fun HubComposer(
     }
     val hardwareOnly = hardwareKeyboardOnly && !hiddenAfterEditing && !sawHideAnimation
     SideEffect {
+        if (fieldValue.text != draft.text) fieldValue = editorValue
         if (focused && hasImeHeight) sawKeyboard = true
         if (hiding && hasImeHeight) sawHideAnimation = true
     }
-    // Some keyboards consume Back themselves. A hardware keyboard has no IME
-    // height, so clear focus only after a software keyboard actually appeared.
-    LaunchedEffect(hiddenAfterEditing, showTools, windowFocused) {
-        if (hiddenAfterEditing && windowFocused && !showTools && focused) focusManager.clearFocus()
-    }
+    ComposerImeReturnEffect(
+        controller = imeReturn,
+        enabled = allowImeReturn && !showTools && !hardwareKeyboardOnly,
+        editorFocused = focused, windowFocused = windowFocused,
+        imeShown = imeVisible || hasImeHeight, dismissing = hiding, opening = opening,
+        clearAfterDismissal = hiddenAfterEditing && !showTools,
+        selection = ComposerEditorSelection(editorValue.text, editorValue.selection.start, editorValue.selection.end),
+        onRestore = {
+            sawKeyboard = hasImeHeight
+            sawHideAnimation = false
+            if (!focused) editorFocus.requestFocus()
+            imeReturn.selectionFor(editorValue.text)?.let { range ->
+                val saved = TextRange(range.start, range.end)
+                if (editorValue.selection != saved) {
+                    fieldValue = editorValue.copy(selection = saved, composition = null)
+                }
+            }
+            keyboard?.show()
+        },
+        onDismissed = { focusManager.clearFocus() },
+    )
     BackHandler(enabled = focused && !showTools) { collapse() }
     // A system overlay can take window focus while the editor still owns a visible IME.
     val editing = focused && !showTools && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
@@ -195,7 +232,6 @@ fun HubComposer(
     // Legacy keyboards may jump straight to zero before the flow collector sees the final inset.
     val expansion = if (hasImeHeight || hasImeTarget || hardwareOnly) shapeProgress.value else 0f
 
-    val draft = state.draft
     val hasContent = draft.text.isNotEmpty() || draft.attachments.isNotEmpty()
     val rowGate by animateFloatAsState(if (hasContent) 1f else 0f,
         tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerDraftRow")
@@ -247,11 +283,14 @@ fun HubComposer(
                 Box(Modifier.fillMaxWidth()) {
                     Column {
                         BasicTextField(
-                            value = draft.text,
-                            onValueChange = vm::setDraft,
+                            value = editorValue,
+                            onValueChange = { updated ->
+                                fieldValue = updated
+                                if (updated.text != vm.state.value.draft.text) vm.setDraft(updated.text)
+                            },
                             modifier = Modifier.fillMaxWidth().padding(
                                 start = lerp(48.dp, 15.dp, toolbar), end = lerp(48.dp, 16.dp, toolbar)
-                            ).onFocusChanged {
+                            ).focusRequester(editorFocus).onFocusChanged {
                                 if (it.isFocused && !focused) {
                                     sawKeyboard = false
                                     sawHideAnimation = false
@@ -282,7 +321,7 @@ fun HubComposer(
                     }
                     Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(lerp(editorMinHeight, controlRowHeight, toolbar))
                         .padding(horizontal = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                        ComposerIconButton("添加附件", onClick = pick) { PlusGlyph() }
+                        ComposerIconButton("添加附件", onClick = ::pick) { PlusGlyph() }
                         if (toolbar > 0f) {
                             val interactive = toolbar >= 0.6f
                             val reveal = Modifier.graphicsLayer {
@@ -291,6 +330,7 @@ fun HubComposer(
                             }.then(if (interactive) Modifier else Modifier.clearAndSetSemantics { })
                             Row(reveal, verticalAlignment = Alignment.CenterVertically) {
                                 ComposerIconButton("打开工具箱", onClick = {
+                                    imeReturn.cancel()
                                     showTools = true
                                     keyboard?.hide()
                                 }, enabled = interactive && toolsAvailable) {
