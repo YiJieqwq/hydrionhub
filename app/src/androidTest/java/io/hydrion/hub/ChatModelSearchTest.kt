@@ -82,7 +82,7 @@ class ChatModelSearchTest {
         control("search-field").assertDoesNotExist()
     }
 
-    private fun enterSearch(button: String): SemanticsNodeInteraction {
+    private fun enterSearch(button: String, expectedQuery: String = ""): SemanticsNodeInteraction {
         control(button).performTouchInput { click(center) }
         control("list").assertIsDisplayed()
         val field = screen.onNode(hasTestTag("chat-model-search-field") and
@@ -90,7 +90,7 @@ class ChatModelSearchTest {
             .assertIsDisplayed().assertIsFocused().assert(hasImeAction(ImeAction.Search))
         screen.onAllNodes(hasSetTextAction() and hasAnyAncestor(hasTestTag("chat-model-list")),
             useUnmergedTree = true).assertCountEquals(0)
-        assertEquals("", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        assertEquals(expectedQuery, field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
         control("search-close").assertIsDisplayed()
         control("search").assertDoesNotExist()
         send.assertIsDisplayed().assertIsNotEnabled()
@@ -162,14 +162,23 @@ class ChatModelSearchTest {
         control(option(first, "batch-beta")).assertDoesNotExist()
         field.performTextReplacement("other-only")
         reveal("search-empty")
+        val querySelection = TextRange(1, 5)
+        field.performTextInputSelection(querySelection)
         control(option(second, "other-only")).assertDoesNotExist()
         assertActive(active)
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         control("search-field").assertDoesNotExist()
         control("search").assertIsDisplayed()
         assertEditing()
-
-        enterSearch("search").performTextReplacement("draft stays")
+        reveal(option(first, "last"))
+        val resumed = enterSearch("search", "other-only")
+        assertEquals(querySelection, resumed.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+        reveal("search-empty")
+        resumed.performTextReplacement("draft stays")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_ENTER)
+        resumed.assertIsFocused().assertTextEquals("draft stays")
+        send.assertIsNotEnabled()
+        assertDraftUntouched()
         val viewport = screen.onNodeWithTag("chat-picker-viewport")
         // Tap a blank corner outside both the model list and the composer's query hit area.
         val offset = 2f * screen.activity.resources.displayMetrics.density
@@ -193,12 +202,16 @@ class ChatModelSearchTest {
         reveal(option(second, "other-only"))
         assertActive(active)
 
-        enterSearch("search").performTextReplacement("batch-alpha")
+        enterSearch("search", "Nimbus").performTextReplacement("batch-alpha")
         control(option(first, "batch-alpha")).assertDoesNotExist()
         reveal(option(second, "batch-alpha")).assertIsNotSelected().performTouchInput { click(center) }
         control("card").assertIsDisplayed()
         control("search-field").assertDoesNotExist()
         assertActive(RemoteModel(second.id, "batch-alpha"))
+        assertEditing()
+        enterSearch("select")
+        reveal(option(second, "other-only"))
+        control("search-close").performTouchInput { click(center) }
         assertEditing()
     }
 
@@ -229,9 +242,10 @@ class ChatModelSearchTest {
         assertEquals("Search and close use the same bottom edge", search.bottom, closeBounds.bottom, 1f)
         editor.assertIsFocused().assertTextEquals("model list")
         send.assertIsEnabled()
+        reveal(option(first, "batch-beta"))
 
         val beforeTap = screen.runOnIdle { vm.state.value }
-        enterSearch("search").performTextReplacement("must not send")
+        enterSearch("search", "Zeta").performTextReplacement("must not send")
         send.assertIsNotEnabled().performTouchInput { click(center) }
         control("search-field").assertDoesNotExist()
         control("list").assertDoesNotExist()

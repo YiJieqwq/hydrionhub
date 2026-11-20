@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import io.hydrion.hub.R
@@ -63,7 +64,7 @@ internal class ChatModelPickerState {
     var composerBounds by mutableStateOf<IntRect?>(null)
     var triggerBounds by mutableStateOf<IntRect?>(null)
     var searchFieldBounds by mutableStateOf<IntRect?>(null)
-    var searchQuery by mutableStateOf("")
+    var searchQuery by mutableStateOf(TextFieldValue())
         private set
     var searchSubmissions by mutableIntStateOf(0)
         private set
@@ -71,8 +72,13 @@ internal class ChatModelPickerState {
         private set
 
     private fun show(next: Page?) {
+        if (next == null || next == Page.Controls || next == Page.Options) {
+            searchQuery = TextFieldValue()
+        } else if (page == Page.Search && next != Page.Search && searchQuery.composition != null) {
+            // Keep the query and selection while browsing; composition belongs to the old IME session.
+            searchQuery = searchQuery.copy(composition = null)
+        }
         if (page == Page.Search && next != Page.Search) {
-            searchQuery = ""
             searchSubmissions = 0
             searchFieldBounds = null
         }
@@ -91,7 +97,7 @@ internal class ChatModelPickerState {
         searchFocus.capture()
         show(Page.Search)
     }
-    fun updateSearchQuery(value: String) {
+    fun updateSearchQuery(value: TextFieldValue) {
         if (page == Page.Search) searchQuery = value
     }
     fun submitSearch() {

@@ -1,5 +1,7 @@
 package io.hydrion.hub.provider
 
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import io.hydrion.hub.model.Mode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -16,7 +18,7 @@ class ChatModelMenuSearchTest {
         assertEquals(ChatModelPickerState.Page.Controls, picker.page)
         picker.models("first", startSearching = true)
         assertEquals(ChatModelPickerState.Page.Search, picker.page)
-        assertEquals("", picker.searchQuery)
+        assertEquals(TextFieldValue(), picker.searchQuery)
         picker.back()
         assertEquals(ChatModelPickerState.Page.Models, picker.page)
         picker.providers()
@@ -28,21 +30,47 @@ class ChatModelMenuSearchTest {
         assertEquals(ChatModelPickerState.Page.Controls, picker.page)
     }
 
-    @Test fun aQueryLivesOnlyForOneExplicitSearch() {
+    @Test fun pausingSearchAndSwitchingProvidersPreservesQueryAndSelection() {
         val picker = ChatModelPickerState()
-        val exits = listOf<() -> Unit>(picker::back, picker::dismiss, picker::providers, picker::open)
+        picker.open()
+        picker.models("first", startSearching = true)
+        val query = TextFieldValue("  模型名  ", selection = TextRange(4, 2), composition = TextRange(2, 5))
+        picker.updateSearchQuery(query)
+        picker.submitSearch()
+        assertEquals(1, picker.searchSubmissions)
+
+        picker.back()
+        picker.updateSearchQuery(TextFieldValue("late IME edit"))
+        picker.submitSearch()
+        val parked = query.copy(composition = null)
+        assertEquals(parked, picker.searchQuery)
+        assertEquals(0, picker.searchSubmissions)
+        picker.search()
+        assertEquals(parked, picker.searchQuery)
+
+        picker.providers()
+        picker.models("second")
+        picker.search()
+        assertEquals("second", picker.browsedProviderId)
+        assertEquals(parked, picker.searchQuery)
+    }
+
+    @Test fun leavingModelSelectionDiscardsAPausedOrActiveQuery() {
+        val picker = ChatModelPickerState()
+        val exits = listOf<() -> Unit>(
+            { picker.back(); picker.back() },  // Close search, then leave the model list.
+            { picker.back(); picker.dismiss() },
+            picker::dismiss,                  // Outside tap while searching.
+            picker::open,                     // A model was selected.
+        )
         for (exit in exits) {
-            picker.models("provider")
-            picker.search()
-            assertEquals("", picker.searchQuery)
-            picker.updateSearchQuery("草稿以外的查询")
-            picker.submitSearch()
-            assertEquals(1, picker.searchSubmissions)
+            picker.open()
+            picker.models("provider", startSearching = true)
+            assertEquals(TextFieldValue(), picker.searchQuery)
+            picker.updateSearchQuery(TextFieldValue("test"))
             exit()
-            picker.updateSearchQuery("late IME edit")
-            picker.submitSearch()
-            assertEquals("", picker.searchQuery)
-            assertEquals(0, picker.searchSubmissions)
+            picker.updateSearchQuery(TextFieldValue("late edit"))
+            assertEquals(TextFieldValue(), picker.searchQuery)
         }
     }
 

@@ -50,7 +50,7 @@ internal fun ProviderModelsList(
     picker: ChatModelPickerState, onPick: (ProviderModel) -> Unit,
 ) = key(provider.id) {
     val searching = picker.page == ChatModelPickerState.Page.Search
-    val query = picker.searchQuery.trim()
+    val query = if (searching) picker.searchQuery.text.trim() else ""
     val matches = remember(models, query) { matchingMenuModels(models, query) }
     val nameCounts = remember(models) { models.groupingBy { it.name }.eachCount() }
     val browsingScroll = rememberLazyListState()

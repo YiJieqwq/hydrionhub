@@ -83,7 +83,6 @@ private fun ComposerModelSearchField(picker: ChatModelPickerState, minHeight: Dp
     fun searching() = attached && picker.page == ChatModelPickerState.Page.Search
     fun submit() { if (searching()) picker.submitSearch() }
 
-    // The String overload owns its selection and composition for this search session alone.
     BasicTextField(
         value = picker.searchQuery,
         onValueChange = { if (searching()) picker.updateSearchQuery(it) },
@@ -111,7 +110,7 @@ private fun ComposerModelSearchField(picker: ChatModelPickerState, minHeight: Dp
                 horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                    if (picker.searchQuery.isEmpty()) Text(hint, style = textStyle, color = colors.onSurfaceVariant,
+                    if (picker.searchQuery.text.isEmpty()) Text(hint, style = textStyle, color = colors.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     input()
                 }
