@@ -67,7 +67,8 @@ internal fun ConversationDrawer(
         Column(Modifier.fillMaxHeight().padding(horizontal = 14.dp)) {
             Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
                 IonMark(40.dp)
-                Text("HydrionHub", Modifier.weight(1f).padding(start = 10.dp), style = MaterialTheme.typography.titleLarge,
+                Text("HydrionHub", Modifier.weight(1f).padding(start = 10.dp).offset(y = 1.5.dp),
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Medium)
                 IconButton(onClick = onNew) { Icon(Icons.Outlined.Edit, "新建会话") }
             }
