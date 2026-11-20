@@ -198,6 +198,7 @@ class ChatModelPickerTest {
         }
     }
 
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
     @Test fun backClosesProviderListThenModelListThenCardWithoutDisturbingEditing() {
         editor.performTouchInput { click(center) }
         screen.waitUntil(15_000) { softwareKeyboardIsOpen() }

@@ -52,6 +52,7 @@ class ComposerImeResumeTest {
         screen.waitForIdle()
     }
 
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
     @Test fun resumeWithOpenKeyboardKeepsEditingAtTheSameSelection() {
         editor.performTouchInput { click(center) }
         waitForKeyboard(true)
