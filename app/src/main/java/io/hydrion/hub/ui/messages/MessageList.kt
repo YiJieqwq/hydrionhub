@@ -29,8 +29,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -117,8 +115,10 @@ fun MessageList(
     MessageCanvas(LocalMessageStyle.current, modifier.fillMaxSize()) {
         val edges = if (state.current.mode == Mode.Chat) {
             val origin = remember { mutableStateOf<IntOffset?>(null) }
+            val background = MaterialTheme.colorScheme.background
+            val brushes = remember(background) { ChatEdgeBrushes(background) }
             Modifier.onGloballyPositioned { origin.value = it.positionInWindow().round() }
-                .chatEdgeFades(floatingBars, MaterialTheme.colorScheme.background, list, origin, composerBoundsInWindow)
+                .chatEdgeFades(floatingBars, brushes, list, origin, composerBoundsInWindow)
         } else Modifier
         LazyColumn(
             state = list, modifier = Modifier.fillMaxSize().testTag("message-timeline").then(edges), contentPadding = padding,
@@ -143,7 +143,7 @@ fun MessageList(
 }
 
 private fun Modifier.chatEdgeFades(
-    bars: PaddingValues, background: Color, list: LazyListState, origin: State<IntOffset?>,
+    bars: PaddingValues, brushes: ChatEdgeBrushes, list: LazyListState, origin: State<IntOffset?>,
     composerBoundsInWindow: () -> IntRect?,
 ) = drawWithCache {
     val capsule = origin.value?.let { offset -> composerBoundsInWindow()?.translate(-offset) }
@@ -152,40 +152,24 @@ private fun Modifier.chatEdgeFades(
         size.height, bars.calculateTopPadding().toPx(), bars.calculateBottomPadding().toPx(),
         capsule?.top?.toFloat(), capsule?.bottom?.toFloat(), density,
     )
-    val clear = background.copy(alpha = 0f)
-    val header = bands.headerStop
-    val topBrush = if (bands.topLength > 0f) Brush.verticalGradient(
-        0f to background, header * .45f to background.copy(alpha = .94f),
-        header to background.copy(alpha = ChatEdgeFade.HeaderEdgeAlpha),
-        (header + (1f - header) * ChatEdgeFade.TopTailStop) to background.copy(alpha = ChatEdgeFade.TopTailAlpha),
-        1f to clear, endY = bands.topLength,
-    ) else null
     val bottomStart = size.height - bands.bottomLength
-    val bottomBrush = if (bands.bottomLength > 0f) {
-        val stops = buildList {
-            add(0f to clear)
-            add(bands.capsuleTopStop to background.copy(alpha = ChatEdgeFade.ComposerEdgeAlpha))
-            add(bands.capsuleBottomStop to background.copy(alpha = .88f))
-            if (bands.capsuleBottomStop < 1f) add(1f to background)
-        }
-        Brush.verticalGradient(*stops.toTypedArray(), startY = bottomStart, endY = size.height)
-    } else null
     val reveal = ChatEdgeFade.ScrollRevealDp.dp.toPx()
     onDrawWithContent {
         drawContent()
         // Ease the mask away as the first or last item reaches its resting padding.
         // Reading scroll position here reuses the cached brushes during a drag.
-        if (topBrush != null && list.canScrollBackward) {
+        if (bands.topLength > 0f && list.canScrollBackward) {
             val alpha = if (list.firstVisibleItemIndex > 0) 1f else (list.firstVisibleItemScrollOffset / reveal).coerceIn(0f, 1f)
-            drawRect(topBrush, size = Size(size.width, bands.topLength), alpha = alpha)
+            drawRect(brushes.top(bands), size = Size(size.width, bands.topLength), alpha = alpha)
         }
-        if (bottomBrush != null && list.canScrollForward) {
+        if (bands.bottomLength > 0f && list.canScrollForward) {
             val info = list.layoutInfo
             val last = info.visibleItemsInfo.lastOrNull()
             val alpha = if (last != null && last.index == info.totalItemsCount - 1) {
                 ((last.offset + last.size + info.afterContentPadding - info.viewportEndOffset) / reveal).coerceIn(0f, 1f)
             } else 1f
-            drawRect(bottomBrush, Offset(0f, bottomStart), Size(size.width, bands.bottomLength), alpha = alpha)
+            drawRect(brushes.bottom(bands, size.height), Offset(0f, bottomStart),
+                Size(size.width, bands.bottomLength), alpha = alpha)
         }
     }
 }
