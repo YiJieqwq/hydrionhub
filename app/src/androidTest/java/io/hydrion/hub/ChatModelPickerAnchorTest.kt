@@ -30,15 +30,19 @@ class ChatModelPickerAnchorTest {
         try {
             screen.runOnIdle { vm.setDraft("first line\nsecond line\nthird line") }
             screen.onNodeWithTag("chat-model-trigger").performClick()
-            val composer = screen.onNodeWithTag("composer-capsule", useUnmergedTree = true)
-                .fetchSemanticsNode().boundsInRoot
             val density = screen.activity.resources.displayMetrics.density
             val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
             fun checkPage(tag: String): Float {
-                val page = screen.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
-                assertEquals(if (rtl) composer.left else composer.right, if (rtl) page.left else page.right, 2f)
-                assertEquals(11.5f * density, composer.top - page.bottom, 2f)
-                return page.width
+                val composerNode = screen.onNodeWithTag("composer-capsule", useUnmergedTree = true).fetchSemanticsNode()
+                val pageNode = screen.onNodeWithTag(tag).fetchSemanticsNode()
+                // Search changes the editor contents and may open the IME. Measure both live nodes in one frame.
+                return screen.runOnIdle {
+                    val composer = composerNode.boundsInRoot
+                    val page = pageNode.boundsInRoot
+                    assertEquals(if (rtl) composer.left else composer.right, if (rtl) page.left else page.right, 2f)
+                    assertEquals(11.5f * density, composer.top - page.bottom, 2f)
+                    page.width
+                }
             }
             val trigger = screen.onNodeWithTag("chat-model-trigger").fetchSemanticsNode().boundsInRoot
             val viewport = screen.onNodeWithTag("chat-picker-viewport", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
@@ -50,7 +54,11 @@ class ChatModelPickerAnchorTest {
             assertEquals(left, card.left, 2f)
             assertEquals(8f * density, trigger.top - card.bottom, 2f)
             screen.onNodeWithTag("chat-model-select").performClick()
+            screen.onNodeWithTag("chat-model-search-field").assertIsFocused()
             val width = checkPage("chat-model-list")
+            screen.onNodeWithTag("chat-model-search-close").performClick()
+            screen.onNodeWithTag("chat-model-search-field").assertDoesNotExist()
+            assertEquals(width, checkPage("chat-model-list"), 1f)
             screen.onNodeWithTag("chat-model-provider-trigger").performClick()
             assertEquals(width, checkPage("chat-provider-list"), 1f)
         } finally {

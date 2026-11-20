@@ -62,25 +62,50 @@ internal class ChatModelPickerState {
         private set
     var composerBounds by mutableStateOf<IntRect?>(null)
     var triggerBounds by mutableStateOf<IntRect?>(null)
+    var searchFieldBounds by mutableStateOf<IntRect?>(null)
+    var searchQuery by mutableStateOf("")
+        private set
+    var searchSubmissions by mutableIntStateOf(0)
+        private set
     var browsedProviderId by mutableStateOf<String?>(null)
         private set
 
-    fun open() { browsedProviderId = null; page = Page.Controls }
-    fun models(providerId: String) { browsedProviderId = providerId; page = Page.Models }
-    fun search() {
-        if (page != Page.Models) return
-        searchFocus.capture()
-        page = Page.Search
+    private fun show(next: Page?) {
+        if (page == Page.Search && next != Page.Search) {
+            searchQuery = ""
+            searchSubmissions = 0
+            searchFieldBounds = null
+        }
+        page = next
     }
-    fun providers() { page = Page.Providers }
-    fun options(cap: Capability) { optionKey = cap.key; page = Page.Options }
-    fun dismiss() { page = null }
+    fun open() { browsedProviderId = null; show(Page.Controls) }
+    fun models(providerId: String, startSearching: Boolean = false) {
+        if (startSearching && page != Page.Controls) return
+        browsedProviderId = providerId
+        if (startSearching) beginSearch() else show(Page.Models)
+    }
+    fun search() {
+        if (page == Page.Models) beginSearch()
+    }
+    private fun beginSearch() {
+        searchFocus.capture()
+        show(Page.Search)
+    }
+    fun updateSearchQuery(value: String) {
+        if (page == Page.Search) searchQuery = value
+    }
+    fun submitSearch() {
+        if (page == Page.Search) searchSubmissions++
+    }
+    fun providers() { show(Page.Providers) }
+    fun options(cap: Capability) { optionKey = cap.key; show(Page.Options) }
+    fun dismiss() { show(null) }
     fun back() {
-        page = when (page) {
+        show(when (page) {
             Page.Providers, Page.Search -> Page.Models
             Page.Models, Page.Options -> Page.Controls
             else -> null
-        }
+        })
     }
 }
 
@@ -119,10 +144,15 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
 
     // The picker and draft share a window. Only an explicitly opened search field borrows focus.
     Box(modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))) {
-        if (!closing) Box(Modifier.matchParentSize().focusProperties { canFocus = false }
+        var origin by remember { mutableStateOf<IntOffset?>(null) }
+        if (page == ChatModelPickerState.Page.Search) {
+            SearchDismissLayer(
+                picker, close, Modifier.matchParentSize(),
+                fieldBounds = { origin?.let { picker.searchFieldBounds?.translate(-it) } },
+            )
+        } else if (!closing) Box(Modifier.matchParentSize().focusProperties { canFocus = false }
             .clickable(interactionSource = null, indication = null, role = Role.Button, onClick = picker::dismiss)
             .semantics { contentDescription = close })
-        var origin by remember { mutableStateOf<IntOffset?>(null) }
         Layout(
             modifier = Modifier.fillMaxSize().testTag("chat-picker-viewport")
                 .onGloballyPositioned { origin = it.positionInWindow().round() },
@@ -152,6 +182,9 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                                 page == ChatModelPickerState.Page.Providers -> {
                                 val providers = remember(catalog) { catalog.providers.filter { it.enabled && it.mode == Mode.Chat } }
                                 val browsing = providers.find { it.id == picker.browsedProviderId } ?: provider
+                                if (page == ChatModelPickerState.Page.Search && browsing.id != picker.browsedProviderId) {
+                                    LaunchedEffect(browsing.id) { picker.models(browsing.id) }
+                                }
                                 if (page == ChatModelPickerState.Page.Providers) {
                                     PickerList(stringResource(R.string.chat_picker_provider), Modifier.testTag("chat-provider-list"),
                                         selectedIndex = providers.indexOf(browsing)) {
@@ -186,7 +219,7 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                             else -> key(entry.route) {
                                 Column(Modifier.verticalScroll(rememberScrollState()).testTag("chat-model-card")) {
                                     val speeds = remember(model, provider, values) { model.chatSpeedControls(provider, values) }
-                                    ChatModelControls(model, values, speeds = speeds, onModels = { picker.models(provider.id) },
+                                    ChatModelControls(model, values, speeds = speeds, onModels = { picker.models(provider.id, startSearching = true) },
                                         onChoose = { capability, choice ->
                                             // Back or a profile change can arrive while the rail still owns a pointer.
                                             if (picker.page == ChatModelPickerState.Page.Controls &&

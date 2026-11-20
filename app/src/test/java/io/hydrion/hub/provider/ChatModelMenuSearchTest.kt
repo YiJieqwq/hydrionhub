@@ -10,6 +10,42 @@ class ChatModelMenuSearchTest {
     private val second = ProviderModel("local-02", "常用模型")
     private val choices = listOf(first, second)
 
+    @Test fun enteringFromTheEffortCardSearchesOnceAndCancelReturnsToBrowsing() {
+        val picker = ChatModelPickerState()
+        picker.open()
+        assertEquals(ChatModelPickerState.Page.Controls, picker.page)
+        picker.models("first", startSearching = true)
+        assertEquals(ChatModelPickerState.Page.Search, picker.page)
+        assertEquals("", picker.searchQuery)
+        picker.back()
+        assertEquals(ChatModelPickerState.Page.Models, picker.page)
+        picker.providers()
+        picker.models("second")
+        assertEquals(ChatModelPickerState.Page.Models, picker.page)
+        picker.search()
+        assertEquals(ChatModelPickerState.Page.Search, picker.page)
+        picker.open()
+        assertEquals(ChatModelPickerState.Page.Controls, picker.page)
+    }
+
+    @Test fun aQueryLivesOnlyForOneExplicitSearch() {
+        val picker = ChatModelPickerState()
+        val exits = listOf<() -> Unit>(picker::back, picker::dismiss, picker::providers, picker::open)
+        for (exit in exits) {
+            picker.models("provider")
+            picker.search()
+            assertEquals("", picker.searchQuery)
+            picker.updateSearchQuery("草稿以外的查询")
+            picker.submitSearch()
+            assertEquals(1, picker.searchSubmissions)
+            exit()
+            picker.updateSearchQuery("late IME edit")
+            picker.submitSearch()
+            assertEquals("", picker.searchQuery)
+            assertEquals(0, picker.searchSubmissions)
+        }
+    }
+
     @Test fun matchesNamesAndBothIdsWithoutChangingOrder() {
         assertSame(choices, matchingMenuModels(choices, "  "))
         assertEquals(choices, matchingMenuModels(choices, " 用模 "))

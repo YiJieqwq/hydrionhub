@@ -177,6 +177,10 @@ class ChatModelPickerTest {
             assertCardTargetsStaySeparate()
             control("select").performTouchInput { click(Offset(2.dp.toPx(), center.y)) }
             control("list").assertIsDisplayed()
+            control("search-field").assertIsFocused()
+            pressBack()
+            control("search-field").assertDoesNotExist()
+            control("search").assertIsDisplayed()
             pressBack()
             val effort = control("effort").assertIsDisplayed()
             val initial = store.selection(Mode.Chat).parameters
@@ -294,17 +298,21 @@ class ChatModelPickerTest {
         assertEditing()
         control("select").performTouchInput { click(center) }
         control("list").assertIsDisplayed()
-        assertEditing()
+        control("search-field").assertIsFocused()
+        control("search-close").assertIsDisplayed()
         option(active).assertIsSelected().performTouchInput { click(center) }
         control("card").assertIsDisplayed()
         assertEditing()
         control("select").performTouchInput { click(center) }
         control("list").assertIsDisplayed()
+        control("search-field").assertIsFocused()
         control("provider-trigger").performTouchInput { click(center) }
         provider(active.providerId).assertIsSelected()
         assertEditing()
         pressBack()
         option(active).assertIsSelected()
+        control("search-field").assertDoesNotExist()
+        control("search").assertIsDisplayed()
         assertEditing()
         pressBack()
         control("list").assertDoesNotExist()

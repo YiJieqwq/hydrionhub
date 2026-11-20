@@ -239,7 +239,17 @@ internal fun HubComposer(
         if (hiding && hasImeHeight) sawHideAnimation = true
     }
     val editingDraft = focused && !toolsRequested && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
+    val searchPicker = chatPicker?.takeIf { it.page == ChatModelPickerState.Page.Search }
     val borrowed = chatPicker?.searchFocus?.origin
+    // A delayed click or text callback must still belong to this draft-editing session.
+    val draftSession = remember(imeReturn, searchPicker) { mutableStateOf(true) }
+    DisposableEffect(draftSession) { onDispose { draftSession.value = false } }
+    fun acceptsDraftInput(): Boolean {
+        val conversation = vm.state.value.current
+        return draftSession.value && searchPicker == null && conversation.id == state.current.id &&
+            conversation.mode == state.current.mode && chatPicker?.page != ChatModelPickerState.Page.Search &&
+            chatPicker?.searchFocus?.origin == null
+    }
     ComposerImeReturnEffect(
         controller = imeReturn,
         enabled = allowImeReturn && !toolsRequested && !hardwareKeyboardOnly && borrowed == null,
@@ -308,31 +318,30 @@ internal fun HubComposer(
                 return@LaunchedEffect
             }
             if (!windowFocused) return@LaunchedEffect
-            val saved = chatPicker.searchFocus.finish() ?: return@LaunchedEffect
-            if (saved.focused) {
-                if (editorValue.text == saved.value.text && editorValue.selection != saved.value.selection) {
-                    fieldValue = editorValue.copy(selection = saved.value.selection, composition = null)
-                }
-                editorFocus.requestFocus()
-                if (saved.softwareKeyboardShown) keyboard?.show()
-                else keyboard?.hide()
-            } else if (!saved.softwareKeyboardShown) {
-                keyboard?.hide()
+            val saved = chatPicker.searchFocus.finish(draftFocused = focused) ?: return@LaunchedEffect
+            if (editorValue.text == saved.value.text) {
+                fieldValue = editorValue.copy(selection = saved.value.selection, composition = null)
             }
+            if (saved.focused && !focused) editorFocus.requestFocus()
+            if (!saved.focused && focused) focusManager.clearFocus()
+            if (!saved.softwareKeyboardShown) keyboard?.hide()
+            else if (saved.focused) keyboard?.show()
         }
     }
 
     val hasContent = draft.text.isNotEmpty() || draft.attachments.isNotEmpty()
     val rowGate by animateFloatAsState(if (hasContent) 1f else 0f,
         tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerDraftRow")
-    val toolbar = maxOf(expansion, rowGate)
-    val canSend = (modelAvailable || state.current.mode == Mode.Image) &&
+    val toolbar = if (pickerOpen) 1f else maxOf(expansion, rowGate)
+    val canSend = searchPicker == null && (modelAvailable || state.current.mode == Mode.Image) &&
         (draft.text.isNotBlank() || draft.attachments.isNotEmpty())
-    val active = state.isGenerating
+    val active = searchPicker == null && state.isGenerating
     val onAction: () -> Unit = {
-        if (active) vm.stop() else if (canSend) {
-            collapse()
-            onSend()
+        if (acceptsDraftInput() && vm.state.value.isGenerating == active) {
+            if (active) vm.stop() else if (canSend) {
+                collapse()
+                onSend()
+            }
         }
     }
     val sideInset = lerp(35.dp, 12.25.dp, expansion)
@@ -383,42 +392,46 @@ internal fun HubComposer(
                 }
                 Box(Modifier.fillMaxWidth()) {
                     Column {
-                        BasicTextField(
-                            value = editorValue,
-                            onValueChange = { updated ->
-                                fieldValue = updated
-                                if (updated.text != vm.state.value.draft.text) vm.setDraft(updated.text)
-                            },
-                            modifier = Modifier.fillMaxWidth().padding(
-                                start = lerp(48.dp, 15.dp, toolbar), end = lerp(48.dp, 16.dp, toolbar)
-                            ).chatModelPickerPreImeBack(pickerOpen) { chatPicker?.back() }
-                                .focusRequester(editorFocus).onFocusChanged {
-                                    if (it.isFocused && !focused) {
-                                        sawKeyboard = false
-                                        sawHideAnimation = false
+                        ComposerEditorSlot(searchPicker, editorMinHeight, editorTextStyle) {
+                            BasicTextField(
+                                value = editorValue,
+                                onValueChange = { updated ->
+                                    if (acceptsDraftInput()) {
+                                        fieldValue = updated
+                                        if (updated.text != vm.state.value.draft.text) vm.setDraft(updated.text)
                                     }
-                                    focused = it.isFocused
-                                }.semantics { contentDescription = "消息输入框" },
-                            textStyle = editorTextStyle.copy(color = colors.onSurface),
-                            cursorBrush = SolidColor(colors.primary),
-                            maxLines = if (hasContent || focused) 5 else 1,
-                            decorationBox = { editor ->
-                                Box(Modifier.fillMaxWidth().heightIn(min = editorMinHeight)
-                                    .padding(top = lerp(5.dp, 16.dp, toolbar), bottom = 4.dp),
-                                    contentAlignment = Alignment.CenterStart) {
-                                    if (draft.text.isEmpty()) {
-                                        val isChat = state.current.mode == Mode.Chat
-                                        Text(
-                                            if (isChat) "Chat with AI" else "描述想生成的图片",
-                                            color = HubStyle.ComposerHint,
-                                            style = if (isChat) editorTextStyle else editorTextStyle.copy(fontSize = 17.sp),
-                                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                        )
+                                },
+                                modifier = Modifier.fillMaxWidth().padding(
+                                    start = lerp(48.dp, 15.dp, toolbar), end = lerp(48.dp, 16.dp, toolbar)
+                                ).chatModelPickerPreImeBack(pickerOpen) { chatPicker?.back() }
+                                    .focusRequester(editorFocus).onFocusChanged {
+                                        if (it.isFocused && !focused) {
+                                            sawKeyboard = false
+                                            sawHideAnimation = false
+                                        }
+                                        focused = it.isFocused
+                                    }.semantics { contentDescription = "消息输入框" },
+                                textStyle = editorTextStyle.copy(color = colors.onSurface),
+                                cursorBrush = SolidColor(colors.primary),
+                                maxLines = if (hasContent || focused) 5 else 1,
+                                decorationBox = { editor ->
+                                    Box(Modifier.fillMaxWidth().heightIn(min = editorMinHeight)
+                                        .padding(top = lerp(5.dp, 16.dp, toolbar), bottom = 4.dp),
+                                        contentAlignment = Alignment.CenterStart) {
+                                        if (draft.text.isEmpty()) {
+                                            val isChat = state.current.mode == Mode.Chat
+                                            Text(
+                                                if (isChat) "Chat with AI" else "描述想生成的图片",
+                                                color = HubStyle.ComposerHint,
+                                                style = if (isChat) editorTextStyle else editorTextStyle.copy(fontSize = 17.sp),
+                                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                        editor()
                                     }
-                                    editor()
-                                }
-                            },
-                        )
+                                },
+                            )
+                        }
                         Spacer(Modifier.height(controlRowHeight * toolbar))
                     }
                     Row(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(lerp(editorMinHeight, controlRowHeight, toolbar))
@@ -528,8 +541,8 @@ internal fun HubComposer(
 
 @Composable
 private fun ComposerIconButton(label: String, onClick: () -> Unit, enabled: Boolean = true,
-                               glyph: @Composable () -> Unit) {
-    Box(Modifier.width(42.dp).height(48.dp).clip(CircleShape)
+                               modifier: Modifier = Modifier, glyph: @Composable () -> Unit) {
+    Box(modifier.width(42.dp).height(48.dp).clip(CircleShape)
         .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = label }, contentAlignment = Alignment.Center) { glyph() }
 }
@@ -577,7 +590,7 @@ private fun TerminalGlyph(promptColor: Color, underlineColor: Color) {
 private fun SendButton(generating: Boolean, canSend: Boolean, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val enabled = generating || canSend
-    ComposerIconButton(if (generating) "停止生成" else "发送消息", onClick, enabled) {
+    ComposerIconButton(if (generating) "停止生成" else "发送消息", onClick, enabled, Modifier.testTag("chat-composer-send")) {
         val fill = when {
             generating -> Color.White
             canSend -> colors.primary

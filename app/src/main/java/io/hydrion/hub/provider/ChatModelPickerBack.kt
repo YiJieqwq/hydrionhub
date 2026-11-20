@@ -21,6 +21,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.onPreInterceptKeyBeforeSoftKeyboard
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.TextFieldValue
 
@@ -83,8 +84,9 @@ internal class ChatPickerSearchFocus {
 
     fun onSearchFocused() { searchWasFocused = true }
 
-    fun finish(): PickerDraftFocus? {
-        val saved = origin.takeIf { searchWasFocused }
+    fun finish(draftFocused: Boolean = true): PickerDraftFocus? {
+        // The draft can lose focus before a search field has a chance to take it.
+        val saved = origin?.takeIf { searchWasFocused || (it.focused && !draftFocused) }
         origin = null
         searchWasFocused = false
         return saved
@@ -93,13 +95,14 @@ internal class ChatPickerSearchFocus {
 
 internal fun Modifier.chatPickerSearchInput(picker: ChatModelPickerState): Modifier = composed {
     val requester = remember(picker) { FocusRequester() }
-    // This field is composed only after the user explicitly invokes Search. Capture the draft
-    // before requestFocus: its own blur callback may immediately collapse its text selection.
-    LaunchedEffect(picker) {
-        picker.searchFocus.capture()
-        requester.requestFocus()
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(picker, windowFocused) {
+        if (windowFocused && picker.page == ChatModelPickerState.Page.Search) {
+            picker.searchFocus.capture()
+            requester.requestFocus()
+        }
     }
     this.chatModelPickerPreImeBack(true, picker::back).focusRequester(requester).onFocusChanged {
-        if (it.isFocused) picker.searchFocus.onSearchFocused()
+        if (it.isFocused && picker.page == ChatModelPickerState.Page.Search) picker.searchFocus.onSearchFocused()
     }
 }
