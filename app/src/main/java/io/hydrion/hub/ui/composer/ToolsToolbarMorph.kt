@@ -35,6 +35,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.composerActionFill
+import io.hydrion.hub.ui.theme.composerActionInk
 import kotlin.math.roundToInt
 
 @Composable
@@ -108,12 +110,8 @@ internal fun ToolsToolbarMorph(
                 interactive = actions != ToolsToolbarActions.Moving, keepEditorFocus = tools, enabled = tools || generating || canSend,
                 onClick = if (tools) onBack else onSend,
             ) {
-                val fill = when {
-                    generating -> Color.White
-                    canSend -> colors.primary
-                    else -> colors.surfaceContainerHighest
-                }
-                val startInk = if (generating) Color.Black else if (canSend) colors.onPrimary else colors.onSurfaceVariant
+                val fill = if (generating) Color.White else colors.composerActionFill(canSend)
+                val startInk = if (generating) Color.Black else colors.composerActionInk(canSend)
                 val ink = if (p == 0f) startInk else lerp(startInk, newInk, p)
                 val inset = if (generating) 0.dp else (-1.75).dp * (1f - p)
                 Box(Modifier.size(32.dp).offset(x = inset).background(fill.copy(alpha = fill.alpha * (1f - p)), CircleShape),

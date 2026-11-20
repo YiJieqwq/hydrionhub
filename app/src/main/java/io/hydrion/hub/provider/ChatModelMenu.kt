@@ -1,6 +1,6 @@
 package io.hydrion.hub.provider
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,7 +14,6 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +35,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.R
 import io.hydrion.hub.model.RemoteModel
+import io.hydrion.hub.ui.theme.composerActionFill
+import io.hydrion.hub.ui.theme.composerActionInk
 
 // The provider heading is pinned. The provider switch and model heading scroll with the results.
 private const val FirstModelRow = 2
@@ -168,18 +169,18 @@ internal fun ProviderModelsList(
         }
         // Keep the same independent control and hit rectangle in both states.
         val enabled = searching || models.isNotEmpty()
+        // Dismissing search stays clickable with the neutral send colors.
+        val accented = enabled && !searching
         Box(Modifier.align(Alignment.BottomEnd).padding(end = 4.dp, bottom = 2.dp).size(48.dp)
             .then(keepEditorFocus).clip(CircleShape).testTag(if (searching) "chat-model-search-close" else "chat-model-search")
             .semantics { contentDescription = actionLabel }
             .clickable(enabled = enabled, role = Role.Button) {
                 if (searching) picker.back() else picker.search()
             }, contentAlignment = Alignment.Center) {
-            Surface(modifier = Modifier.size(36.dp), shape = CircleShape, color = colors.surfaceContainerHigh,
-                border = BorderStroke(0.75.dp, colors.outlineVariant), shadowElevation = 2.dp) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, null, Modifier.size(19.dp),
-                        tint = colors.onSurface.copy(alpha = if (enabled) 1f else .38f))
-                }
+            Box(Modifier.size(36.dp).background(colors.composerActionFill(accented), CircleShape),
+                contentAlignment = Alignment.Center) {
+                Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, null, Modifier.size(19.dp),
+                    tint = colors.composerActionInk(accented))
             }
         }
     }
