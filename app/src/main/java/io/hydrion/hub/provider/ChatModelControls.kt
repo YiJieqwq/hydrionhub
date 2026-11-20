@@ -109,8 +109,12 @@ internal fun ChatModelControls(
 
     Column(Modifier.fillMaxWidth()) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val buttonWidth = minOf(48.dp, maxWidth / 3)
-            val splitHeader = maxWidth < 192.dp
+            val buttonWidth = 48.dp
+            // Two leading buttons need a matching inset at the trailing side of the text.
+            // Move the labels below the buttons if this would leave less than one touch target.
+            val splitHeader = maxWidth < buttonWidth * 5
+            val buttonsPerRow = (maxWidth / buttonWidth).toInt().coerceIn(1, 3)
+            val buttonRows = 2 / buttonsPerRow + 1
             PickerBackButton(stringResource(R.string.chat_picker_back_to_message), onClose,
                 Modifier.align(Alignment.TopStart).width(buttonWidth).testTag("chat-effort-back"))
             val fastTint = when {
@@ -120,17 +124,22 @@ internal fun ChatModelControls(
                 else -> Color(0xFF3988F6)
             }
             FastButton(speeds.fast, speeds.off, speeds.selected, buttonWidth, fastTint,
-                Modifier.align(Alignment.TopStart).offset(x = buttonWidth)) {
+                Modifier.align(Alignment.TopStart).offset(
+                    x = if (buttonsPerRow > 1) buttonWidth else 0.dp,
+                    y = if (buttonsPerRow > 1) 0.dp else buttonWidth,
+                )) {
                 speed?.let { cap -> onChoose(cap, it) }
             }
             Column(
                 Modifier.fillMaxWidth()
-                    .then(if (splitHeader) Modifier.padding(top = 48.dp)
+                    .then(if (splitHeader) Modifier.padding(top = buttonWidth * buttonRows)
                         else Modifier.padding(start = buttonWidth * 2, end = buttonWidth))
                     .then(keepEditorFocus).heightIn(min = 60.dp)
                     .clip(RoundedCornerShape(5.dp)).testTag("chat-model-select")
                     .clickable(role = Role.Button, onClickLabel = selectLabel, onClick = onModels)
-                    .padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 2.dp),
+                    .padding(start = if (splitHeader) 20.dp else 4.dp,
+                        end = if (splitHeader) 20.dp else buttonWidth + 4.dp,
+                        top = 6.dp, bottom = 2.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
@@ -138,21 +147,21 @@ internal fun ChatModelControls(
                     Modifier.testTag("chat-model-effort-title"), color = titleTint,
                     style = MaterialTheme.typography.bodyLarge, fontSize = 16.sp, lineHeight = 22.sp,
                     letterSpacing = 0.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(model.name, Modifier.weight(1f, fill = false).testTag("chat-model-name"),
+                Box(contentAlignment = Alignment.Center) {
+                    Text(model.name, Modifier.testTag("chat-model-name"),
                         color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium,
                         fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null,
-                        Modifier.size(14.dp).testTag("chat-model-name-chevron"), tint = colors.onSurfaceVariant)
+                        Modifier.align(Alignment.CenterEnd).offset(x = 17.dp)
+                            .size(14.dp).testTag("chat-model-name-chevron"), tint = colors.onSurfaceVariant)
                 }
             }
             val resetLabel = stringResource(R.string.chat_controls_reset)
-            Box(Modifier.align(Alignment.TopEnd).then(keepEditorFocus).width(buttonWidth).height(48.dp).testTag("chat-model-reset")
+            Box(Modifier.align(Alignment.TopEnd).offset(y = buttonWidth * (buttonRows - 1)).then(keepEditorFocus).width(buttonWidth).height(48.dp).testTag("chat-model-reset")
                 .semantics { contentDescription = resetLabel }
                 .clickable(role = Role.Button, onClick = onReset), contentAlignment = Alignment.Center) {
-                EffortToolGlyph(resetGlyph, colors.onSurfaceVariant, Modifier.offset(x = 3.dp, y = (-3).dp))
+                EffortToolGlyph(resetGlyph, colors.onSurfaceVariant, Modifier.offset(x = 3.dp))
             }
         }
         if (effort != null && level != null) {
@@ -210,7 +219,7 @@ private fun FastButton(tier: String?, off: String?, selected: String?, width: Dp
         .toggleable(active, enabled = enabled, role = Role.Switch) { on ->
             (if (on) tier else off)?.let(onChange)
         }, contentAlignment = Alignment.Center) {
-        EffortToolGlyph(boltGlyph, tint, Modifier.offset(x = (-3).dp, y = (-3).dp), filled = active)
+        EffortToolGlyph(boltGlyph, tint, Modifier.offset(x = (-3).dp), filled = active)
     }
 }
 

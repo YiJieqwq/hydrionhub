@@ -1,13 +1,6 @@
 package io.hydrion.hub.provider
 
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.rememberTransition
-import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -18,7 +11,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -26,31 +18,20 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.rememberGraphicsLayer
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.TextFieldValue
@@ -75,6 +56,11 @@ internal class ChatModelPickerState {
     var editorBounds by mutableStateOf<IntRect?>(null)
     var editorTextBounds by mutableStateOf<IntRect?>(null)
     var triggerBounds by mutableStateOf<IntRect?>(null)
+    var modelLabelInTrigger by mutableStateOf<IntRect?>(null)
+    val modelLabelBounds: IntRect?
+        get() = triggerBounds?.let { hit ->
+            modelLabelInTrigger?.translate(hit.topLeft)?.intersect(hit)?.takeIf { it.width > 0 && it.height > 0 }
+        }
     var searchQuery by mutableStateOf(TextFieldValue())
         private set
     var pendingSearchScroll by mutableStateOf<SearchScroll?>(null)
@@ -153,47 +139,30 @@ internal fun ChatModelPicker(
     modifier: Modifier = Modifier,
 ) {
     val page = picker.page
-    val controls = page == null || page == ChatModelPickerState.Page.Controls
-    val modelList = page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Search
-    val visibility = if (controls) {
-        val visible = remember(picker) { MutableTransitionState(false) }
-        visible.targetState = page != null
-        if (page == null && visible.isIdle) return
-        rememberTransition(visible, label = "Reasoning panel").animateFloat(
-            transitionSpec = { tween(durationMillis = ChatPickerTransitionMillis, easing = ChatPickerEasing) },
-            label = "Visibility",
-        ) { if (it) 1f else 0f }
-    } else null
-    val closing = page == null
-    val paused = suspended || hideForReturn
-    val returnAlpha = animateFloatAsState(if (hideForReturn) 0f else 1f,
-        animationSpec = if (hideForReturn) snap() else tween(ChatPickerTransitionMillis, easing = ChatPickerEasing),
-        label = "Return from model configuration")
-    val drawing = if (controls) rememberGraphicsLayer() else null
-    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-    val motion = if (visibility == null) Modifier else Modifier.graphicsLayer {
-        val hidden = 1f - visibility.value
-        alpha = visibility.value
-        scaleX = 1f - 0.02f * hidden
-        scaleY = scaleX
-        transformOrigin = TransformOrigin(if (rtl) 0f else 1f, 1f)
+    val face = when (page) {
+        null -> PickerBubbleFace.Label
+        ChatModelPickerState.Page.Controls -> PickerBubbleFace.Effort
+        else -> PickerBubbleFace.List
     }
+    val modelList = page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Search
+    val paused = suspended || hideForReturn
     val catalog by store.catalog.collectAsState()
     val models = remember(catalog) { catalog.entries(Mode.Chat) }
     val entry = catalog.selectedEntry(Mode.Chat)
     val select = stringResource(R.string.chat_controls_select_model)
     val close = stringResource(R.string.chat_picker_close)
-    if (!closing && !paused) ChatModelPickerBack(onBack = picker::systemBack, imeFirst = picker.modelListNavigation)
+    if (page != null && !paused) ChatModelPickerBack(onBack = picker::systemBack, imeFirst = picker.modelListNavigation)
     val colors = MaterialTheme.colorScheme
     val dark = colors.onSurface.luminance() > colors.surface.luminance()
     var peak by remember(entry?.route) { mutableStateOf(false) }
 
     // Controls and search keep their original editor hit area. Other pages pass through only the text row.
     val accessibility = if (paused) Modifier.clearAndSetSemantics {} else Modifier
+    var origin by remember { mutableStateOf<IntOffset?>(null) }
     Box(modifier.then(accessibility).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))) {
-        var origin by remember { mutableStateOf<IntOffset?>(null) }
-        var activeListSize by remember(picker) { mutableStateOf(IntSize.Zero) }
-        if (!closing && !paused) {
+        // Measure inside the safe insets even while the picker is idle, before its first frame.
+        Spacer(Modifier.matchParentSize().onGloballyPositioned { origin = it.positionInWindow().round() })
+        if (page != null && !paused) {
             val editThrough = page == ChatModelPickerState.Page.Controls || page == ChatModelPickerState.Page.Search
             PickerDismissLayer(
                 picker, close, Modifier.matchParentSize(),
@@ -201,133 +170,90 @@ internal fun ChatModelPicker(
                 triggerBounds = { origin?.let { picker.triggerBounds?.translate(-it) } },
             )
         }
-        Layout(
-            modifier = Modifier.fillMaxSize().then(if (paused) Modifier.clipToBounds() else Modifier)
-                .then(if (modelList) Modifier.graphicsLayer { alpha = if (hideForReturn) 0f else returnAlpha.value } else Modifier)
-                .testTag("chat-picker-viewport")
-                .onGloballyPositioned { origin = it.positionInWindow().round() },
-            content = {
-                val capture = if (drawing == null) Modifier else Modifier.drawWithContent {
-                    drawing.record { this@drawWithContent.drawContent() }
-                    drawLayer(drawing)
+        PickerBubbleLayout(
+            picker = picker, face = face, origin = origin, hideForReturn = hideForReturn,
+            freezeListSize = suspended && modelList,
+            listColor = if (modelList || page == null) colors.surfaceContainerHigh else colors.surface,
+            effortColor = if (dark) Color(0xFF2A2B2E) else Color(0xFFF8F8F8),
+            effortBorder = if (peak) (if (dark) Color(0x73B085FF) else Color(0x47914EF6))
+                else colors.onSurface.copy(alpha = 0.05f),
+            modifier = Modifier.fillMaxSize().testTag("chat-picker-viewport"),
+            paneTitle = select,
+        ) {
+            if (entry == null) {
+                val restore = picker.pendingBrowseRestore
+                LaunchedEffect(restore, hideForReturn) {
+                    if (restore != null && hideForReturn) picker.consumeBrowseRestore(restore)
                 }
-                val border = when {
-                    !controls -> BorderStroke(0.66.dp, colors.outlineVariant)
-                    peak -> BorderStroke(0.5.dp, if (dark) Color(0x73B085FF) else Color(0x47914EF6))
-                    else -> BorderStroke(0.5.dp, (if (dark) Color.White else Color.Black).copy(alpha = 0.05f))
+                Row {
+                    PickerBackButton(stringResource(if (modelList) R.string.chat_picker_back_to_controls
+                        else R.string.chat_picker_back_to_message), if (modelList) picker::open else picker::dismiss,
+                        Modifier.testTag(if (modelList) "chat-model-list-back" else "chat-effort-back"))
+                    Text(stringResource(R.string.chat_picker_no_models), Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium)
                 }
-                Surface(shape = RoundedCornerShape(14.dp),
-                    color = when {
-                        modelList -> colors.surfaceContainerHigh
-                        !controls -> colors.surface
-                        dark -> Color(0xFF2A2B2E)
-                        else -> Color(0xFFF8F8F8)
-                    },
-                    border = border, shadowElevation = 6.dp,
-                    modifier = motion.then(capture).semantics { paneTitle = select }) {
-                    if (entry == null) {
-                        val restore = picker.pendingBrowseRestore
-                        LaunchedEffect(restore, hideForReturn) {
-                            if (restore != null && hideForReturn) picker.consumeBrowseRestore(restore)
+            } else {
+                val (model, provider) = entry
+                val values = catalog.parameters(model, provider)
+                val cap = model.configureCapabilities().find { it.key == picker.optionKey }
+                when {
+                    modelList || page == ChatModelPickerState.Page.Providers -> {
+                        val providers = remember(catalog) { catalog.providers.filter { it.enabled && it.mode == Mode.Chat } }
+                        val browsing = providers.find { it.id == picker.browsedProviderId } ?: provider
+                        if (!paused && picker.pendingBrowseRestore == null &&
+                            page == ChatModelPickerState.Page.Search && browsing.id != picker.browsedProviderId) {
+                            LaunchedEffect(browsing.id) { picker.models(browsing.id) }
                         }
-                        Row {
-                            PickerBackButton(stringResource(if (modelList) R.string.chat_picker_back_to_controls
-                                else R.string.chat_picker_back_to_message), if (modelList) picker::open else picker::dismiss,
-                                Modifier.testTag(if (modelList) "chat-model-list-back" else "chat-effort-back"))
-                            Text(stringResource(R.string.chat_picker_no_models), Modifier.padding(12.dp),
-                                style = MaterialTheme.typography.bodyMedium)
-                        }
-                    } else {
-                        val (model, provider) = entry
-                        val values = catalog.parameters(model, provider)
-                        val cap = model.configureCapabilities().find { it.key == picker.optionKey }
-                        when {
-                            modelList || page == ChatModelPickerState.Page.Providers -> {
-                                val providers = remember(catalog) { catalog.providers.filter { it.enabled && it.mode == Mode.Chat } }
-                                val browsing = providers.find { it.id == picker.browsedProviderId } ?: provider
-                                if (!paused && picker.pendingBrowseRestore == null &&
-                                    page == ChatModelPickerState.Page.Search && browsing.id != picker.browsedProviderId) {
-                                    LaunchedEffect(browsing.id) { picker.models(browsing.id) }
-                                }
-                                if (page == ChatModelPickerState.Page.Providers) {
-                                    PickerList(stringResource(R.string.chat_picker_provider), Modifier.testTag("chat-provider-list"),
-                                        selectedIndex = providers.indexOf(browsing)) {
-                                        items(providers, key = { it.id }) { candidate ->
-                                            val label = if (providers.count { it.name == candidate.name } > 1)
-                                                "${candidate.name} · ${candidate.id}" else candidate.name
-                                            PickerOption(label, candidate.id == browsing.id,
-                                                Modifier.testTag("chat-model-provider:${candidate.id}")) {
-                                                picker.models(candidate.id)
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    ProviderModelsList(browsing, models.filter { it.second.id == browsing.id }.map { it.first },
-                                        entry.route, picker, dark, paused, hideForReturn, onEditModel = onEditModel, onPick = { next ->
-                                            val route = (next to browsing).route
-                                            if (route != entry.route) store.configure(Mode.Chat, route, catalog.parameters(next, browsing))
-                                            picker.open()
-                                        })
-                                }
-                            }
-                            page == ChatModelPickerState.Page.Options && cap != null -> {
-                                PickerList(chatCapabilityLabel(cap), selectedIndex = cap.choices.indexOf(values[cap.key])) {
-                                    items(cap.choices, key = { it }) { value ->
-                                        PickerOption(chatOptionLabel(cap, value), values[cap.key] == value) {
-                                            store.configure(Mode.Chat, entry.route, model.choose(values, cap.key, value))
-                                            picker.open()
-                                        }
+                        if (page == ChatModelPickerState.Page.Providers) {
+                            PickerList(stringResource(R.string.chat_picker_provider), Modifier.testTag("chat-provider-list"),
+                                selectedIndex = providers.indexOf(browsing)) {
+                                items(providers, key = { it.id }) { candidate ->
+                                    val label = if (providers.count { it.name == candidate.name } > 1)
+                                        "${candidate.name} · ${candidate.id}" else candidate.name
+                                    PickerOption(label, candidate.id == browsing.id,
+                                        Modifier.testTag("chat-model-provider:${candidate.id}")) {
+                                        picker.models(candidate.id)
                                     }
                                 }
                             }
-                            else -> key(entry.route) {
-                                Column(Modifier.verticalScroll(rememberScrollState()).testTag("chat-model-card")) {
-                                    val speeds = remember(model, provider, values) { model.chatSpeedControls(provider, values) }
-                                    ChatModelControls(model, values, speeds = speeds, onClose = picker::dismiss, onModels = { picker.models(provider.id, startSearching = true) },
-                                        onChoose = { capability, choice ->
-                                            // Back or a profile change can arrive while the rail still owns a pointer.
-                                            if (picker.page == ChatModelPickerState.Page.Controls &&
-                                                store.catalog.value.selectedEntry(Mode.Chat)?.route == entry.route) {
-                                                store.configure(Mode.Chat, entry.route, model.choose(values, capability.key, choice))
-                                            }
-                                        },
-                                        onOptions = picker::options,
-                                        onReset = {
-                                            catalog.defaultEntry(Mode.Chat)?.let { default ->
-                                                store.configure(Mode.Chat, default.route, catalog.parameters(default.first, emptyMap()))
-                                            }
-                                        }, onPeakChanged = { peak = it })
+                        } else {
+                            ProviderModelsList(browsing, models.filter { it.second.id == browsing.id }.map { it.first },
+                                entry.route, picker, dark, paused, hideForReturn, onEditModel = onEditModel, onPick = { next ->
+                                    val route = (next to browsing).route
+                                    if (route != entry.route) store.configure(Mode.Chat, route, catalog.parameters(next, browsing))
+                                    picker.open()
+                                })
+                        }
+                    }
+                    page == ChatModelPickerState.Page.Options && cap != null -> {
+                        PickerList(chatCapabilityLabel(cap), selectedIndex = cap.choices.indexOf(values[cap.key])) {
+                            items(cap.choices, key = { it }) { value ->
+                                PickerOption(chatOptionLabel(cap, value), values[cap.key] == value) {
+                                    store.configure(Mode.Chat, entry.route, model.choose(values, cap.key, value))
+                                    picker.open()
                                 }
                             }
                         }
                     }
-                }
-                // On exit draw the retained layer only. The unplaced interactive card cannot
-                // intercept a touch or Back meant for the editor or for a newly opened panel.
-                if (closing && drawing != null) Spacer(motion.drawBehind { drawLayer(drawing) })
-            },
-        ) { children, limits ->
-            val windowOrigin = origin
-            val anchor = picker.composerBounds
-            if (windowOrigin == null || anchor == null) {
-                // On first layout, wait for the anchor in the safe viewport.
-                layout(limits.maxWidth, limits.maxHeight) {}
-            } else {
-                val viewport = IntSize(limits.maxWidth, limits.maxHeight)
-                val localAnchor = anchor.translate(-windowOrigin)
-                val space = pickerSpace(localAnchor, viewport, layoutDirection, reasoning = controls)
-                // Keep drawing behind the moving editor. Its own keyboard must not resize a parked list.
-                val height = if (suspended && modelList && activeListSize.height > 0 && activeListSize.width == space.width) activeListSize.height
-                    else space.maxHeight
-                val card = children.first().measure(Constraints(minWidth = space.width, maxWidth = space.width, maxHeight = height))
-                if (!suspended && modelList) activeListSize = IntSize(card.width, card.height)
-                val y = if (space.above) space.edgeY - card.height else space.edgeY
-                val visibleCard = if (closing) children.last().measure(Constraints.fixed(card.width, card.height)) else card
-                val gap = if (space.above) localAnchor.top - space.edgeY else space.edgeY - localAnchor.bottom
-                val travel = minOf(5.dp.toPx(), gap.coerceAtLeast(0).toFloat())
-                layout(viewport.width, viewport.height) {
-                    val shift = (travel * (1f - (visibility?.value ?: 1f))).roundToInt()
-                    visibleCard.place(space.left, if (space.above) y + shift else y - shift)
+                    else -> key(entry.route) {
+                        Column(Modifier.verticalScroll(rememberScrollState()).testTag("chat-model-card")) {
+                            val speeds = remember(model, provider, values) { model.chatSpeedControls(provider, values) }
+                            ChatModelControls(model, values, speeds = speeds, onClose = picker::dismiss, onModels = { picker.models(provider.id, startSearching = true) },
+                                onChoose = { capability, choice ->
+                                    // Back or a profile change can arrive while the rail still owns a pointer.
+                                    if (picker.page == ChatModelPickerState.Page.Controls &&
+                                        store.catalog.value.selectedEntry(Mode.Chat)?.route == entry.route) {
+                                        store.configure(Mode.Chat, entry.route, model.choose(values, capability.key, choice))
+                                    }
+                                },
+                                onOptions = picker::options,
+                                onReset = {
+                                    catalog.defaultEntry(Mode.Chat)?.let { default ->
+                                        store.configure(Mode.Chat, default.route, catalog.parameters(default.first, emptyMap()))
+                                    }
+                                }, onPeakChanged = { peak = it })
+                        }
+                    }
                 }
             }
         }

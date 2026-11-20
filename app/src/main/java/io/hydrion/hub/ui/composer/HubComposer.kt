@@ -13,6 +13,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -70,6 +71,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
@@ -80,6 +82,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.positionInWindow
@@ -106,11 +109,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.round
+import androidx.compose.ui.unit.roundToIntRect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
 import io.hydrion.hub.provider.ChatModelPickerState
+import io.hydrion.hub.provider.pickerBubbleHighlight
 import io.hydrion.hub.provider.pickerComposerMaxHeight
 import io.hydrion.hub.provider.chatModelPickerPreImeBack
 import io.hydrion.hub.model.Attachment
@@ -572,11 +577,14 @@ internal fun HubComposer(
                             }
                             Box(Modifier.weight(1f).then(reveal), contentAlignment = Alignment.CenterEnd) {
                                 val presses = remember { MutableInteractionSource() }
+                                val modelText = remember(chatPicker) { ModelLabelMeasurement() }
                                 val trigger = if (chatPicker == null) Modifier else {
                                     val bounds = if (!interactive) Modifier else {
                                         DisposableEffect(chatPicker) { onDispose { chatPicker.triggerBounds = null } }
                                         Modifier.onGloballyPositioned {
+                                            modelText.trigger = it
                                             chatPicker.triggerBounds = IntRect(it.positionInWindow().round(), it.size)
+                                            modelText.record(chatPicker)
                                         }
                                     }
                                     Modifier.testTag("chat-model-trigger").then(bounds)
@@ -618,12 +626,25 @@ internal fun HubComposer(
                                     if (fast && !pickerOpen) Icon(Icons.Outlined.Bolt, "快速", Modifier.size(15.dp), tint = colors.onSurface)
                                     Box(Modifier.weight(1f, fill = false)) {
                                         if (chatPicker != null) {
-                                            // The whole row handles taps; draw its feedback only behind the label.
-                                            Spacer(Modifier.matchParentSize().clip(CircleShape)
-                                                .indication(presses, ripple(bounded = false)))
+                                            // The initial highlight hands its shape and color to the moving shell.
+                                            // Keep the open label's press feedback local to “Selecting”.
+                                            val feedback = if (pickerOpen) Modifier.indication(presses, ripple(bounded = false))
+                                            else {
+                                                val pressed = presses.collectIsPressedAsState()
+                                                Modifier.drawBehind { if (pressed.value) drawRect(colors.pickerBubbleHighlight) }
+                                            }
+                                            Spacer(Modifier.matchParentSize().clip(CircleShape).then(feedback))
                                         }
                                         Text(if (pickerOpen) stringResource(R.string.chat_controls_selecting) else modelLabel,
-                                            modifier = if (pickerOpen) Modifier.padding(horizontal = 8.dp, vertical = 4.dp) else Modifier,
+                                            modifier = when {
+                                                pickerOpen -> Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                interactive && chatPicker != null -> Modifier.testTag("chat-model-source-label")
+                                                    .onGloballyPositioned {
+                                                        modelText.label = it
+                                                        modelText.record(chatPicker)
+                                                    }
+                                                else -> Modifier
+                                            },
                                             style = labelStyle, color = if (pickerOpen) colors.onSurfaceVariant else colors.onSurface,
                                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
@@ -660,6 +681,22 @@ private fun Modifier.revealHeight(fraction: Float, folded: Dp) = clipToBounds().
     val start = minOf(folded.roundToPx(), measured.height)
     val height = constraints.constrainHeight(start + ((measured.height - start) * fraction).roundToInt())
     layout(measured.width, height) { measured.place(0, 0) }
+}
+
+// The open trigger says "Selecting". Keep the closed model text's clipped bounds relative
+// to the button so the animation can return to the name even as the IME moves the toolbar.
+private class ModelLabelMeasurement {
+    var trigger: LayoutCoordinates? = null
+    var label: LayoutCoordinates? = null
+
+    fun record(picker: ChatModelPickerState) {
+        if (picker.page != null) return
+        val button = trigger?.takeIf { it.isAttached } ?: return
+        val text = label?.takeIf { it.isAttached } ?: return
+        val visible = button.localBoundingBoxOf(text).roundToIntRect()
+            .intersect(IntRect(0, 0, button.size.width, button.size.height))
+        if (visible.width > 0 && visible.height > 0) picker.modelLabelInTrigger = visible
+    }
 }
 
 @Composable

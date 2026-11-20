@@ -36,17 +36,20 @@ internal fun pickerDismissRegions(viewport: IntSize, field: IntRect?, trigger: I
     return full.excluding(field).flatMap { it.excluding(trigger) }
 }
 
+// Background hit regions must not expand across a text field or the model trigger.
+@Composable
+internal fun exactPickerHitBounds(): ViewConfiguration {
+    val config = LocalViewConfiguration.current
+    return remember(config) {
+        object : ViewConfiguration by config { override val minimumTouchTargetSize = DpSize.Zero }
+    }
+}
+
 @Composable
 internal fun PickerDismissLayer(
     picker: ChatModelPickerState, label: String, modifier: Modifier, fieldBounds: () -> IntRect?, triggerBounds: () -> IntRect?,
 ) {
-    // These are hit regions around an editor, not individual buttons. Android's expanded touch
-    // targets for narrow strips must not spill back into the field while the IME is moving.
-    val config = LocalViewConfiguration.current
-    val exactBounds = remember(config) {
-        object : ViewConfiguration by config { override val minimumTouchTargetSize = DpSize.Zero }
-    }
-    CompositionLocalProvider(LocalViewConfiguration provides exactBounds) {
+    CompositionLocalProvider(LocalViewConfiguration provides exactPickerHitBounds()) {
         Layout(modifier = modifier, content = {
             // Precompose the upper bound so IME motion only remeasures and moves the active strips.
             repeat(4 * 4) { i ->
