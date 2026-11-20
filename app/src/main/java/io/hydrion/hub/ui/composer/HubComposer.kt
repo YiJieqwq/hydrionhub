@@ -197,7 +197,11 @@ internal fun HubComposer(
     val darkComposer = colors.onSurface.luminance() > colors.surfaceContainerHigh.luminance()
     val glyphAccent = if (darkComposer) Color.White else colors.onSurface
     val glyphLine = if (darkComposer) Color.White else colors.onSurfaceVariant
-    val toolTrack = if (darkComposer && !toolsAvailable) ComposerSecondary else glyphLine
+    val chat = state.current.mode == Mode.Chat
+    val toolTrack = if (chat) ChatToolInk else if (darkComposer && !toolsAvailable) ComposerSecondary else glyphLine
+    val toolThumb = if (chat || !toolsAvailable) toolTrack else glyphAccent
+    // The terminal is a disabled placeholder until a real smart-terminal state exists.
+    val terminalInk = chatTerminalInk(smartTerminalEnabled = false)
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
@@ -584,7 +588,7 @@ internal fun HubComposer(
                                         }
                                     }
                                 }, enabled = interactive && canOpenTools) {
-                                    ToolGlyph(toolTrack, if (toolsAvailable) glyphAccent else toolTrack,
+                                    ToolGlyph(toolTrack, toolThumb,
                                         Modifier.offset(x = -ToolbarGlyphGapReduction))
                                 }
                                 Box(Modifier.width(42.dp).height(48.dp).clearAndSetSemantics {
@@ -592,7 +596,7 @@ internal fun HubComposer(
                                     role = Role.Button
                                     disabled()
                                 }, contentAlignment = Alignment.Center) {
-                                    TerminalGlyph(glyphAccent, glyphLine,
+                                    TerminalGlyph(if (chat) terminalInk else glyphAccent, if (chat) terminalInk else glyphLine,
                                         Modifier.offset(x = -ToolbarGlyphGapReduction * 2))
                                 }
                             }
