@@ -16,6 +16,9 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -83,8 +86,15 @@ class ChatModelPickerTest {
             }
             editor.performTouchInput { click(center) }
             screen.waitUntil(15_000) { softwareKeyboardIsOpen() }
-            control("trigger").performTouchInput { click(center) }
+            // The keyboard can become visible before the toolbar enables its controls.
+            screen.waitUntil(15_000) {
+                screen.onAllNodes(hasTestTag("chat-model-trigger") and isEnabled() and hasClickAction())
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            control("trigger").assertIsDisplayed().performTouchInput { click(center) }
             val track = control("effort").assertIsDisplayed()
+            val density = screen.activity.resources.displayMetrics.density
+            assertTrue("The rail needs a 48dp touch height", track.fetchSemanticsNode().boundsInRoot.height >= 48f * density - 1f)
             val title = screen.onNodeWithTag("chat-model-effort-title", useUnmergedTree = true)
             fun assertEffort(titleRes: Int, committed: String) {
                 title.assertTextEquals(screen.activity.getString(titleRes))
@@ -105,7 +115,7 @@ class ChatModelPickerTest {
             }
             assertEffort(R.string.chat_controls_low, "Low")
 
-            // Grab near opposing corners of the hit target, outside the painted rail.
+            // Exercise the top and bottom edges outside the painted rail.
             track.performTouchInput { down(Offset(if (rtl) 2.dp.toPx() else width - 2.dp.toPx(), 2.dp.toPx())) }
             assertEffort(R.string.chat_controls_high, "Low")
             dragWithinMedium(.37f, .63f)
@@ -115,7 +125,8 @@ class ChatModelPickerTest {
             track.performTouchInput { up() }
             assertEffort(R.string.chat_controls_high, "High")
 
-            track.performTouchInput { down(Offset(if (rtl) width - 2.dp.toPx() else 2.dp.toPx(), height - 2.dp.toPx())) }
+            // At the bottom, start inside the card's 14dp rounded outline.
+            track.performTouchInput { down(Offset(if (rtl) width - 14.dp.toPx() else 14.dp.toPx(), height - 2.dp.toPx())) }
             assertEffort(R.string.chat_controls_low, "High")
             track.performTouchInput { moveTo(center) }
             assertEffort(R.string.chat_controls_medium, "High")
