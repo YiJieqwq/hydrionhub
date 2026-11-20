@@ -8,18 +8,15 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasAnySibling
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
-import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.util.UUID
@@ -97,26 +94,5 @@ class WorkspaceSmokeTest {
         screen.onNodeWithContentDescription("移除 参考图").performClick()
         screen.onNodeWithContentDescription("发送消息").assertIsNotEnabled()
         deleteCurrentConversation()
-    }
-
-    @Test
-    fun configureHidesUnsupportedModelParameters() {
-        screen.onNodeWithContentDescription("消息输入框").performClick()
-        screen.onNodeWithContentDescription("配置模型").performClick()
-        val sheet = hasScrollAction() and hasAnyDescendant(hasText("Configure"))
-        screen.onNode(sheet).performScrollToNode(hasText("Reset to default"))
-        screen.onNodeWithText("Reset to default").performClick()
-        screen.onNodeWithText("Effort").assertExists()
-        screen.onNodeWithText("Speed").assertExists()
-
-        screen.onNodeWithText("Model").performClick()
-        screen.onNodeWithText("Hydrion Mini · 本机语言模型").performClick()
-        screen.onNodeWithText("Effort").assertDoesNotExist()
-        screen.onNodeWithText("Speed").assertDoesNotExist()
-        screen.onNodeWithText("Reset to default").performClick()
-        screen.onNodeWithText("Effort").assertExists()
-        screen.onNode(sheet).performScrollToNode(hasText("Done"))
-        screen.onNodeWithText("Done").performClick()
-        screen.onNodeWithText("Configure").assertDoesNotExist()
     }
 }

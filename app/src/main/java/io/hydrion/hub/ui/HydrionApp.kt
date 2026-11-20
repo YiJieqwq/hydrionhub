@@ -27,6 +27,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.provider.ChatModelPicker
+import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.provider.ConfigureSheet
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.provider.ProviderSettings
@@ -60,6 +62,7 @@ private fun Workspace(vm: HubViewModel) {
     val catalog by providers.catalog.collectAsStateWithLifecycle()
     val current = state.current
     val selection = catalog.selection(current.mode)
+    val chatPicker = remember(current.id, current.mode) { ChatModelPickerState() }
     var settings by rememberSaveable { mutableStateOf(false) }
     var configure by rememberSaveable { mutableStateOf(false) }
     var finding by rememberSaveable(current.id) { mutableStateOf(false) }
@@ -155,6 +158,7 @@ private fun Workspace(vm: HubViewModel) {
                                 else selection.label
                                 HubComposer(vm, state, chipLabel, selection.available,
                                     fast = current.mode == Mode.Chat && selection.parameters["speed"] == "Fast",
+                                    chatPicker = chatPicker.takeIf { current.mode == Mode.Chat },
                                     allowImeReturn = !drawerOpening && !configure && !finding && renameId == null && deleteId == null,
                                     toolsAvailable = selectedEntry?.second?.chatProtocol() == null,
                                     onConfigure = { focus.clearFocus(); configure = true },
@@ -180,6 +184,9 @@ private fun Workspace(vm: HubViewModel) {
                             MessageList(vm, state, if (finding) query else "", index, floatingBars = bars)
                         }
                     }
+                }
+                if (current.mode == Mode.Chat && chatPicker.page != null) {
+                    ChatModelPicker(providers, chatPicker, Modifier.matchParentSize())
                 }
             }
         }

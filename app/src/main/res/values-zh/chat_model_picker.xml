@@ -1,0 +1,5 @@
+<resources>
+    <string name="chat_picker_no_models">请在设置中启用聊天供应商并添加模型。</string>
+    <string name="chat_picker_close">关闭模型选择器</string>
+    <string name="chat_picker_default">默认</string>
+</resources>

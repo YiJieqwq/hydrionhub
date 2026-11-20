@@ -1,0 +1,5 @@
+<resources>
+    <string name="chat_picker_no_models">Enable a chat provider and add a model in Settings.</string>
+    <string name="chat_picker_close">Close model picker</string>
+    <string name="chat_picker_default">Default</string>
+</resources>

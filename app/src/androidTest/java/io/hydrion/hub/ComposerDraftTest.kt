@@ -75,7 +75,7 @@ class ComposerDraftTest {
         screen.onAllNodes(input).assertCountEquals(1)
         screen.onNode(input).assertTextContains("继续编辑")
         screen.onNodeWithContentDescription("打开工具箱").assertIsDisplayed()
-        screen.onNodeWithContentDescription("配置模型").assertIsDisplayed()
+        screen.onNodeWithTag("chat-model-trigger").assertIsDisplayed()
         assertTrue(screen.onNode(input).fetchSemanticsNode().size.width < editingWidth)
         val density = screen.activity.resources.displayMetrics.density
         val view = screen.activity.window.decorView

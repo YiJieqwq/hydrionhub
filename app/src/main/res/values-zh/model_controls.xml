@@ -1,0 +1,17 @@
+<resources>
+    <string name="chat_controls_select_model">选择模型</string>
+    <string name="chat_controls_reset">恢复默认</string>
+    <string name="chat_controls_effort">推理强度</string>
+    <string name="chat_controls_speed">速度</string>
+    <string name="chat_controls_fast">快速</string>
+    <string name="chat_controls_standard">标准</string>
+    <string name="chat_controls_off">关闭</string>
+    <string name="chat_controls_auto">自动</string>
+    <string name="chat_controls_minimal">最低</string>
+    <string name="chat_controls_low">低</string>
+    <string name="chat_controls_medium">中</string>
+    <string name="chat_controls_high">高</string>
+    <string name="chat_controls_extra_high">极高</string>
+    <string name="chat_controls_max">最高</string>
+    <string name="chat_controls_ultra">超高</string>
+</resources>

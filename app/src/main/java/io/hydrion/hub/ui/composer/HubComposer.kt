@@ -48,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
@@ -69,6 +70,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -76,6 +79,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -85,9 +89,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.round
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import io.hydrion.hub.R
+import io.hydrion.hub.provider.ChatModelPickerState
+import io.hydrion.hub.provider.chatModelPickerPreImeBack
 import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubState
 import io.hydrion.hub.model.HubViewModel
@@ -140,7 +149,7 @@ internal fun rememberComposerShape(input: () -> ComposerMotionInput): State<Floa
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun HubComposer(
+internal fun HubComposer(
     vm: HubViewModel,
     state: HubState,
     modelLabel: String,
@@ -151,6 +160,7 @@ fun HubComposer(
     modifier: Modifier = Modifier,
     toolsAvailable: Boolean = true,
     allowImeReturn: Boolean = true,
+    chatPicker: ChatModelPickerState? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val focusManager = LocalFocusManager.current
@@ -229,7 +239,8 @@ fun HubComposer(
         },
         onDismissed = { focusManager.clearFocus() },
     )
-    BackHandler(enabled = focused && !showTools) { collapse() }
+    val pickerOpen = chatPicker?.page != null
+    BackHandler(enabled = focused && !showTools && !pickerOpen) { collapse() }
     // A system overlay can take window focus while the editor still owns a visible IME.
     val editing = focused && !showTools && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
     val shapeProgress = rememberComposerShape {
@@ -275,7 +286,10 @@ fun HubComposer(
         }
         val shape = if (toolbar == 0f) CircleShape else RoundedCornerShape(24.dp)
         Surface(
-            modifier = Modifier.fillMaxWidth().testTag("composer-capsule").border(0.66.dp, HubStyle.ComposerBorder, shape),
+            modifier = Modifier.fillMaxWidth().testTag("composer-capsule")
+                .then(if (chatPicker == null) Modifier else Modifier.onGloballyPositioned {
+                    chatPicker.composer = IntRect(it.positionInWindow().round(), it.size)
+                }).border(0.66.dp, HubStyle.ComposerBorder, shape),
             shape = shape,
             color = colors.surfaceContainerHigh,
         ) {
@@ -301,13 +315,14 @@ fun HubComposer(
                             },
                             modifier = Modifier.fillMaxWidth().padding(
                                 start = lerp(48.dp, 15.dp, toolbar), end = lerp(48.dp, 16.dp, toolbar)
-                            ).focusRequester(editorFocus).onFocusChanged {
-                                if (it.isFocused && !focused) {
-                                    sawKeyboard = false
-                                    sawHideAnimation = false
-                                }
-                                focused = it.isFocused
-                            }.semantics { contentDescription = "消息输入框" },
+                            ).chatModelPickerPreImeBack(pickerOpen) { chatPicker?.back() }
+                                .focusRequester(editorFocus).onFocusChanged {
+                                    if (it.isFocused && !focused) {
+                                        sawKeyboard = false
+                                        sawHideAnimation = false
+                                    }
+                                    focused = it.isFocused
+                                }.semantics { contentDescription = "消息输入框" },
                             textStyle = editorTextStyle.copy(color = colors.onSurface),
                             cursorBrush = SolidColor(colors.primary),
                             maxLines = if (hasContent || focused) 5 else 1,
@@ -354,10 +369,18 @@ fun HubComposer(
                                 }, contentAlignment = Alignment.Center) { TerminalGlyph() }
                             }
                             Box(Modifier.weight(1f).then(reveal), contentAlignment = Alignment.CenterEnd) {
+                                val anchor = if (chatPicker == null) Modifier else {
+                                    DisposableEffect(chatPicker) { onDispose { chatPicker.dismiss() } }
+                                    Modifier.testTag("chat-model-trigger").onGloballyPositioned {
+                                        chatPicker.anchor = IntRect(it.positionInWindow().round(), it.size)
+                                    }
+                                }
                                 Row(
-                                    Modifier.clip(CircleShape).clickable(enabled = interactive, role = Role.Button) {
-                                        collapse()
-                                        onConfigure()
+                                    anchor.clip(CircleShape).clickable(enabled = interactive, role = Role.Button) {
+                                        if (chatPicker != null) chatPicker.open() else {
+                                            collapse()
+                                            onConfigure()
+                                        }
                                     }.heightIn(min = 44.dp).padding(horizontal = 4.dp),
                                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -366,7 +389,9 @@ fun HubComposer(
                                     Text(modelLabel, Modifier.weight(1f, fill = false),
                                         style = MaterialTheme.typography.labelLarge, color = colors.onSurface,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Icon(Icons.Outlined.KeyboardArrowDown, "配置模型", Modifier.size(15.dp),
+                                    Icon(Icons.Outlined.KeyboardArrowDown,
+                                        if (chatPicker != null) stringResource(R.string.chat_controls_select_model)
+                                        else "配置模型", Modifier.size(15.dp),
                                         tint = colors.onSurfaceVariant)
                                 }
                             }
