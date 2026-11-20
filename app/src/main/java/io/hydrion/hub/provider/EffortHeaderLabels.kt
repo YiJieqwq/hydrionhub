@@ -28,6 +28,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontSynthesis
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -53,8 +54,10 @@ internal fun EffortHeaderLabels(
     title: String, modelName: String, titleTint: Color, cardWidth: Dp, startInset: Dp,
     besideButtons: Boolean, hasRail: Boolean, modifier: Modifier,
 ) {
-    val titleStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp, letterSpacing = 0.sp)
-    val nameStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp)
+    val titleStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp,
+        letterSpacing = 0.sp, textAlign = TextAlign.Center)
+    val nameStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp,
+        letterSpacing = 0.sp, textAlign = TextAlign.Center)
     val titlePaint = rememberInkPaint(titleStyle)
     val namePaint = rememberInkPaint(nameStyle)
     val textMeasurer = rememberTextMeasurer()
