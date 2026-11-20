@@ -1,6 +1,5 @@
 package io.hydrion.hub
 
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import android.util.Log
@@ -211,16 +210,18 @@ class FloatingChatChromeTest {
         return ToolFrame(shell.fetchSemanticsNode().boundsInRoot, ink, center)
     }
 
-    @Test fun scrollingRevealsMessagesBehindChromeAndClearsFirstAndLastTurns() {
+    @Test fun scrollingFadesChatBehindTheControlsAndKeepsRestingMessagesClear() {
         val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
         val styles = MessageStyleStore.shared(screen.activity)
         val previousStyle = styles.style.value
-        val fill = "#764588"
+        // A uniform, colored reply makes each sampled pixel independent of glyphs and font scale.
+        val fill = "#C42C82"
+        val card = MessageCardStyle(fill, fill, fill)
         val conversationId = screen.runOnIdle {
             check(vm.state.value.current.messages.isEmpty() && vm.state.value.draft.text.isEmpty())
             styles.update { style ->
-                style.copy(tone = MessageTone.Light, material = CardMaterial.Solid, assistantBubble = true,
-                    light = style.light.copy(assistant = MessageCardStyle(fill, fill, "#FFFFFF")))
+                style.copy(tone = MessageTone.Dark, material = CardMaterial.Solid, assistantBubble = true,
+                    dark = style.dark.copy(assistant = card), light = style.light.copy(assistant = card))
             }
             vm.setDraft("开始")
             vm.send("Hydrion")
@@ -263,32 +264,48 @@ class FloatingChatChromeTest {
             timeline.performScrollToIndex(1)
             timeline.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, header.height + 180f * density) }
             screen.waitForIdle()
-            val root = screen.onRoot().captureToImage().asAndroidBitmap()
             val ink = Color.parseColor(fill)
             val timelineBounds = timeline.fetchSemanticsNode().boundsInRoot
             assertTrue("Transcript viewport reaches header and lower clearance", timelineBounds.top < header.bottom && timelineBounds.bottom > capsule.bottom)
-            val band = 3f * density
-            val nearLeft = capsule.left - 5f * density
-            val nearRight = capsule.right + 5f * density
-            assertPaint(root, nearLeft, capsule.center.y, band, ink, "left of composer")
-            assertPaint(root, nearRight, capsule.center.y, band, ink, "right of composer")
-            assertPaint(root, capsule.center.x, capsule.bottom + 3f * density, band, ink, "below composer")
-            assertPaint(root, header.center.x, header.bottom - 2f * density, 1.5f * density, ink, "under header capsules")
+            val gapX = if (left.center.x < title.center.x) (left.right + title.left) / 2
+                else (left.left + title.right) / 2
+            for (tone in listOf(MessageTone.Dark, MessageTone.Light)) {
+                screen.runOnIdle { styles.update { it.copy(tone = tone) } }
+                val bitmap = screen.onRoot().captureToImage().asAndroidBitmap()
+                fun pixel(x: Float, y: Float) = bitmap.getPixel(x.roundToInt(), y.roundToInt())
+                val bg = if (tone == MessageTone.Dark) Color.BLACK else Color.parseColor("#FAFAFB")
+                fun assertGradient(name: String, outer: Int, inner: Int) {
+                    // The red-green difference shrinks as the reply blends into either neutral background.
+                    fun chroma(color: Int) = Color.red(color) - Color.green(color)
+                    assertTrue("$tone $name retains some scrolling message at the outer sample", chroma(outer) > 0)
+                    assertTrue("$tone $name fades progressively toward the edge",
+                        chroma(outer) < chroma(inner) && chroma(inner) < chroma(ink))
+                    assertTrue("$tone $name fades toward the timeline theme",
+                        abs(Color.red(outer) - Color.red(bg)) < abs(Color.red(inner) - Color.red(bg)))
+                }
+                assertEquals("$tone middle of transcript", ink, pixel(timelineBounds.center.x, timelineBounds.center.y))
+                assertGradient("header gap", pixel(gapX, left.center.y), pixel(gapX, left.bottom))
+                for (x in listOf(capsule.left - 5f * density, capsule.right + 5f * density)) {
+                    assertGradient("beside the composer", pixel(x, capsule.bottom + 3f * density), pixel(x, capsule.center.y))
+                }
+                val chrome = Color.parseColor("#303030")
+                assertEquals("header remains above the fade", chrome, pixel(left.center.x, left.top + 7f * density))
+                assertEquals("composer remains above the fade", chrome, pixel(capsule.center.x, capsule.bottom - 6f * density))
+            }
+            screen.runOnIdle {
+                vm.editMessage(messages[1].id, "短回复")
+                vm.deleteMessage(messages[2].id)
+            }
+            val body = screen.onNodeWithTag("message-assistant-body", useUnmergedTree = true)
+                .performScrollTo().assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val resting = screen.onRoot().captureToImage().asAndroidBitmap()
+            assertEquals("resting short reply keeps its original fill", ink,
+                resting.getPixel(body.center.x.roundToInt(), body.center.y.roundToInt()))
         } finally {
             screen.runOnIdle {
                 styles.update { previousStyle }
                 vm.deleteConversation(conversationId)
             }
         }
-    }
-
-    private fun assertPaint(bitmap: Bitmap, x: Float, y: Float, radius: Float, color: Int, name: String) {
-        val area = ComposeRect(x - radius, y - radius, x + radius, y + radius)
-        val found = (area.top.roundToInt()..area.bottom.roundToInt()).any { row ->
-            (area.left.roundToInt()..area.right.roundToInt()).any { col ->
-                col in 0 until bitmap.width && row in 0 until bitmap.height && bitmap.getPixel(col, row) == color
-            }
-        }
-        assertTrue("Expected scrolling reply color $name at ($x, $y)", found)
     }
 }

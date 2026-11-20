@@ -25,6 +25,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
@@ -103,8 +108,11 @@ fun MessageList(
         }
     }
     MessageCanvas(LocalMessageStyle.current, modifier.fillMaxSize()) {
+        val edges = if (state.current.mode == Mode.Chat) {
+            Modifier.chatEdgeFades(floatingBars, MaterialTheme.colorScheme.background)
+        } else Modifier
         LazyColumn(
-            state = list, modifier = Modifier.fillMaxSize().testTag("message-timeline"), contentPadding = padding,
+            state = list, modifier = Modifier.fillMaxSize().testTag("message-timeline").then(edges), contentPadding = padding,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             itemsIndexed(messages, key = { _, msg -> msg.id }, contentType = { _, msg -> msg.role }) { index, msg ->
@@ -122,6 +130,24 @@ fun MessageList(
             }
             item(key = "timeline-bottom") { Spacer(Modifier.height(1.dp)) }
         }
+    }
+}
+
+private fun Modifier.chatEdgeFades(bars: PaddingValues, background: Color) = drawWithCache {
+    // Keep a clear reading area even with a tall composer or a small IME-resized viewport.
+    val maxBand = size.height / 3f
+    val top = bars.calculateTopPadding().toPx().coerceIn(0f, maxBand)
+    val bottom = bars.calculateBottomPadding().toPx().coerceIn(0f, maxBand)
+    val clear = background.copy(alpha = 0f)
+    val topBrush = if (top > 0f) Brush.verticalGradient(listOf(background, clear), endY = top) else null
+    val bottomY = size.height - bottom
+    val bottomBrush = if (bottom > 0f) {
+        Brush.verticalGradient(listOf(clear, background), startY = bottomY, endY = size.height)
+    } else null
+    onDrawWithContent {
+        drawContent()
+        if (topBrush != null) drawRect(topBrush, size = Size(size.width, top))
+        if (bottomBrush != null) drawRect(bottomBrush, Offset(0f, bottomY), Size(size.width, bottom))
     }
 }
 
