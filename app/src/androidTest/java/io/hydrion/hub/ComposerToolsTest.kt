@@ -86,7 +86,7 @@ class ComposerToolsTest {
         val targets = ordered.map { it.fetchSemanticsNode().boundsInRoot }
         val glyphs = ordered.mapIndexed { index, node ->
             val image = node.captureToImage().asAndroidBitmap()
-            // The composer background is dark; the disabled gray tool is also brighter than this threshold.
+            // All three glyph colors have a red channel above the dark composer surface.
             val columns = (0 until image.width).filter { x ->
                 (image.height / 4 until 3 * image.height / 4).any { y -> Color.red(image.getPixel(x, y)) > 140 }
             }
@@ -101,9 +101,10 @@ class ComposerToolsTest {
         }
         val terminalImage = terminal.captureToImage().asAndroidBitmap()
         val shift = -6f
-        terminalImage.assertStroke("terminal upper chevron", 255, shift, 3.5f, 6.5f)
-        terminalImage.assertStroke("terminal lower chevron", 255, shift, 3.5f, 11.5f)
-        terminalImage.assertStroke("terminal underline", 255, shift, 13f, 14f)
+        val terminalInk = if (mode == Mode.Chat) ExpectedChatToolInk else Color.WHITE
+        terminalImage.assertStroke("terminal upper chevron", terminalInk, shift, 3.5f, 6.5f)
+        terminalImage.assertStroke("terminal lower chevron", terminalInk, shift, 3.5f, 11.5f)
+        terminalImage.assertStroke("terminal underline", terminalInk, shift, 13f, 14f)
     }
 
     @Test fun imageComposerKeepsTheSecondSlotAndItsKeyboardToSheetHandoff() {
@@ -118,7 +119,7 @@ class ComposerToolsTest {
             screen.runOnIdle { assertEquals(Mode.Image, vm.state.value.current.mode) }
             assertToolbarSlots(Mode.Image)
             val tools = screen.onNodeWithContentDescription("打开工具箱")
-            tools.assertToolInk(enabled = true)
+            tools.assertToolInk(enabled = true, mode = Mode.Image)
             editor.performTouchInput { click(center) }
             screen.waitUntil(15_000) { imeVisible() }
             tools.assertIsEnabled().performTouchInput { click(center) }
@@ -221,7 +222,7 @@ class ComposerToolsTest {
             }
             assertToolbarSlots(Mode.Chat)
             screen.onNodeWithContentDescription("添加附件").assertGlyphGray("添加附件", 255)
-            tools.assertToolInk(enabled = true)
+            tools.assertToolInk(enabled = true, mode = Mode.Chat)
             screen.onNodeWithContentDescription("工作区终端").performTouchInput { click(center) }
             page.assertDoesNotExist()
 
@@ -502,21 +503,28 @@ internal fun SemanticsNodeInteraction.assertGlyphGray(label: String, expectedGra
         solidPixels >= 2 && abs(brightest - expectedGray) <= 2)
 }
 
-internal fun SemanticsNodeInteraction.assertToolInk(enabled: Boolean) {
+internal val ExpectedChatToolInk = Color.rgb(0xB6, 0xC4, 0xFF)
+
+internal fun SemanticsNodeInteraction.assertToolInk(enabled: Boolean, mode: Mode = Mode.Chat) {
+    if (enabled) assertIsEnabled() else assertIsNotEnabled()
     val bitmap = captureToImage().asAndroidBitmap()
     val shift = -3f
-    val gray = if (enabled) 255 else 175
+    val ink = when {
+        mode == Mode.Chat -> ExpectedChatToolInk
+        enabled -> Color.WHITE
+        else -> Color.rgb(175, 175, 175)
+    }
     for ((y, thumb) in listOf(3.5f to 11.5f, 9f to 5.5f, 14.5f to 10.5f)) {
-        bitmap.assertStroke("tool track at $y, left", gray, shift, 2f, y)
-        bitmap.assertStroke("tool track at $y, right", gray, shift, 15.5f, y)
-        bitmap.assertStroke("tool thumb above $y", gray, shift, thumb, y - 1.6f)
-        bitmap.assertStroke("tool thumb below $y", gray, shift, thumb, y + 1.6f)
+        bitmap.assertStroke("tool track at $y, left", ink, shift, 2f, y)
+        bitmap.assertStroke("tool track at $y, right", ink, shift, 15.5f, y)
+        bitmap.assertStroke("tool thumb above $y", ink, shift, thumb, y - 1.6f)
+        bitmap.assertStroke("tool thumb below $y", ink, shift, thumb, y + 1.6f)
     }
 }
 
 // Sample small regions of the glyph in its own 42dp control. The window contains the
 // opaque stroke core even when a rounded or diagonal edge lands between device pixels.
-private fun Bitmap.assertStroke(label: String, gray: Int, shift: Float, glyphX: Float, glyphY: Float) {
+private fun Bitmap.assertStroke(label: String, ink: Int, shift: Float, glyphX: Float, glyphY: Float) {
     val scale = width / 42f
     val rtl = InstrumentationRegistry.getInstrumentation().targetContext.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
     val x = width / 2f + ((if (rtl) -shift else shift) + glyphX - 9f) * scale
@@ -524,6 +532,9 @@ private fun Bitmap.assertStroke(label: String, gray: Int, shift: Float, glyphX: 
     val xs = (x - scale).roundToInt()..(x + scale).roundToInt()
     val ys = (y - scale).roundToInt()..(y + scale).roundToInt()
     val pixels = ys.flatMap { row -> xs.map { col -> getPixel(col, row) } }
-    val peaks = listOf(pixels.maxOf(Color::red), pixels.maxOf(Color::green), pixels.maxOf(Color::blue))
-    assertTrue("$label has RGB peaks $peaks; expected $gray", peaks.all { abs(it - gray) <= 2 })
+    val peak = Color.rgb(pixels.maxOf(Color::red), pixels.maxOf(Color::green), pixels.maxOf(Color::blue))
+    fun matches(color: Int) = abs(Color.red(color) - Color.red(ink)) <= 2 &&
+        abs(Color.green(color) - Color.green(ink)) <= 2 && abs(Color.blue(color) - Color.blue(ink)) <= 2
+    assertTrue("$label has peak ${Integer.toHexString(peak)}, expected a stroke of ${Integer.toHexString(ink)}",
+        matches(peak) && pixels.any(::matches))
 }
