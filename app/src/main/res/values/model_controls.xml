@@ -14,4 +14,7 @@
     <string name="chat_controls_extra_high">Extra High</string>
     <string name="chat_controls_max">Max</string>
     <string name="chat_controls_ultra">Ultra</string>
+    <string name="chat_controls_ultrafast">Ultrafast</string>
+    <string name="chat_controls_not_connected">%1$s is not connected for this model</string>
+    <string name="chat_controls_fixed">%1$s is fixed by this model</string>
 </resources>

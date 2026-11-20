@@ -30,6 +30,7 @@ import io.hydrion.hub.model.Mode
 import io.hydrion.hub.provider.ChatModelPicker
 import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.provider.ConfigureSheet
+import io.hydrion.hub.provider.chatSpeedControls
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.provider.ProviderSettings
 import io.hydrion.hub.ui.chrome.ChatHeaderLayout
@@ -157,7 +158,11 @@ private fun Workspace(vm: HubViewModel) {
                                     listOfNotNull(selection.label, selection.parameters["effort"]).joinToString(" ")
                                 else selection.label
                                 HubComposer(vm, state, chipLabel, selection.available,
-                                    fast = current.mode == Mode.Chat && selection.parameters["speed"] == "Fast",
+                                    fast = remember(selectedEntry, selection.parameters) {
+                                        selectedEntry?.let { (model, provider) ->
+                                            model.chatSpeedControls(provider, selection.parameters).selected != null
+                                        } == true
+                                    },
                                     chatPicker = chatPicker.takeIf { current.mode == Mode.Chat },
                                     allowImeReturn = !drawerOpening && !configure && !finding && renameId == null && deleteId == null,
                                     toolsAvailable = selectedEntry?.second?.chatProtocol() == null,

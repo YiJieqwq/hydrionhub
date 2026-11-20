@@ -286,10 +286,7 @@ internal fun HubComposer(
         }
         val shape = if (toolbar == 0f) CircleShape else RoundedCornerShape(24.dp)
         Surface(
-            modifier = Modifier.fillMaxWidth().testTag("composer-capsule")
-                .then(if (chatPicker == null) Modifier else Modifier.onGloballyPositioned {
-                    chatPicker.composer = IntRect(it.positionInWindow().round(), it.size)
-                }).border(0.66.dp, HubStyle.ComposerBorder, shape),
+            modifier = Modifier.fillMaxWidth().testTag("composer-capsule").border(0.66.dp, HubStyle.ComposerBorder, shape),
             shape = shape,
             color = colors.surfaceContainerHigh,
         ) {

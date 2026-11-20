@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -36,23 +37,30 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import io.hydrion.hub.R
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.model.RemoteModel
 
 internal class ChatModelPickerState {
-    enum class Page { Controls, Models, Options }
+    enum class Page { Controls, Models, Providers, Options }
 
     var page by mutableStateOf<Page?>(null)
         private set
     var optionKey by mutableStateOf("")
         private set
     var anchor by mutableStateOf(IntRect.Zero)
-    var composer by mutableStateOf(IntRect.Zero)
+    var browsedProviderId by mutableStateOf<String?>(null)
+        private set
 
-    fun open() { page = Page.Controls }
-    fun models() { page = Page.Models }
+    fun open() { browsedProviderId = null; page = Page.Controls }
+    fun models(providerId: String) { browsedProviderId = providerId; page = Page.Models }
+    fun providers() { page = Page.Providers }
     fun options(cap: Capability) { optionKey = cap.key; page = Page.Options }
     fun dismiss() { page = null }
     fun back() {
-        page = if (page == Page.Models || page == Page.Options) Page.Controls else null
+        page = when (page) {
+            Page.Providers -> Page.Models
+            Page.Models, Page.Options -> Page.Controls
+            else -> null
+        }
     }
 }
 
@@ -86,33 +94,28 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                         val values = catalog.parameters(model, provider)
                         val cap = model.configureCapabilities().find { it.key == picker.optionKey }
                         when {
-                            page == ChatModelPickerState.Page.Models -> {
-                                val nameCounts = remember(models) { models.groupingBy { it.first.name }.eachCount() }
-                                val default = models.find { it.route == catalog.defaults[Mode.Chat] }
-                                PickerList(select, Modifier.testTag("chat-model-list"),
-                                    selectedIndex = models.indexOf(entry) + if (default == null) 0 else 1) {
-                                    if (default != null) item {
-                                        Column(Modifier.fillMaxWidth().focusProperties { canFocus = false }
-                                            .clickable(role = Role.Button) {
-                                                store.configure(Mode.Chat, default.route, catalog.parameters(default.first, emptyMap()))
-                                                picker.open()
-                                            }.heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 6.dp),
-                                            verticalArrangement = Arrangement.Center) {
-                                            Text(stringResource(R.string.chat_picker_default), style = MaterialTheme.typography.bodyMedium)
-                                            Text(default.first.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Providers -> {
+                                val providers = remember(catalog) { catalog.providers.filter { it.enabled && it.mode == Mode.Chat } }
+                                val browsing = providers.find { it.id == picker.browsedProviderId } ?: provider
+                                if (page == ChatModelPickerState.Page.Providers) {
+                                    PickerList(stringResource(R.string.chat_picker_provider), Modifier.testTag("chat-provider-list"),
+                                        selectedIndex = providers.indexOf(browsing)) {
+                                        items(providers, key = { it.id }) { candidate ->
+                                            val label = if (providers.count { it.name == candidate.name } > 1)
+                                                "${candidate.name} · ${candidate.id}" else candidate.name
+                                            PickerOption(label, candidate.id == browsing.id,
+                                                Modifier.testTag("chat-model-provider:${candidate.id}")) {
+                                                picker.models(candidate.id)
+                                            }
                                         }
                                     }
-                                    items(models) { item ->
-                                        val route = item.route
-                                        val label = if (nameCounts[item.first.name] == 1) item.first.name
-                                            else "${item.first.name} · ${item.second.name}"
-                                        PickerOption(label, route == entry.route,
-                                            Modifier.testTag("chat-model-option:${route.providerId}/${route.modelId}")) {
-                                            if (route != entry.route) store.configure(Mode.Chat, route, catalog.parameters(item.first, item.second))
+                                } else {
+                                    ProviderModelsList(browsing, models.filter { it.second.id == browsing.id }.map { it.first },
+                                        entry.route, onProviders = picker::providers, onPick = { next ->
+                                            val route = (next to browsing).route
+                                            if (route != entry.route) store.configure(Mode.Chat, route, catalog.parameters(next, browsing))
                                             picker.open()
-                                        }
-                                    }
+                                        })
                                 }
                             }
                             page == ChatModelPickerState.Page.Options && cap != null -> {
@@ -126,7 +129,8 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                                 }
                             }
                             else -> Column(Modifier.verticalScroll(rememberScrollState()).testTag("chat-model-card")) {
-                                ChatModelControls(model, values, onModels = picker::models,
+                                val speeds = remember(model, provider, values) { model.chatSpeedControls(provider, values) }
+                                ChatModelControls(model, values, speeds = speeds, onModels = { picker.models(provider.id) },
                                     onChoose = { capability, choice ->
                                         store.configure(Mode.Chat, entry.route, model.choose(values, capability.key, choice))
                                     },
@@ -149,12 +153,8 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                 layout(limits.maxWidth, limits.maxHeight) {}
             } else {
                 val viewport = IntSize(limits.maxWidth, limits.maxHeight)
-                // Align horizontally to the chip and keep the whole draft visible below the panel.
-                val chip = picker.anchor
-                val capsule = picker.composer
-                val anchor = IntRect(chip.left, minOf(chip.top, capsule.top), chip.right, maxOf(chip.bottom, capsule.bottom))
-                val space = pickerSpace(anchor.translate(-windowOrigin), viewport, 8.dp.roundToPx(),
-                    244.dp.roundToPx(), 112.dp.roundToPx(), layoutDirection)
+                val space = pickerSpace(picker.anchor.translate(-windowOrigin), viewport, 12.dp.roundToPx(),
+                    320.dp.roundToPx(), 112.dp.roundToPx(), layoutDirection)
                 val card = children.single().measure(Constraints(minWidth = space.width, maxWidth = space.width,
                     maxHeight = space.maxHeight))
                 val y = if (space.above) space.edgeY - card.height else space.edgeY
@@ -182,13 +182,55 @@ internal fun pickerSpace(
 }
 
 @Composable
+private fun ProviderModelsList(
+    provider: Provider, models: List<ProviderModel>, active: RemoteModel,
+    onProviders: () -> Unit, onPick: (ProviderModel) -> Unit,
+) {
+    val providerTitle = stringResource(R.string.chat_picker_provider)
+    val sectionTitle = stringResource(R.string.chat_picker_models)
+    val nameCounts = remember(models) { models.groupingBy { it.name }.eachCount() }
+    key(provider.id) {
+        LazyColumn(Modifier.fillMaxWidth().testTag("chat-model-list"),
+            contentPadding = PaddingValues(vertical = 6.dp)) {
+            item { PickerHeading(providerTitle) }
+            item {
+                Row(Modifier.fillMaxWidth().focusProperties { canFocus = false }.testTag("chat-model-provider-trigger")
+                    .clickable(role = Role.Button, onClick = onProviders).heightIn(min = 48.dp)
+                    .padding(horizontal = 14.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(provider.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(18.dp))
+                }
+            }
+            item { PickerHeading(sectionTitle) }
+            if (models.isEmpty()) item {
+                Text(stringResource(R.string.chat_picker_provider_empty), Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            items(models, key = { it.id }) { model ->
+                val route = (model to provider).route
+                val label = if (nameCounts[model.name] == 1) model.name else "${model.name} · ${model.id}"
+                PickerOption(label, active == route, Modifier.testTag("chat-model-option:${provider.id}/${model.id}")) {
+                    onPick(model)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PickerHeading(title: String) {
+    Text(title, Modifier.padding(horizontal = 14.dp, vertical = 5.dp).semantics { heading() },
+        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
 private fun PickerList(
     title: String, modifier: Modifier = Modifier, selectedIndex: Int,
     items: LazyListScope.() -> Unit,
 ) {
     Column(modifier.padding(vertical = 6.dp)) {
-        Text(title, Modifier.padding(horizontal = 14.dp, vertical = 5.dp).semantics { heading() },
-            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        PickerHeading(title)
         val scroll = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 1).coerceAtLeast(0))
         LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).selectableGroup(), state = scroll, content = items)
     }
