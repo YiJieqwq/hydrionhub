@@ -8,12 +8,21 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.onPreInterceptKeyBeforeSoftKeyboard
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.input.TextFieldValue
 
 @Composable
 internal fun ChatModelPickerBack(onBack: () -> Unit) {
@@ -50,5 +59,47 @@ internal fun Modifier.chatModelPickerPreImeBack(enabled: Boolean, onBack: () -> 
             }
             else -> false
         }
+    }
+}
+
+internal data class PickerDraftFocus(
+    val focused: Boolean,
+    val softwareKeyboardShown: Boolean,
+    val editingLayout: Boolean,
+    val expansion: Float,
+    val value: TextFieldValue,
+)
+
+/** Per-conversation state for the single explicit transfer of focus to model search. */
+internal class ChatPickerSearchFocus {
+    var readDraft: (() -> PickerDraftFocus)? = null
+    var origin by mutableStateOf<PickerDraftFocus?>(null)
+        private set
+    private var searchWasFocused = false
+
+    fun capture() {
+        if (origin == null) origin = readDraft?.invoke()
+    }
+
+    fun onSearchFocused() { searchWasFocused = true }
+
+    fun finish(): PickerDraftFocus? {
+        val saved = origin.takeIf { searchWasFocused }
+        origin = null
+        searchWasFocused = false
+        return saved
+    }
+}
+
+internal fun Modifier.chatPickerSearchInput(picker: ChatModelPickerState): Modifier = composed {
+    val requester = remember(picker) { FocusRequester() }
+    // This field is composed only after the user explicitly invokes Search. Capture the draft
+    // before requestFocus: its own blur callback may immediately collapse its text selection.
+    LaunchedEffect(picker) {
+        picker.searchFocus.capture()
+        requester.requestFocus()
+    }
+    this.chatModelPickerPreImeBack(true, picker::back).focusRequester(requester).onFocusChanged {
+        if (it.isFocused) picker.searchFocus.onSearchFocused()
     }
 }

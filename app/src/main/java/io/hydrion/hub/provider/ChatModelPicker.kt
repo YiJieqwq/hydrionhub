@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -50,11 +49,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import io.hydrion.hub.R
 import io.hydrion.hub.model.Mode
-import io.hydrion.hub.model.RemoteModel
 import kotlin.math.roundToInt
 
 internal class ChatModelPickerState {
-    enum class Page { Controls, Models, Providers, Options }
+    enum class Page { Controls, Models, Search, Providers, Options }
+
+    val searchFocus = ChatPickerSearchFocus()
 
     var page by mutableStateOf<Page?>(null)
         private set
@@ -67,12 +67,17 @@ internal class ChatModelPickerState {
 
     fun open() { browsedProviderId = null; page = Page.Controls }
     fun models(providerId: String) { browsedProviderId = providerId; page = Page.Models }
+    fun search() {
+        if (page != Page.Models) return
+        searchFocus.capture()
+        page = Page.Search
+    }
     fun providers() { page = Page.Providers }
     fun options(cap: Capability) { optionKey = cap.key; page = Page.Options }
     fun dismiss() { page = null }
     fun back() {
         page = when (page) {
-            Page.Providers -> Page.Models
+            Page.Providers, Page.Search -> Page.Models
             Page.Models, Page.Options -> Page.Controls
             else -> null
         }
@@ -112,7 +117,7 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
     val dark = colors.onSurface.luminance() > colors.surface.luminance()
     var peak by remember(entry?.route) { mutableStateOf(false) }
 
-    // The IME stays in the editor's window. The transparent sibling catches only outside taps.
+    // The picker and draft share a window. Only an explicitly opened search field borrows focus.
     Box(modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))) {
         if (!closing) Box(Modifier.matchParentSize().focusProperties { canFocus = false }
             .clickable(interactionSource = null, indication = null, role = Role.Button, onClick = picker::dismiss)
@@ -143,7 +148,8 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                         val values = catalog.parameters(model, provider)
                         val cap = model.configureCapabilities().find { it.key == picker.optionKey }
                         when {
-                            page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Providers -> {
+                            page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Search ||
+                                page == ChatModelPickerState.Page.Providers -> {
                                 val providers = remember(catalog) { catalog.providers.filter { it.enabled && it.mode == Mode.Chat } }
                                 val browsing = providers.find { it.id == picker.browsedProviderId } ?: provider
                                 if (page == ChatModelPickerState.Page.Providers) {
@@ -160,7 +166,7 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                                     }
                                 } else {
                                     ProviderModelsList(browsing, models.filter { it.second.id == browsing.id }.map { it.first },
-                                        entry.route, onProviders = picker::providers, onPick = { next ->
+                                        entry.route, picker, onPick = { next ->
                                             val route = (next to browsing).route
                                             if (route != entry.route) store.configure(Mode.Chat, route, catalog.parameters(next, browsing))
                                             picker.open()
@@ -214,7 +220,12 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                 val viewport = IntSize(limits.maxWidth, limits.maxHeight)
                 val localAnchor = anchor.translate(-windowOrigin)
                 val space = if (controls) reasoningPanelSpace(localAnchor, viewport)
-                    else pickerSpace(localAnchor, viewport, layoutDirection)
+                    else {
+                        // The model list also needs room for its independent search control.
+                        val minimum = if (page == ChatModelPickerState.Page.Models ||
+                            page == ChatModelPickerState.Page.Search) 104.dp else 88.dp
+                        pickerSpace(localAnchor, viewport, layoutDirection, minimum)
+                    }
                 val card = children.first().measure(Constraints(minWidth = space.width, maxWidth = space.width,
                     maxHeight = space.maxHeight))
                 val y = if (space.above) space.edgeY - card.height else space.edgeY
@@ -251,7 +262,7 @@ internal fun Density.reasoningPanelSpace(trigger: IntRect, viewport: IntSize): P
 }
 
 internal fun Density.pickerSpace(
-    composer: IntRect, viewport: IntSize, direction: LayoutDirection,
+    composer: IntRect, viewport: IntSize, direction: LayoutDirection, minimumHeight: Dp = 88.dp,
 ): PickerSpace {
     val gap = 11.5.dp.roundToPx()
     val sideMargin = minOf(12.dp.roundToPx(), viewport.width / 2)
@@ -266,7 +277,7 @@ internal fun Density.pickerSpace(
     val below = viewport.height - verticalMargin - lowerEdge
     // In split-screen a tall draft can fill almost the entire area above the IME. Give the
     // scrollable content a heading and a tappable row, even if that uses the top of the editor.
-    val oneRow = minOf(88.dp.roundToPx(), viewport.height)
+    val oneRow = minOf(minimumHeight.roundToPx(), viewport.height)
     return if (above >= 96.dp.roundToPx() || above >= below) {
         PickerSpace(left, maxOf(upperEdge, oneRow), width, maxOf(above, oneRow), true)
     } else {
@@ -275,44 +286,7 @@ internal fun Density.pickerSpace(
 }
 
 @Composable
-private fun ProviderModelsList(
-    provider: Provider, models: List<ProviderModel>, active: RemoteModel,
-    onProviders: () -> Unit, onPick: (ProviderModel) -> Unit,
-) {
-    val providerTitle = stringResource(R.string.chat_picker_provider)
-    val sectionTitle = stringResource(R.string.chat_picker_models)
-    val nameCounts = remember(models) { models.groupingBy { it.name }.eachCount() }
-    key(provider.id) {
-        LazyColumn(Modifier.fillMaxWidth().testTag("chat-model-list"),
-            contentPadding = PaddingValues(vertical = 6.dp)) {
-            item { PickerHeading(providerTitle) }
-            item {
-                Row(Modifier.fillMaxWidth().focusProperties { canFocus = false }.testTag("chat-model-provider-trigger")
-                    .clickable(role = Role.Button, onClick = onProviders).heightIn(min = 48.dp)
-                    .padding(horizontal = 14.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(provider.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(18.dp))
-                }
-            }
-            item { PickerHeading(sectionTitle) }
-            if (models.isEmpty()) item {
-                Text(stringResource(R.string.chat_picker_provider_empty), Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            items(models, key = { it.id }) { model ->
-                val route = (model to provider).route
-                val label = if (nameCounts[model.name] == 1) model.name else "${model.name} · ${model.id}"
-                PickerOption(label, active == route, Modifier.testTag("chat-model-option:${provider.id}/${model.id}")) {
-                    onPick(model)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PickerHeading(title: String) {
+internal fun PickerHeading(title: String) {
     Text(title, Modifier.padding(horizontal = 14.dp, vertical = 5.dp).semantics { heading() },
         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
@@ -330,13 +304,13 @@ private fun PickerList(
 }
 
 @Composable
-private fun PickerOption(label: String, selected: Boolean, modifier: Modifier = Modifier, onPick: () -> Unit) {
+internal fun PickerOption(label: String, selected: Boolean, modifier: Modifier = Modifier, maxLines: Int = 2, onPick: () -> Unit) {
     Row(modifier.fillMaxWidth().focusProperties { canFocus = false }
         .selectable(selected, role = Role.RadioButton, onClick = onPick)
         .heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-            maxLines = 2, overflow = TextOverflow.Ellipsis)
+            maxLines = maxLines, overflow = TextOverflow.Ellipsis)
         if (selected) Icon(Icons.Outlined.Check, null, Modifier.size(18.dp))
     }
 }

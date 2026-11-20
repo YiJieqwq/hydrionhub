@@ -4,4 +4,7 @@
     <string name="chat_picker_provider">Provider</string>
     <string name="chat_picker_models">Models</string>
     <string name="chat_picker_provider_empty">No enabled chat models for this provider.</string>
+    <string name="chat_picker_search">Search models</string>
+    <string name="chat_picker_search_close">Close model search</string>
+    <string name="chat_picker_search_empty">No matching models.</string>
 </resources>

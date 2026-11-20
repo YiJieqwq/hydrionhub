@@ -1,5 +1,6 @@
 package io.hydrion.hub.provider
 
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
@@ -67,6 +68,16 @@ class ChatModelPickerLayoutTest {
         assertTrue(result.maxHeight >= 88)
         assertTrue(result.edgeY - result.maxHeight >= 0)
         assertTrue(result.edgeY <= composer.bottom - 48)
+    }
+
+    @Test fun searchButtonAndOneVisibleModelFitTogetherAboveAnOpenKeyboard() {
+        val viewport = IntSize(250, 146)
+        val composer = IntRect(8, 35, 242, 137)
+        val space = Density(1f).pickerSpace(composer, viewport, LayoutDirection.Ltr, minimumHeight = 104.dp)
+        assertTrue(space.above)
+        assertTrue(space.maxHeight >= 48 + 2 + 48)
+        assertTrue(space.edgeY - space.maxHeight >= 0)
+        assertTrue(space.edgeY <= viewport.height)
     }
 
     @Test fun reasoningCardCentersOnModelControlWithAnEightDpGap() {

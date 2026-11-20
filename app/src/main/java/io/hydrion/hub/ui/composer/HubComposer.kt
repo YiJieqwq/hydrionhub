@@ -100,6 +100,7 @@ import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
 import io.hydrion.hub.provider.ChatModelPickerState
+import io.hydrion.hub.provider.PickerDraftFocus
 import io.hydrion.hub.provider.chatModelPickerPreImeBack
 import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubState
@@ -237,12 +238,14 @@ internal fun HubComposer(
         if (focused && hasImeHeight) sawKeyboard = true
         if (hiding && hasImeHeight) sawHideAnimation = true
     }
+    val editingDraft = focused && !toolsRequested && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
+    val borrowed = chatPicker?.searchFocus?.origin
     ComposerImeReturnEffect(
         controller = imeReturn,
-        enabled = allowImeReturn && !toolsRequested && !hardwareKeyboardOnly,
+        enabled = allowImeReturn && !toolsRequested && !hardwareKeyboardOnly && borrowed == null,
         editorFocused = focused, windowFocused = windowFocused,
         imeShown = imeVisible || hasImeHeight, dismissing = hiding, opening = opening,
-        clearAfterDismissal = hiddenAfterEditing && !toolsRequested,
+        clearAfterDismissal = hiddenAfterEditing && !toolsRequested && borrowed == null,
         selection = ComposerEditorSelection(editorValue.text, editorValue.selection.start, editorValue.selection.end),
         onRestore = {
             sawKeyboard = hasImeHeight
@@ -267,8 +270,9 @@ internal fun HubComposer(
     BackHandler(enabled = toolsPanel == ToolsPanel.WaitingForIme || (focused && !toolsRequested && !pickerOpen)) {
         if (toolsPanel == ToolsPanel.WaitingForIme) cancelPendingTools() else collapse()
     }
-    // A system overlay can take window focus while the editor still owns a visible IME.
-    val editing = focused && !toolsRequested && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
+    // Search borrows focus without collapsing the toolbar that owns its model-picker anchor.
+    // A draft parked with the keyboard down keeps that layout while the search keyboard opens.
+    val editing = borrowed?.editingLayout ?: editingDraft
     val shapeProgress = rememberComposerShape {
         ComposerMotionInput(
             (current.getBottom(density) - nav).coerceAtLeast(0),
@@ -278,7 +282,45 @@ internal fun HubComposer(
         )
     }
     // Legacy keyboards may jump straight to zero before the flow collector sees the final inset.
-    val expansion = if (hasImeHeight || hasImeTarget || hardwareOnly) shapeProgress.value else 0f
+    val liveExpansion = if (hasImeHeight || hasImeTarget || hardwareOnly) shapeProgress.value else 0f
+    val expansion = borrowed?.expansion ?: liveExpansion
+    if (chatPicker != null) {
+        val readDraft by rememberUpdatedState {
+            PickerDraftFocus(
+                focused = focused,
+                softwareKeyboardShown = !hiding && (imeVisible || hasImeHeight || opening),
+                editingLayout = editingDraft,
+                expansion = expansion,
+                value = editorValue,
+            )
+        }
+        DisposableEffect(chatPicker) {
+            chatPicker.searchFocus.readDraft = { readDraft() }
+            onDispose {
+                chatPicker.searchFocus.readDraft = null
+                chatPicker.searchFocus.finish()
+            }
+        }
+        LaunchedEffect(chatPicker, chatPicker.page, windowFocused, allowImeReturn, toolsRequested) {
+            if (chatPicker.page == ChatModelPickerState.Page.Search) return@LaunchedEffect
+            if (!allowImeReturn || toolsRequested) {
+                chatPicker.searchFocus.finish()
+                return@LaunchedEffect
+            }
+            if (!windowFocused) return@LaunchedEffect
+            val saved = chatPicker.searchFocus.finish() ?: return@LaunchedEffect
+            if (saved.focused) {
+                if (editorValue.text == saved.value.text && editorValue.selection != saved.value.selection) {
+                    fieldValue = editorValue.copy(selection = saved.value.selection, composition = null)
+                }
+                editorFocus.requestFocus()
+                if (saved.softwareKeyboardShown) keyboard?.show()
+                else keyboard?.hide()
+            } else if (!saved.softwareKeyboardShown) {
+                keyboard?.hide()
+            }
+        }
+    }
 
     val hasContent = draft.text.isNotEmpty() || draft.attachments.isNotEmpty()
     val rowGate by animateFloatAsState(if (hasContent) 1f else 0f,
