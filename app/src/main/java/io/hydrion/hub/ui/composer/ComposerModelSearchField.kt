@@ -30,6 +30,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -47,7 +48,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntRect
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.round
 import io.hydrion.hub.R
 import io.hydrion.hub.provider.ChatModelPickerState
@@ -72,6 +72,7 @@ internal fun ComposerEditorSlot(
     picker: ChatModelPickerState?,
     minHeight: Dp,
     textStyle: TextStyle,
+    hintOverlay: Modifier, blendingHint: Boolean, searchMotion: ComposerHintMotion, searchIconGap: Dp,
     draftFocus: FocusRequester,
     modelEditorBridge: ModelEditorComposerBridge?,
     readDraft: () -> TextFieldValue,
@@ -126,7 +127,7 @@ internal fun ComposerEditorSlot(
         onEditorFocusChanged(editorFocused)
     }
 
-    Box(modifier.fillMaxWidth()) {
+    Box(modifier.fillMaxWidth().then(hintOverlay)) {
         // A returning capsule first displays the ordinary folded draft. Keep the query,
         // selection and search editor mounted while that temporary pose is on screen.
         val showSearch = searching && !foldedVisual
@@ -138,8 +139,8 @@ internal fun ComposerEditorSlot(
         if (picker != null && (searching || previousSearch)) {
             // Keep the outgoing search field until focus transfers or the hidden keyboard is released.
             val visibility = if (showSearch) Modifier else Modifier.withoutPlacement()
-            Box(Modifier.matchParentSize().then(visibility).padding(start = 15.dp, end = 16.dp)) {
-                ComposerModelSearchField(picker, minHeight, textStyle, if (showSearch) textLine else Modifier,
+            Box(Modifier.matchParentSize().then(visibility).padding(start = OpenTextStart, end = OpenTextEnd)) {
+                ComposerModelSearchField(picker, minHeight, textStyle, blendingHint, searchMotion, searchIconGap, if (showSearch) textLine else Modifier,
                     Modifier.focusRequester(searchFocus).onFocusChanged { searchFocused = it.isFocused }
                         .then(if (searching) activePlacement else Modifier))
             }
@@ -149,6 +150,7 @@ internal fun ComposerEditorSlot(
 
 @Composable
 private fun ComposerModelSearchField(picker: ChatModelPickerState, minHeight: Dp, textStyle: TextStyle,
+                                    blendingHint: Boolean, motion: ComposerHintMotion, iconGap: Dp,
                                     textLine: Modifier, modifier: Modifier) {
     val colors = MaterialTheme.colorScheme
     val hint = stringResource(R.string.chat_picker_search_hint)
@@ -176,12 +178,14 @@ private fun ComposerModelSearchField(picker: ChatModelPickerState, minHeight: Dp
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { submit() }),
         decorationBox = { input ->
-            Row(Modifier.fillMaxWidth().heightIn(min = minHeight).padding(top = 16.dp, bottom = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth().heightIn(min = minHeight).padding(top = OpenTextTop, bottom = TextBottom),
+                horizontalArrangement = Arrangement.spacedBy(iconGap), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Search, null, Modifier.size(SearchIconSize).graphicsLayer { alpha = motion.search },
+                    tint = colors.onSurfaceVariant)
                 Box(Modifier.weight(1f).trackPickerEditor(picker, search = true, textOnly = true).then(textLine),
                     contentAlignment = Alignment.CenterStart) {
-                    if (picker.searchQuery.text.isEmpty()) Text(hint, style = textStyle, color = colors.onSurfaceVariant,
+                    if (picker.searchQuery.text.isEmpty()) Text(hint, if (blendingHint) MeasuredHintOnly else Modifier,
+                        style = textStyle, color = colors.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     input()
                 }

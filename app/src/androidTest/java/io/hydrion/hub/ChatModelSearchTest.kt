@@ -43,6 +43,15 @@ class ChatModelSearchTest {
 
     private val editor get() = screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction())
     private val send get() = screen.onNodeWithTag("chat-composer-send")
+    private val searchHint get() = screen.activity.getString(R.string.chat_picker_search_hint)
+
+    private fun assertComposerHint(expected: String?) {
+        val inCapsule = hasAnyAncestor(hasTestTag("composer-capsule"))
+        for (hint in listOf("Chat with AI", searchHint)) {
+            screen.onAllNodes(inCapsule and hasText(hint)).assertCountEquals(if (hint == expected) 1 else 0)
+        }
+    }
+
     private fun control(id: String) = screen.onNodeWithTag("chat-model-$id")
     private fun option(provider: Provider, id: String) = "option:${provider.id}/$id"
     private fun reveal(id: String): SemanticsNodeInteraction {
@@ -174,6 +183,7 @@ class ChatModelSearchTest {
         enterSearch("select")
         screen.runOnIdle { vm.setDraft("") }
         val parked = capsule()
+        assertComposerHint(searchHint)
         val bubble = screen.onNodeWithTag("chat-picker-bubble", useUnmergedTree = true)
         val gap = parked.top - bubble.fetchSemanticsNode().boundsInRoot.bottom
         val clock = screen.mainClock
@@ -188,6 +198,7 @@ class ChatModelSearchTest {
                 assertTrue("Expected travel in requested direction", if (down) edge > previous else edge < previous)
                 assertEquals("Menu bottom and capsule top must be from the same frame",
                     gap, edge - bubble.fetchSemanticsNode().boundsInRoot.bottom, 1f)
+                assertComposerHint(if (down) "Chat with AI" else searchHint)
                 assertTrue("Browsing and searching keep the keyboard hidden", !imeIsVisible())
                 previous = edge
             }
@@ -225,8 +236,10 @@ class ChatModelSearchTest {
         query.performTouchInput { click(center) }
         screen.waitUntil(15_000) { imeIsVisible() && capsule().width > parked.width }
         query.assertIsFocused()
+        assertComposerHint(searchHint)
         assertAnchored("list")
         assertImeStays(true) { control("search-close").performTouchInput { click(center) } }
+        assertComposerHint("Chat with AI")
         control("list").assertIsDisplayed()
         hideKeyboard()
         screen.waitUntil(15_000) { capsule() == compact }
@@ -247,12 +260,14 @@ class ChatModelSearchTest {
             editor.performTextInputSelection(selection)
             openControls()
             assertImeStays(true) { enterSearch("select").performTextReplacement("Nimbus") }
+            assertComposerHint(null)
             hideKeyboard()
             screen.waitUntil(15_000) { capsule() == parked }
             assertAnchored("list")
 
             assertImeStays(false) { control("search-close").performTouchInput { click(center) } }
             editor.assertTextEquals(draft)
+            assertComposerHint(null)
             assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
             assertEquals(parked, capsule())
             screen.onNodeWithText("draft-only.txt").assertIsDisplayed()

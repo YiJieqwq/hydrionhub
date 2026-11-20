@@ -66,6 +66,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -260,7 +261,10 @@ internal fun HubComposer(
     val pickerOpen = chatPicker?.page != null
     val hardwareOnly = hardwareKeyboardOnly && !pickerOpen && !hiddenAfterEditing && !sawHideAnimation
     val searchPicker = chatPicker?.takeIf { it.page == ChatModelPickerState.Page.Search }
+    var lastSearchHintVisible by remember(chatPicker) { mutableStateOf(false) }
+    val queryEmpty = searchPicker?.searchQuery?.text?.isEmpty() ?: lastSearchHintVisible
     SideEffect {
+        if (searchPicker != null) lastSearchHintVisible = queryEmpty
         if (fieldValue.text != draft.text) fieldValue = editorValue
         // Composing spans belong to the outgoing IME session; keep the draft text and selection.
         if ((searchPicker != null || toolEditor != null) && fieldValue.composition != null) fieldValue = fieldValue.copy(composition = null)
@@ -329,15 +333,13 @@ internal fun HubComposer(
     val hasRowContent = hasContent || searchPicker != null
     val rowTarget = composerRowTarget(forceReturnFolded, hasContent, searchPicker != null,
         chatPicker?.modelListNavigation == true, imeActive)
-    val rowMotion = remember { Animatable(rowTarget.fraction) }
-    var previousRow by remember { mutableStateOf(rowTarget) }
-    LaunchedEffect(rowTarget) {
-        val duration = rowTarget.travelMillisFrom(previousRow, rowMotion.value)
-        previousRow = rowTarget
-        if (duration == 0) rowMotion.snapTo(rowTarget.fraction)
-        else rowMotion.animateTo(rowTarget.fraction, tween(duration, easing = LinearEasing))
+    val searching = searchPicker != null
+    val motion = rememberComposerHintMotion(rowTarget, searching)
+    val blendingHint by remember(motion, searching) {
+        derivedStateOf(structuralEqualityPolicy()) { motion.search != (if (searching) 1f else 0f) }
     }
-    val rowGate = rowMotion.value
+    val transientHint = blendingHint && chatPicker != null && toolEditor == null && !forceReturnFolded
+    val rowGate = motion.row
     val chatToolbar = if (forceReturnFolded) 0f else maxOf(expansion, rowGate)
     val toolbar = chatToolbar * (1f - toolsProgress)
     val returning = modelEditorBridge?.returning != null
@@ -383,6 +385,15 @@ internal fun HubComposer(
     val editorMinHeight = lerp(49.25.dp, 46.5.dp, toolbar)
     val controlRowHeight = 47.75.dp
     val editorTextStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
+    val textTop = lerp(5.dp, OpenTextTop, toolbar)
+    // An empty draft can be folded, parked with attachments, or expanded over the IME.
+    val draftPose = if (hasContent) 1f else expansion
+    val draftStart = lerp(FoldedTextStart, OpenTextStart, draftPose)
+    val searchIconGap = modelSearchIconGap(draftStart)
+    val hintOverlay = if (transientHint) Modifier.modelSearchHint(
+        motion, searching, editorValue.text.isEmpty(), queryEmpty, draftStart, searchIconGap,
+        lerp(FoldedTextStart, OpenTextEnd, draftPose), textTop, editorMinHeight, editorTextStyle,
+    ) else Modifier
     var draftOverflowPx by remember(state.current.id, state.current.mode) { mutableIntStateOf(0) }
     val safeArea = WindowInsets.safeDrawing
     val pickerRoom = if (!pickerOpen) Modifier else Modifier.layout { measurable, limits ->
@@ -453,6 +464,7 @@ internal fun HubComposer(
                     Column {
                         ComposerEditorSlot(
                             picker = chatPicker, minHeight = editorMinHeight, textStyle = editorTextStyle,
+                            hintOverlay = hintOverlay, blendingHint = transientHint, searchMotion = motion, searchIconGap = searchIconGap,
                             draftFocus = editorFocus,
                             modelEditorBridge = modelEditorBridge,
                             readDraft = { fieldValue },
@@ -490,7 +502,7 @@ internal fun HubComposer(
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth().padding(
-                                    start = lerp(48.dp, 15.dp, toolbar), end = lerp(48.dp, 16.dp, toolbar)
+                                    start = lerp(FoldedTextStart, OpenTextStart, toolbar), end = lerp(FoldedTextStart, OpenTextEnd, toolbar)
                                 ).then(if (toolEditor == null) Modifier else Modifier.testTag("tools-search-field")
                                     .onPreviewKeyEvent { event ->
                                         val code = event.nativeKeyEvent.keyCode
@@ -516,7 +528,7 @@ internal fun HubComposer(
                                             val extra = if (toolEditor == null) 0 else (draftOverflowPx * (1f - toolsProgress)).roundToInt()
                                             layout(field.width, limits.constrainHeight(field.height + extra)) { field.place(0, 0) }
                                         }.heightIn(min = editorMinHeight)
-                                        .padding(top = lerp(5.dp, 16.dp, toolbar), bottom = 4.dp),
+                                        .padding(top = textTop, bottom = TextBottom),
                                         contentAlignment = Alignment.CenterStart) {
                                         val visibleTextLine = if (searchPicker == null && !forceReturnFolded && chatPicker != null)
                                             textLine else Modifier
@@ -525,7 +537,8 @@ internal fun HubComposer(
                                             if (shown.text.isEmpty()) {
                                                 val isChat = state.current.mode == Mode.Chat
                                                 Text(
-                                                    if (toolEditor != null) toolHint else if (isChat) "Chat with AI" else "描述想生成的图片",
+                                                    if (toolEditor != null) toolHint else if (isChat) ChatDraftHint else "描述想生成的图片",
+                                                    modifier = if (transientHint) MeasuredHintOnly else Modifier,
                                                     color = HubStyle.ComposerHint,
                                                     style = if (isChat) editorTextStyle else editorTextStyle.copy(fontSize = 17.sp),
                                                     maxLines = 1, overflow = TextOverflow.Ellipsis,
