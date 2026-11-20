@@ -517,38 +517,32 @@ internal fun HubComposer(
                                 translationX = -8.dp.toPx() * (1f - chatToolbar)
                             }.then(if (interactive) Modifier else Modifier.clearAndSetSemantics { })
                             Row(leading.then(reveal), verticalAlignment = Alignment.CenterVertically) {
-                                val terminalSlot = if (state.current.mode == Mode.Chat) 0 else 1
-                                repeat(2) { slot ->
-                                    // The inset belongs to the slot so the visible glyph spacing stays even.
-                                    val glyph = Modifier.offset(x = -ToolbarGlyphGapReduction * (slot + 1))
-                                    if (slot == terminalSlot) {
-                                        Box(Modifier.width(42.dp).height(48.dp).clearAndSetSemantics {
-                                            contentDescription = "工作区终端"
-                                            role = Role.Button
-                                            disabled()
-                                        }, contentAlignment = Alignment.Center) {
-                                            TerminalGlyph(glyphAccent, glyphLine, glyph)
+                                ComposerIconButton("打开工具箱", onClick = {
+                                    if (tools != null) {
+                                        if (toolsAvailable && !tools.active) {
+                                            imeReturn.cancel()
+                                            chatPicker?.dismiss()
+                                            tools.open()
                                         }
-                                    } else {
-                                        ComposerIconButton("打开工具箱", onClick = {
-                                            if (tools != null) {
-                                                if (toolsAvailable && !tools.active) {
-                                                    imeReturn.cancel()
-                                                    chatPicker?.dismiss()
-                                                    tools.open()
-                                                }
-                                            } else if (state.current.mode == Mode.Image) {
-                                                if (toolsPanel == ToolsPanel.WaitingForIme) cancelPendingTools()
-                                                else {
-                                                    imeReturn.cancel()
-                                                    toolsPanel = if (imeActive) ToolsPanel.WaitingForIme else ToolsPanel.Open
-                                                    if (imeActive) keyboard?.hide()
-                                                }
-                                            }
-                                        }, enabled = interactive && canOpenTools) {
-                                            ToolGlyph(toolTrack, if (toolsAvailable) glyphAccent else toolTrack, glyph)
+                                    } else if (state.current.mode == Mode.Image) {
+                                        if (toolsPanel == ToolsPanel.WaitingForIme) cancelPendingTools()
+                                        else {
+                                            imeReturn.cancel()
+                                            toolsPanel = if (imeActive) ToolsPanel.WaitingForIme else ToolsPanel.Open
+                                            if (imeActive) keyboard?.hide()
                                         }
                                     }
+                                }, enabled = interactive && canOpenTools) {
+                                    ToolGlyph(toolTrack, if (toolsAvailable) glyphAccent else toolTrack,
+                                        Modifier.offset(x = -ToolbarGlyphGapReduction))
+                                }
+                                Box(Modifier.width(42.dp).height(48.dp).clearAndSetSemantics {
+                                    contentDescription = "工作区终端"
+                                    role = Role.Button
+                                    disabled()
+                                }, contentAlignment = Alignment.Center) {
+                                    TerminalGlyph(glyphAccent, glyphLine,
+                                        Modifier.offset(x = -ToolbarGlyphGapReduction * 2))
                                 }
                             }
                             Box(Modifier.weight(1f).then(reveal), contentAlignment = Alignment.CenterEnd) {

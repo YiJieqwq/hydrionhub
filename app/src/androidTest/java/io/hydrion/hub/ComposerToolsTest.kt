@@ -80,7 +80,7 @@ class ComposerToolsTest {
         val add = screen.onNodeWithContentDescription("添加附件").assertIsEnabled().assertHasClickAction()
         val tools = screen.onNodeWithContentDescription("打开工具箱")
         val terminal = screen.onNodeWithContentDescription("工作区终端").assertIsNotEnabled().assertHasNoClickAction()
-        val ordered = if (mode == Mode.Chat) listOf(add, terminal, tools) else listOf(add, tools, terminal)
+        val ordered = listOf(add, tools, terminal)
         val density = screen.activity.resources.displayMetrics.density
         val direction = if (screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL) -1 else 1
         val targets = ordered.map { it.fetchSemanticsNode().boundsInRoot }
@@ -100,7 +100,7 @@ class ComposerToolsTest {
             assertEquals("$mode visible icon spacing", 39f * density, direction * (glyphs[index] - glyphs[index - 1]), 2f)
         }
         val terminalImage = terminal.captureToImage().asAndroidBitmap()
-        val shift = if (mode == Mode.Chat) -3f else -6f
+        val shift = -6f
         terminalImage.assertStroke("terminal upper chevron", 255, shift, 3.5f, 6.5f)
         terminalImage.assertStroke("terminal lower chevron", 255, shift, 3.5f, 11.5f)
         terminalImage.assertStroke("terminal underline", 255, shift, 13f, 14f)
@@ -118,7 +118,7 @@ class ComposerToolsTest {
             screen.runOnIdle { assertEquals(Mode.Image, vm.state.value.current.mode) }
             assertToolbarSlots(Mode.Image)
             val tools = screen.onNodeWithContentDescription("打开工具箱")
-            tools.assertToolInk(enabled = true, shift = -3f)
+            tools.assertToolInk(enabled = true)
             editor.performTouchInput { click(center) }
             screen.waitUntil(15_000) { imeVisible() }
             tools.assertIsEnabled().performTouchInput { click(center) }
@@ -433,8 +433,9 @@ internal fun SemanticsNodeInteraction.assertGlyphGray(label: String, expectedGra
         solidPixels >= 2 && abs(brightest - expectedGray) <= 2)
 }
 
-internal fun SemanticsNodeInteraction.assertToolInk(enabled: Boolean, shift: Float = -6f) {
+internal fun SemanticsNodeInteraction.assertToolInk(enabled: Boolean) {
     val bitmap = captureToImage().asAndroidBitmap()
+    val shift = -3f
     val gray = if (enabled) 255 else 175
     for ((y, thumb) in listOf(3.5f to 11.5f, 9f to 5.5f, 14.5f to 10.5f)) {
         bitmap.assertStroke("tool track at $y, left", gray, shift, 2f, y)

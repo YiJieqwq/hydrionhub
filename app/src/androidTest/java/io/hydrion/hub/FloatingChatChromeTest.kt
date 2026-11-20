@@ -206,11 +206,11 @@ class FloatingChatChromeTest {
         val shell = screen.onNodeWithTag("composer-capsule", true)
         val bounds = shell.fetchSemanticsNode().boundsInRoot
         val image = shell.captureToImage().asAndroidBitmap()
-        // The tool has no semantics in early reveal frames. Anchor its third-slot drawing region
+        // The tool has no semantics in early reveal frames. Anchor its second-slot drawing region
         // to the persistent attachment, including the glyph radius and its full 8dp translation.
         val add = screen.onNodeWithContentDescription("添加附件").fetchSemanticsNode().boundsInRoot
         val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
-        val settledX = add.center.x - bounds.left + (if (rtl) -78f else 78f) * density
+        val settledX = add.center.x - bounds.left + (if (rtl) -39f else 39f) * density
         val xs = (settledX - 18f * density).roundToInt()..(settledX + 10f * density).roundToInt()
         val ys = image.height - (32f * density).roundToInt()..image.height - (15f * density).roundToInt()
         val ink = ys.maxOf { y -> xs.maxOf { x -> Color.red(image.getPixel(x, y)) } }
