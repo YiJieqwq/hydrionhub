@@ -7,6 +7,12 @@ internal sealed interface ComposerMorph {
     }
 
     data class At(val fraction: Float) : ComposerMorph
+
+    // A feature can release editor focus well before Android moves the IME, or transfer focus
+    // to another editor that keeps the same IME indefinitely.
+    data class FollowAfterBlur(val fraction: Float) : ComposerMorph {
+        companion object { const val IdleTimeoutMillis = 600L }
+    }
 }
 
 /** The host follows the physical IME. Only dismissal couples the composer's shape to its height. */
@@ -16,13 +22,16 @@ internal class ComposerMotion {
     }
 
     private var lastHeight = 0
+    private var wasEditing = false
     private var dismissal: Dismissal? = null
 
     fun update(
         height: Int, source: Int, target: Int, editing: Boolean, hardwareOnly: Boolean,
-        renderedFraction: Float,
+        renderedFraction: Float, imeVisible: Boolean = true,
     ): ComposerMorph {
         val previous = lastHeight
+        val regainedFocus = editing && !wasEditing
+        wasEditing = editing
         // A target may precede all travel, or briefly outlive a missing current inset mid-opening.
         if (height == 0 && target > 0 && previous > 0 && dismissal == null && editing) {
             return ComposerMorph.Tween.Open
@@ -36,18 +45,23 @@ internal class ComposerMotion {
                 else -> ComposerMorph.Tween.LoseFocus
             }
         }
-        if (!editing) {
-            dismissal = null
-            return ComposerMorph.Tween.LoseFocus
-        }
-
-        val hiding = source > 0 && target == 0
-        if (hiding && dismissal == null) {
-            // Reversals start where we actually drew the fast opening, not at the IME's travel ratio.
-            val start = if (previous > 0) previous else maxOf(source, height)
-            dismissal = Dismissal(start, renderedFraction)
-        } else if (!hiding && (source != target || height > previous)) {
-            // Also accept a real rise when the keyboard omits the reversal's animation bounds.
+        val reportedHide = source > 0 && target == 0
+        // A still-visible keyboard can resize with no animation bounds (e.g. its suggestion bar).
+        val unboundedDrop = !imeVisible && source == target && height < previous
+        if (!editing || reportedHide || unboundedDrop) {
+            val active = dismissal
+            val leg = if (active == null || (!editing && height > previous)) {
+                // Stop from the actually visible shape, including when a fast opening was interrupted.
+                val start = if (previous > 0) maxOf(previous, height) else maxOf(source, height)
+                Dismissal(start, renderedFraction)
+            } else active
+            dismissal = leg
+            if (!editing) {
+                // A late inset after the idle fallback must never make the capsule grow again.
+                val fraction = minOf(renderedFraction, leg.at(height))
+                return if (fraction > 0f) ComposerMorph.FollowAfterBlur(fraction) else ComposerMorph.At(0f)
+            }
+        } else if (regainedFocus || source != target || height > previous) {
             dismissal = null
         }
         // During a close, identical/missing bounds alone do not change direction.

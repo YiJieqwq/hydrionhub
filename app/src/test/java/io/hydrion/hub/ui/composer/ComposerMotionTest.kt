@@ -10,8 +10,8 @@ class ComposerMotionTest {
 
     private fun frame(
         height: Int, source: Int, target: Int, rendered: Float = 0f,
-        editing: Boolean = true, hardware: Boolean = false,
-    ) = motion.update(height, source, target, editing, hardware, rendered)
+        editing: Boolean = true, hardware: Boolean = false, imeVisible: Boolean = true,
+    ) = motion.update(height, source, target, editing, hardware, rendered, imeVisible)
 
     @Test fun firstAndRepeatedOpeningsStartOnActualTravelAndUseOneShortTween() {
         repeat(3) {
@@ -69,8 +69,50 @@ class ComposerMotionTest {
         assertEquals(open, frame(0, 0, 0, hardware = true))
         assertEquals(open, frame(0, 0, 800, hardware = true))
         assertEquals(open, frame(300, 0, 800, 1f, hardware = true))
-        assertEquals(ComposerMorph.Tween.LoseFocus, frame(300, 0, 800, 1f, editing = false, hardware = true))
+        // The connected keyboard doesn't change how an actual software inset descends.
+        assertEquals(ComposerMorph.FollowAfterBlur(1f), frame(300, 0, 800, 1f, editing = false, hardware = true))
+        assertEquals(ComposerMorph.Tween.LoseFocus, frame(0, 0, 0, 1f, editing = false, hardware = true))
         assertEquals(33, ComposerMorph.Tween.LoseFocus.millis)
         assertEquals(zero, frame(0, 0, 0, editing = false))
+    }
+
+    @Test fun focusLossWaitsThroughStaticInsetsThenFollowsFirstDownwardFrameWithoutBounds() {
+        frame(800, 800, 800, 1f)
+        repeat(6) {
+            assertEquals(ComposerMorph.FollowAfterBlur(1f), frame(800, 800, 800, 1f, editing = false))
+        }
+        assertEquals(ComposerMorph.FollowAfterBlur(1f), frame(800, 800, 0, 1f, editing = false))
+        assertEquals(ComposerMorph.FollowAfterBlur(.5f), frame(600, 600, 600, 1f, editing = false))
+        assertEquals(zero, frame(400, 0, 0, .5f, editing = false))
+        assertEquals(zero, frame(0, 0, 0, editing = false))
+    }
+
+    @Test fun focusReturnsBeforeDismissalThenInterruptsAnotherCloseAndUsesTheFastOpening() {
+        frame(250, 0, 800, .6f)
+        assertEquals(ComposerMorph.FollowAfterBlur(.6f), frame(250, 0, 800, .6f, editing = false))
+        assertEquals(open, frame(250, 250, 250, .6f))
+        frame(800, 800, 800, 1f)
+        assertEquals(ComposerMorph.FollowAfterBlur(.5f), frame(600, 800, 0, 1f, editing = false))
+        assertEquals(open, frame(600, 600, 800, .5f))
+        assertEquals(48, open.millis)
+    }
+
+    @Test fun lateInsetsAfterIdleFallbackCannotGrowAnUnfocusedComposer() {
+        frame(800, 800, 800, 1f)
+        frame(800, 800, 800, 1f, editing = false)
+        // Fallback has already shrunk the shell while the IME was retained by another editor.
+        assertEquals(ComposerMorph.FollowAfterBlur(.25f), frame(780, 800, 0, .25f, editing = false))
+        assertEquals(zero, frame(750, 800, 0, 0f, editing = false))
+        assertEquals(zero, frame(0, 0, 0, editing = false))
+    }
+
+    @Test fun imeOwnedBackCanHideWithoutBoundsWhileAnOrdinaryVisibleResizeStaysOpen() {
+        frame(800, 800, 800, 1f)
+        assertEquals(open, frame(700, 0, 0, 1f))
+        assertEquals(ComposerMorph.At(1f), frame(700, 700, 0, 1f, imeVisible = false))
+        assertEquals(ComposerMorph.At(.5f), frame(525, 0, 0, 1f, imeVisible = false))
+        frame(0, 0, 0, editing = false)
+        frame(800, 800, 800, 1f)
+        assertEquals(ComposerMorph.At(.5f), frame(600, 600, 600, 1f, imeVisible = false))
     }
 }

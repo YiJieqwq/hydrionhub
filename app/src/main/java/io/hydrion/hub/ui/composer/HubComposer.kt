@@ -96,6 +96,7 @@ import io.hydrion.hub.ui.messages.AttachmentPicture
 import io.hydrion.hub.ui.messages.GeneratedPicture
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.capsuleEdge
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -106,6 +107,7 @@ private val ToolbarGlyphGapReduction = 3.dp
 
 internal data class ComposerMotionInput(
     val height: Int, val source: Int, val target: Int, val editing: Boolean, val hardwareOnly: Boolean,
+    val imeVisible: Boolean = true,
 )
 
 @Composable
@@ -116,11 +118,20 @@ internal fun rememberComposerShape(input: () -> ComposerMotionInput): State<Floa
         val motion = ComposerMotion()
         snapshotFlow { readInput() }.map { sample ->
             // Read the rendered value outside snapshotFlow so tween frames don't retrigger the input.
-            motion.update(sample.height, sample.source, sample.target, sample.editing, sample.hardwareOnly, progress.value)
+            motion.update(
+                sample.height, sample.source, sample.target, sample.editing, sample.hardwareOnly,
+                progress.value, sample.imeVisible,
+            )
         }.distinctUntilChanged().collectLatest { goal ->
             when (goal) {
                 is ComposerMorph.Tween -> progress.animateTo(goal.end, tween(goal.millis, easing = LinearEasing))
                 is ComposerMorph.At -> progress.snapTo(goal.fraction)
+                is ComposerMorph.FollowAfterBlur -> {
+                    progress.snapTo(goal.fraction)
+                    // collectLatest cancels the fallback when travel or the editing direction changes.
+                    delay(ComposerMorph.FollowAfterBlur.IdleTimeoutMillis)
+                    progress.animateTo(0f, tween(ComposerMorph.Tween.LoseFocus.millis, easing = LinearEasing))
+                }
             }
         }
     }
@@ -226,7 +237,7 @@ fun HubComposer(
             (current.getBottom(density) - nav).coerceAtLeast(0),
             (source.getBottom(density) - nav).coerceAtLeast(0),
             (target.getBottom(density) - nav).coerceAtLeast(0),
-            editing, hardwareOnly,
+            editing, hardwareOnly, imeVisible,
         )
     }
     // Legacy keyboards may jump straight to zero before the flow collector sees the final inset.
