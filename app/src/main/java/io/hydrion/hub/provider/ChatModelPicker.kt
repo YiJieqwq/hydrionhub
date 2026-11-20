@@ -6,7 +6,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -42,7 +41,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
@@ -62,6 +60,7 @@ internal class ChatModelPickerState {
         private set
     var composerBounds by mutableStateOf<IntRect?>(null)
     var editorBounds by mutableStateOf<IntRect?>(null)
+    var triggerBounds by mutableStateOf<IntRect?>(null)
     var searchQuery by mutableStateOf(TextFieldValue())
         private set
     var searchSubmissions by mutableIntStateOf(0)
@@ -143,14 +142,14 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
     // Controls and search both leave the composer editor reachable through the dismissal layer.
     Box(modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))) {
         var origin by remember { mutableStateOf<IntOffset?>(null) }
-        if (page == ChatModelPickerState.Page.Controls || page == ChatModelPickerState.Page.Search) {
+        if (!closing) {
+            val editThrough = page == ChatModelPickerState.Page.Controls || page == ChatModelPickerState.Page.Search
             PickerDismissLayer(
                 picker, close, Modifier.matchParentSize(),
-                fieldBounds = { origin?.let { picker.editorBounds?.translate(-it) } },
+                fieldBounds = { if (editThrough) origin?.let { picker.editorBounds?.translate(-it) } else null },
+                triggerBounds = { origin?.let { picker.triggerBounds?.translate(-it) } },
             )
-        } else if (!closing) Box(Modifier.matchParentSize().focusProperties { canFocus = false }
-            .clickable(interactionSource = null, indication = null, role = Role.Button, onClick = picker::dismiss)
-            .semantics { contentDescription = close })
+        }
         Layout(
             modifier = Modifier.fillMaxSize().testTag("chat-picker-viewport")
                 .onGloballyPositioned { origin = it.positionInWindow().round() },

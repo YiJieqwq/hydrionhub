@@ -8,6 +8,9 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,6 +48,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ripple
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,6 +71,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -448,7 +453,16 @@ internal fun HubComposer(
                                 }, contentAlignment = Alignment.Center) { TerminalGlyph(promptColor = glyphAccent, underlineColor = glyphLine) }
                             }
                             Box(Modifier.weight(1f).then(reveal), contentAlignment = Alignment.CenterEnd) {
-                                val trigger = if (chatPicker != null) Modifier.testTag("chat-model-trigger") else Modifier
+                                val presses = remember { MutableInteractionSource() }
+                                val trigger = if (chatPicker == null) Modifier else {
+                                    val bounds = if (!interactive) Modifier else {
+                                        DisposableEffect(chatPicker) { onDispose { chatPicker.triggerBounds = null } }
+                                        Modifier.onGloballyPositioned {
+                                            chatPicker.triggerBounds = IntRect(it.positionInWindow().round(), it.size)
+                                        }
+                                    }
+                                    Modifier.testTag("chat-model-trigger").then(bounds)
+                                }
                                 // The former chevron and its gap contribute 17 dp to the trigger’s hit area.
                                 val actionLabel = if (chatPicker != null) stringResource(R.string.chat_controls_select_model)
                                     else "配置模型"
@@ -460,17 +474,19 @@ internal fun HubComposer(
                                         fun labelWidth(text: String) = with(density) {
                                             measurer.measure(text, labelStyle, maxLines = 1, softWrap = false).size.width.toDp()
                                         }
-                                        // Outer padding, optional bolt, and the open chip's two 8 dp insets.
+                                        // Keep the original touch width and trailing alignment in both states.
                                         val closedLabel = labelWidth(modelLabel) + if (fast) 17.dp else 0.dp
                                         25.dp + maxOf(closedLabel, labelWidth(effortLabel) + 16.dp)
                                     }
                                     Modifier.width(width)
                                 } else Modifier
                                 Row(
-                                    trigger.clip(CircleShape).semantics {
+                                    trigger.then(if (pickerOpen) Modifier else Modifier.clip(CircleShape)).semantics {
                                         contentDescription = if (pickerOpen && effortLabel != null) effortLabel else actionLabel
                                         stateDescription = modelLabel
-                                    }.clickable(enabled = interactive, role = Role.Button) {
+                                    }.clickable(interactionSource = presses,
+                                        indication = if (chatPicker == null) LocalIndication.current else null,
+                                        enabled = interactive, role = Role.Button) {
                                         cancelPendingTools()
                                         if (pickerOpen) chatPicker?.dismiss()
                                         else if (chatPicker != null) chatPicker.open() else {
@@ -482,12 +498,17 @@ internal fun HubComposer(
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     if (fast && !pickerOpen) Icon(Icons.Outlined.Bolt, "快速", Modifier.size(15.dp), tint = colors.onSurface)
-                                    val labelSurface = if (pickerOpen) Modifier.background(colors.surfaceContainerHighest, CircleShape)
-                                        .padding(horizontal = 8.dp, vertical = 4.dp) else Modifier
-                                    Text(if (pickerOpen && effortLabel != null) effortLabel else modelLabel,
-                                        Modifier.weight(1f, fill = false).then(labelSurface),
-                                        style = labelStyle, color = if (pickerOpen) colors.onSurfaceVariant else colors.onSurface,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Box(Modifier.weight(1f, fill = false)) {
+                                        if (chatPicker != null) {
+                                            // The whole row handles taps; draw its feedback only behind the label.
+                                            Spacer(Modifier.matchParentSize().clip(CircleShape)
+                                                .indication(presses, ripple(bounded = false)))
+                                        }
+                                        Text(if (pickerOpen) stringResource(R.string.chat_controls_selecting) else modelLabel,
+                                            modifier = if (pickerOpen) Modifier.padding(horizontal = 8.dp, vertical = 4.dp) else Modifier,
+                                            style = labelStyle, color = if (pickerOpen) colors.onSurfaceVariant else colors.onSurface,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
                                 }
                             }
                         } else Spacer(Modifier.weight(1f))
@@ -536,16 +557,18 @@ private fun PlusGlyph() {
     }
 }
 
+private fun DrawScope.narrowGlyphX(x: Float) = center.x + (x - center.x) * 0.90f
+
 @Composable
 private fun ToolGlyph(trackColor: Color, thumbColor: Color) {
     // Bring the glyphs closer to the attachment icon inside their existing hit areas.
     Canvas(Modifier.offset(x = -ToolbarGlyphGapReduction).size(ComposerGlyphSize)) {
         val trackWidth = ComposerGlyphFineStroke.toPx()
         val thumbWidth = ComposerGlyphStroke.toPx()
-        val margin = trackWidth / 2
+        val margin = narrowGlyphX(trackWidth / 2)
         fun slider(row: Float, thumb: Float) {
             val y = row.dp.toPx()
-            val x = thumb.dp.toPx()
+            val x = narrowGlyphX(thumb.dp.toPx())
             drawLine(trackColor, Offset(margin, y), Offset(size.width - margin, y), trackWidth, StrokeCap.Round)
             drawLine(thumbColor, Offset(x, y - 1.8.dp.toPx()), Offset(x, y + 1.8.dp.toPx()), thumbWidth, StrokeCap.Round)
         }
@@ -558,7 +581,7 @@ private fun ToolGlyph(trackColor: Color, thumbColor: Color) {
 @Composable
 private fun TerminalGlyph(promptColor: Color, underlineColor: Color) {
     Canvas(Modifier.offset(x = -ToolbarGlyphGapReduction * 2).size(ComposerGlyphSize)) {
-        fun point(x: Float, y: Float) = Offset(x.dp.toPx(), y.dp.toPx())
+        fun point(x: Float, y: Float) = Offset(narrowGlyphX(x.dp.toPx()), y.dp.toPx())
         val stroke = ComposerGlyphStroke.toPx()
         drawLine(promptColor, point(1f, 4f), point(6f, 9f), stroke, StrokeCap.Round)
         drawLine(promptColor, point(6f, 9f), point(1f, 14f), stroke, StrokeCap.Round)

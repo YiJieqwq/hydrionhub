@@ -1,11 +1,13 @@
 package io.hydrion.hub
 
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.view.KeyEvent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -24,6 +26,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInputSelection
@@ -315,9 +318,12 @@ class ChatModelPickerTest {
         val triggerSize = control("trigger").fetchSemanticsNode().size
         val closedLabel = control("trigger").fetchSemanticsNode().config[SemanticsProperties.Text]
         val effortLabel = screen.activity.getString(R.string.chat_controls_select_effort)
+        val selecting = screen.activity.getString(R.string.chat_controls_selecting)
+        val modelDescription = control("trigger").fetchSemanticsNode().config[SemanticsProperties.StateDescription]
         control("trigger").performTouchInput { click(center) }
         control("card").assertIsDisplayed()
-        control("trigger").assertTextEquals(effortLabel)
+        control("trigger").assertTextEquals(selecting).assertContentDescriptionEquals(effortLabel)
+        assertEquals(modelDescription, control("trigger").fetchSemanticsNode().config[SemanticsProperties.StateDescription])
         assertEquals(triggerSize, control("trigger").fetchSemanticsNode().size)
         assertEditing()
         control("select").performTouchInput { click(center) }
@@ -348,15 +354,45 @@ class ChatModelPickerTest {
         assertEquals(triggerSize, control("trigger").fetchSemanticsNode().size)
         assertEditing()
 
-        control("trigger").performTouchInput { click(center) }
+        // Open without a touch ripple so the reference image contains the resting state.
+        control("trigger").performClick()
         val card = control("card").fetchSemanticsNode().boundsInRoot
         val trigger = control("trigger").fetchSemanticsNode().boundsInRoot
         val root = screen.onRoot().fetchSemanticsNode().boundsInRoot
         assertTrue("The card fits horizontally", card.left >= root.left && card.right <= root.right)
         assertTrue("The active chip remains outside the anchored card",
             card.bottom <= trigger.top || card.top >= trigger.bottom)
-        // A real tap at the chip's position hits the outside layer rather than selecting or refocusing.
-        control("trigger").performTouchInput { click(center) }
+        // Press at the leading edge of the full hit target, well outside the visible label.
+        val button = control("trigger")
+        val density = screen.activity.resources.displayMetrics.density
+        val rtl = screen.activity.resources.configuration.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL
+        val edge = Offset(if (rtl) trigger.width - 3f * density else 3f * density, trigger.height / 2f)
+        val label = screen.onNodeWithText(selecting, useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot.translate(-trigger.topLeft).inflate(10f * density)
+        assertTrue("The test press is in the trigger's empty margin", !label.contains(edge))
+        fun pixels(bitmap: Bitmap) = IntArray(bitmap.width * bitmap.height).also {
+            bitmap.getPixels(it, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        }
+        val resting = button.captureToImage().asAndroidBitmap()
+        val before = pixels(resting)
+        button.performTouchInput { down(edge) }
+        try {
+            screen.waitUntil(3_000) {
+                val during = pixels(button.captureToImage().asAndroidBitmap())
+                var changed = 0
+                for (index in before.indices) if (before[index] != during[index]) {
+                    val point = Offset((index % resting.width) + .5f, (index / resting.width) + .5f)
+                    assertTrue("Press feedback escaped the label at $point", label.contains(point))
+                    changed++
+                }
+                changed > density * density
+            }
+        } finally {
+            button.performTouchInput { cancel() }
+        }
+        control("card").assertIsDisplayed()
+        assertEditing()
+        button.performTouchInput { click(edge) }
         control("card").assertDoesNotExist()
         assertEditing()
     }
