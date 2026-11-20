@@ -40,6 +40,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+internal val EffortRailHitHeight = 48.dp
+internal val EffortRailHeight = 26.dp
+
 private val RailMargin = 12.dp
 private val ThumbRadius = 15.dp
 private val SnapSpec = tween<Float>(180, easing = CubicBezierEasing(.2f, .8f, .2f, 1f))
@@ -153,7 +156,7 @@ internal fun EffortTrack(
         }
     }
 
-    Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("chat-model-effort").then(touch).semantics {
+    Box(Modifier.fillMaxWidth().heightIn(min = EffortRailHitHeight).testTag("chat-model-effort").then(touch).semantics {
         contentDescription = label
         stateDescription = description
         if (last > 0) {

@@ -154,7 +154,6 @@ internal fun ChatModelPicker(
     if (page != null && !paused) ChatModelPickerBack(onBack = picker::systemBack, imeFirst = picker.modelListNavigation)
     val colors = MaterialTheme.colorScheme
     val dark = colors.onSurface.luminance() > colors.surface.luminance()
-    var peak by remember(entry?.route) { mutableStateOf(false) }
 
     // Controls and search keep their original editor hit area. Other pages pass through only the text row.
     val accessibility = if (paused) Modifier.clearAndSetSemantics {} else Modifier
@@ -175,8 +174,7 @@ internal fun ChatModelPicker(
             freezeListSize = suspended && modelList,
             listColor = if (modelList || page == null) colors.surfaceContainerHigh else colors.surface,
             effortColor = if (dark) Color(0xFF2A2B2E) else Color(0xFFF8F8F8),
-            effortBorder = if (peak) (if (dark) Color(0x73B085FF) else Color(0x47914EF6))
-                else colors.onSurface.copy(alpha = 0.05f),
+            effortBorder = Color(0xFF3E3E3E),
             modifier = Modifier.fillMaxSize().testTag("chat-picker-viewport"),
             paneTitle = select,
         ) {
@@ -251,7 +249,7 @@ internal fun ChatModelPicker(
                                     catalog.defaultEntry(Mode.Chat)?.let { default ->
                                         store.configure(Mode.Chat, default.route, catalog.parameters(default.first, emptyMap()))
                                     }
-                                }, onPeakChanged = { peak = it })
+                                })
                         }
                     }
                 }

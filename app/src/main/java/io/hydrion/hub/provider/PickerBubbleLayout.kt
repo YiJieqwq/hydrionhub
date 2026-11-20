@@ -1,7 +1,6 @@
 package io.hydrion.hub.provider
 
 import android.animation.ValueAnimator
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.tween
@@ -81,8 +80,6 @@ internal fun PickerBubbleLayout(
 ) {
     val motion = remember(picker) { Animatable(Offset.Zero, Offset.VectorConverter) }
     val durationScale = rememberCoroutineScope().coroutineContext[MotionDurationScale]
-    val border = animateColorAsState(effortBorder, tween(250, easing = ChatPickerEasing),
-        label = "Reasoning peak border")
     LaunchedEffect(face, hideForReturn) {
         if (hideForReturn) motion.snapTo(Offset.Zero) else {
             val delta = face.weights - motion.value
@@ -107,7 +104,7 @@ internal fun PickerBubbleLayout(
 
     Layout(modifier = modifier, content = {
         BubbleSurface(targets, { motion.value }, colors.pickerBubbleHighlight, effortColor,
-            if (face == PickerBubbleFace.List) listColor else lastListColor, border, colors.outlineVariant,
+            if (face == PickerBubbleFace.List) listColor else lastListColor, effortBorder, colors.outlineVariant,
             hideForReturn, face != PickerBubbleFace.Label, velocity = {
                 if (motion.isRunning && motion.targetValue == face.weights && motion.value != face.weights) {
                     val scale = durationScale?.scaleFactor ?: if (ValueAnimator.areAnimatorsEnabled()) 1f else 0f
@@ -195,7 +192,7 @@ internal fun PickerBubbleLayout(
 @Composable
 private fun BubbleSurface(
     targets: State<BubbleTargets>, weights: () -> Offset, highlight: Color, effort: Color, list: Color,
-    effortBorder: State<Color>, listBorder: Color, hidden: Boolean, interactive: Boolean, velocity: () -> Offset,
+    effortBorder: Color, listBorder: Color, hidden: Boolean, interactive: Boolean, velocity: () -> Offset,
 ) {
     val trailPath = remember { Path() }
     Layout(modifier = Modifier.drawWithContent {
@@ -208,7 +205,7 @@ private fun BubbleSurface(
         val rect = scene.bounds(w)
         if (rect.isEmpty) return@drawWithContent
         val cover = (w.x + w.y).coerceIn(0f, 1f)
-        val edge = lerp(effortBorder.value, listBorder, if (cover > 0f) (w.y / cover).coerceIn(0f, 1f) else 0f)
+        val edge = lerp(effortBorder, listBorder, if (cover > 0f) (w.y / cover).coerceIn(0f, 1f) else 0f)
         drawPickerEdgeTrail(rect, scene.label, scene.effort, scene.list, speed,
             bubbleRadius(rect, 14.dp.toPx(), cover), edge, trailPath)
     }, content = {
@@ -219,8 +216,9 @@ private fun BubbleSurface(
             val radius = CornerRadius(bubbleRadius(Rect(Offset.Zero, size), 14.dp.toPx(), cover))
             val surface = lerp(highlight, lerp(effort, list, listPart), cover)
             drawRoundRect(surface, cornerRadius = radius)
-            val stroke = (0.5f + 0.16f * listPart) * density
-            val edge = lerp(effortBorder.value, listBorder, listPart)
+            // Effort has a two-device-pixel outline; the model list keeps its original dp width.
+            val stroke = 2f + (0.66.dp.toPx() - 2f) * listPart
+            val edge = lerp(effortBorder, listBorder, listPart)
             if (cover > 0f && size.minDimension > stroke) {
                 drawRoundRect(edge.copy(alpha = edge.alpha * cover), topLeft = Offset(stroke / 2, stroke / 2),
                     size = Size(size.width - stroke, size.height - stroke),

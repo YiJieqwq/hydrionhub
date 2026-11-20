@@ -181,7 +181,7 @@ internal fun EffortRail(
     }
 
     Spacer(Modifier.fillMaxWidth().height(30.dp).onSizeChanged { widthPx = it.width }.drawWithCache {
-        val railHeight = 26.dp.toPx()
+        val railHeight = EffortRailHeight.toPx()
         val top = (size.height - railHeight) / 2
         val y = size.height / 2
         val radius = minOf(maxThumbRadius, size.width / 2)
