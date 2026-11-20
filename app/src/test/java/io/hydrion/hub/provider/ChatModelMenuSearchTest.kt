@@ -57,20 +57,24 @@ class ChatModelMenuSearchTest {
 
     @Test fun leavingModelSelectionDiscardsAPausedOrActiveQuery() {
         val picker = ChatModelPickerState()
-        val exits = listOf<() -> Unit>(
-            { picker.back(); picker.back() },  // Close search, then leave the model list.
-            { picker.back(); picker.dismiss() },
-            picker::dismiss,                  // Outside tap while searching.
-            picker::open,                     // A model was selected.
+        val exits = listOf<Pair<() -> Unit, ChatModelPickerState.Page?>>(
+            { picker.back(); picker.back() } to ChatModelPickerState.Page.Controls,
+            { picker.back(); picker.dismiss() } to null,
+            picker::dismiss to null,
+            picker::open to ChatModelPickerState.Page.Controls, // The list arrow while searching or a model selection.
+            { picker.back(); picker.open() } to ChatModelPickerState.Page.Controls, // The same arrow after pressing ×.
         )
-        for (exit in exits) {
+        for ((exit, expectedPage) in exits) {
             picker.open()
             picker.models("provider", startSearching = true)
             assertEquals(TextFieldValue(), picker.searchQuery)
             picker.updateSearchQuery(TextFieldValue("test"))
             exit()
+            assertEquals(expectedPage, picker.page)
             picker.updateSearchQuery(TextFieldValue("late edit"))
             assertEquals(TextFieldValue(), picker.searchQuery)
+            picker.dismiss() // The controls arrow leaves the composer as the only active surface.
+            assertEquals(null, picker.page)
         }
     }
 

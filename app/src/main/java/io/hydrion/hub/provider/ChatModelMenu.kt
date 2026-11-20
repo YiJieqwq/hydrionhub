@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -32,8 +33,8 @@ import androidx.compose.ui.unit.dp
 import io.hydrion.hub.R
 import io.hydrion.hub.model.RemoteModel
 
-// Provider heading, provider switch, model heading precede the first result.
-private const val FirstModelRow = 3
+// The provider heading is pinned. The provider switch and model heading scroll with the results.
+private const val FirstModelRow = 2
 
 internal fun matchingMenuModels(models: List<ProviderModel>, query: String): List<ProviderModel> {
     val term = query.trim()
@@ -47,7 +48,7 @@ internal fun matchingMenuModels(models: List<ProviderModel>, query: String): Lis
 @Composable
 internal fun ProviderModelsList(
     provider: Provider, models: List<ProviderModel>, active: RemoteModel,
-    picker: ChatModelPickerState, onPick: (ProviderModel) -> Unit,
+    picker: ChatModelPickerState, dark: Boolean, onPick: (ProviderModel) -> Unit,
 ) = key(provider.id) {
     val searching = picker.page == ChatModelPickerState.Page.Search
     val query = if (searching) picker.searchQuery.text.trim() else ""
@@ -69,36 +70,43 @@ internal fun ProviderModelsList(
     }
     val actionLabel = stringResource(if (searching) R.string.chat_picker_search_close else R.string.chat_picker_search)
     val colors = MaterialTheme.colorScheme
+    val headingColor = if (dark) Color(0xFFAFAFAF) else colors.onSurfaceVariant
+    val modelNameColor = if (dark) Color(0xFFEDEDED) else Color.Unspecified
     val keepEditorFocus = Modifier.focusProperties { canFocus = false }
 
     BoxWithConstraints(Modifier.fillMaxWidth().testTag("chat-model-list")) {
-        // In a short landscape window, leave the last row reachable beside the search action.
-        val actionSpace = if (maxHeight < 104.dp) Modifier.padding(end = 52.dp)
+        // Beside a short list, the search button leaves its full height available for scrolling.
+        val actionSpace = if (maxHeight < 152.dp) Modifier.padding(end = 52.dp)
             else Modifier.padding(bottom = 50.dp)
-        LazyColumn(Modifier.fillMaxWidth().then(actionSpace).testTag("chat-model-results"),
-            state = scroll, contentPadding = PaddingValues(top = 6.dp)) {
-            item { PickerHeading(stringResource(R.string.chat_picker_provider)) }
-            item {
-                Row(keepEditorFocus.fillMaxWidth().testTag("chat-model-provider-trigger")
-                    .clickable(role = Role.Button, onClick = picker::providers).heightIn(min = 48.dp)
-                    .padding(horizontal = 14.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(provider.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(18.dp))
+        Column(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                PickerBackButton(stringResource(R.string.chat_picker_back_to_controls), picker::open,
+                    Modifier.testTag("chat-model-list-back"))
+                PickerHeading(stringResource(R.string.chat_picker_provider), headingColor)
+            }
+            LazyColumn(Modifier.fillMaxWidth().then(actionSpace).testTag("chat-model-results"), state = scroll) {
+                item {
+                    Row(keepEditorFocus.fillMaxWidth().testTag("chat-model-provider-trigger")
+                        .clickable(role = Role.Button, onClick = picker::providers).heightIn(min = 48.dp)
+                        .padding(horizontal = 14.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(provider.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(18.dp))
+                    }
                 }
-            }
-            item { PickerHeading(stringResource(R.string.chat_picker_models)) }
-            if (matches.isEmpty()) item {
-                val empty = if (models.isEmpty()) R.string.chat_picker_provider_empty else R.string.chat_picker_search_empty
-                Text(stringResource(empty), Modifier.testTag("chat-model-search-empty")
-                    .semantics { liveRegion = LiveRegionMode.Polite }.padding(horizontal = 14.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-            }
-            items(matches, key = { it.id }) { model ->
-                val route = (model to provider).route
-                val label = if (nameCounts[model.name] == 1) model.name else "${model.name} · ${model.id}"
-                PickerOption(label, active == route, Modifier.testTag("chat-model-option:${provider.id}/${model.id}"),
-                    maxLines = 1) { onPick(model) }
+                item { PickerHeading(stringResource(R.string.chat_picker_models), headingColor) }
+                if (matches.isEmpty()) item {
+                    val empty = if (models.isEmpty()) R.string.chat_picker_provider_empty else R.string.chat_picker_search_empty
+                    Text(stringResource(empty), Modifier.testTag("chat-model-search-empty")
+                        .semantics { liveRegion = LiveRegionMode.Polite }.padding(horizontal = 14.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                }
+                items(matches, key = { it.id }) { model ->
+                    val route = (model to provider).route
+                    val label = if (nameCounts[model.name] == 1) model.name else "${model.name} · ${model.id}"
+                    PickerOption(label, active == route, Modifier.testTag("chat-model-option:${provider.id}/${model.id}"),
+                        maxLines = 1, labelColor = modelNameColor) { onPick(model) }
+                }
             }
         }
         // Keep the same independent control and hit rectangle in both states.

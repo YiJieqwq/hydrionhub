@@ -1,6 +1,8 @@
 <resources>
     <string name="chat_picker_no_models">Enable a chat provider and add a model in Settings.</string>
     <string name="chat_picker_close">Close model picker</string>
+    <string name="chat_picker_back_to_message">Back to message</string>
+    <string name="chat_picker_back_to_controls">Back to reasoning controls</string>
     <string name="chat_picker_provider">Provider</string>
     <string name="chat_picker_models">Models</string>
     <string name="chat_picker_provider_empty">No enabled chat models for this provider.</string>

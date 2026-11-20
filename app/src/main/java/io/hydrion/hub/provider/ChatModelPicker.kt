@@ -17,13 +17,16 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -173,8 +176,13 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                     border = border, shadowElevation = 6.dp,
                     modifier = motion.then(capture).semantics { paneTitle = select }) {
                     if (entry == null) {
-                        Text(stringResource(R.string.chat_picker_no_models), Modifier.padding(16.dp),
-                            style = MaterialTheme.typography.bodyMedium)
+                        Row {
+                            PickerBackButton(stringResource(if (modelList) R.string.chat_picker_back_to_controls
+                                else R.string.chat_picker_back_to_message), if (modelList) picker::open else picker::dismiss,
+                                Modifier.testTag(if (modelList) "chat-model-list-back" else "chat-effort-back"))
+                            Text(stringResource(R.string.chat_picker_no_models), Modifier.padding(12.dp),
+                                style = MaterialTheme.typography.bodyMedium)
+                        }
                     } else {
                         val (model, provider) = entry
                         val values = catalog.parameters(model, provider)
@@ -200,7 +208,7 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                                     }
                                 } else {
                                     ProviderModelsList(browsing, models.filter { it.second.id == browsing.id }.map { it.first },
-                                        entry.route, picker, onPick = { next ->
+                                        entry.route, picker, dark, onPick = { next ->
                                             val route = (next to browsing).route
                                             if (route != entry.route) store.configure(Mode.Chat, route, catalog.parameters(next, browsing))
                                             picker.open()
@@ -220,7 +228,7 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
                             else -> key(entry.route) {
                                 Column(Modifier.verticalScroll(rememberScrollState()).testTag("chat-model-card")) {
                                     val speeds = remember(model, provider, values) { model.chatSpeedControls(provider, values) }
-                                    ChatModelControls(model, values, speeds = speeds, onModels = { picker.models(provider.id, startSearching = true) },
+                                    ChatModelControls(model, values, speeds = speeds, onClose = picker::dismiss, onModels = { picker.models(provider.id, startSearching = true) },
                                         onChoose = { capability, choice ->
                                             // Back or a profile change can arrive while the rail still owns a pointer.
                                             if (picker.page == ChatModelPickerState.Page.Controls &&
@@ -309,9 +317,17 @@ internal fun Density.pickerSpace(
 }
 
 @Composable
-internal fun PickerHeading(title: String) {
+internal fun PickerBackButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    IconButton(onClick = onClick, modifier = modifier.size(48.dp).focusProperties { canFocus = false }) {
+        Icon(Icons.AutoMirrored.Outlined.ArrowBack, label, Modifier.size(19.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+internal fun PickerHeading(title: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     Text(title, Modifier.padding(horizontal = 14.dp, vertical = 5.dp).semantics { heading() },
-        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        style = MaterialTheme.typography.labelSmall, color = color)
 }
 
 @Composable
@@ -327,12 +343,13 @@ private fun PickerList(
 }
 
 @Composable
-internal fun PickerOption(label: String, selected: Boolean, modifier: Modifier = Modifier, maxLines: Int = 2, onPick: () -> Unit) {
+internal fun PickerOption(label: String, selected: Boolean, modifier: Modifier = Modifier, maxLines: Int = 2,
+    labelColor: Color = Color.Unspecified, onPick: () -> Unit) {
     Row(modifier.fillMaxWidth().focusProperties { canFocus = false }
         .selectable(selected, role = Role.RadioButton, onClick = onPick)
         .heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = labelColor,
             maxLines = maxLines, overflow = TextOverflow.Ellipsis)
         if (selected) Icon(Icons.Outlined.Check, null, Modifier.size(18.dp))
     }

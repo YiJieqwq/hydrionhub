@@ -84,6 +84,15 @@ class ChatModelSearchTest {
         control("search-field").assertDoesNotExist()
     }
 
+    private fun tapBackArrow(tag: String) {
+        val button = screen.onNodeWithTag(tag).assertIsDisplayed().assertHasClickAction()
+        val node = button.fetchSemanticsNode()
+        val minimum = 48f * screen.activity.resources.displayMetrics.density - 1f
+        assertTrue("Back needs a 48dp target", node.boundsInRoot.width >= minimum && node.boundsInRoot.height >= minimum)
+        assertTrue(node.config[SemanticsProperties.ContentDescription].any { it.isNotBlank() })
+        button.performTouchInput { click(center) }
+    }
+
     private fun enterSearch(button: String, expectedQuery: String = ""): SemanticsNodeInteraction {
         val keyboardWasOpen = imeIsVisible()
         control(button).performTouchInput { click(center) }
@@ -205,6 +214,51 @@ class ChatModelSearchTest {
             screen.onNodeWithText("draft-only.txt").assertIsDisplayed()
             screen.runOnIdle { assertEquals(attachments, vm.state.value.draft.attachments) }
             assertImeStays(false) { enterSearch("search", expectedQuery = "Nimbus") }
+            assertImeStays(false) { control("search-close").performTouchInput { click(center) } }
+            assertImeStays(false) { tapBackArrow("chat-model-list-back") }
+            control("list").assertDoesNotExist()
+            assertAnchored("card")
+            assertEquals(parked, capsule())
+
+            // Returning from ordinary browsing ends even a paused search.
+            assertImeStays(false) { enterSearch("select") }
+            assertImeStays(false) { tapBackArrow("chat-model-list-back") }
+            assertImeStays(false) { tapBackArrow("chat-effort-back") }
+            control("card").assertDoesNotExist()
+            editor.assertTextEquals(draft)
+            assertEquals(parked, capsule())
+            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            screen.runOnIdle { assertEquals(attachments, vm.state.value.draft.attachments) }
+        }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun listArrowEndsActiveSearchAndEffortArrowClosesWithKeyboardOpen() =
+        withProviders(includeAttachment = true) { vm, _, _ ->
+            val draft = "first line\nsecond line"
+            val selection = TextRange(2, 8)
+            editor.performTouchInput { click(center) }
+            screen.waitUntil(15_000) { imeIsVisible() }
+            editor.performTextReplacement(draft)
+            editor.performTextInputSelection(selection)
+            val before = screen.runOnIdle { vm.state.value.draft }
+
+            openControls()
+            enterSearch("select").performTextReplacement("Nimbus")
+            assertImeStays(true) { tapBackArrow("chat-model-list-back") }
+            control("search-field").assertDoesNotExist()
+            control("list").assertDoesNotExist()
+            assertAnchored("card")
+            editor.assertIsFocused().assertTextEquals(draft)
+            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+
+            enterSearch("select")  // A new selection starts with an empty query.
+            assertImeStays(true) { tapBackArrow("chat-model-list-back") }
+            assertImeStays(true) { tapBackArrow("chat-effort-back") }
+            control("card").assertDoesNotExist()
+            editor.assertIsFocused().assertTextEquals(draft)
+            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            screen.onNodeWithText("draft-only.txt").assertIsDisplayed()
+            screen.runOnIdle { assertEquals(before, vm.state.value.draft) }
         }
 
     @OptIn(ExperimentalTestApi::class)

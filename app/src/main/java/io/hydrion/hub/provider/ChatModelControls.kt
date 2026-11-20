@@ -79,6 +79,7 @@ internal fun ChatModelControls(
     model: ProviderModel,
     values: Map<String, String>,
     speeds: ChatSpeedControls,
+    onClose: () -> Unit,
     onModels: () -> Unit,
     onChoose: (Capability, String) -> Unit,
     onOptions: (Capability) -> Unit,
@@ -109,44 +110,49 @@ internal fun ChatModelControls(
     Column(Modifier.fillMaxWidth()) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val buttonWidth = minOf(48.dp, maxWidth / 3)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                val fastTint = when {
-                    palette.isPeak && dark -> Color(0xFFC39BFF)
-                    palette.isPeak -> Color(0xFF9B48EB)
-                    dark -> Color(0xFF7AAAFF)
-                    else -> Color(0xFF3988F6)
+            val splitHeader = maxWidth < 192.dp
+            PickerBackButton(stringResource(R.string.chat_picker_back_to_message), onClose,
+                Modifier.align(Alignment.TopStart).width(buttonWidth).testTag("chat-effort-back"))
+            val fastTint = when {
+                palette.isPeak && dark -> Color(0xFFC39BFF)
+                palette.isPeak -> Color(0xFF9B48EB)
+                dark -> Color(0xFF7AAAFF)
+                else -> Color(0xFF3988F6)
+            }
+            FastButton(speeds.fast, speeds.off, speeds.selected, buttonWidth, fastTint,
+                Modifier.align(Alignment.TopStart).offset(x = buttonWidth)) {
+                speed?.let { cap -> onChoose(cap, it) }
+            }
+            Column(
+                Modifier.fillMaxWidth()
+                    .then(if (splitHeader) Modifier.padding(top = 48.dp)
+                        else Modifier.padding(start = buttonWidth * 2, end = buttonWidth))
+                    .then(keepEditorFocus).heightIn(min = 60.dp)
+                    .clip(RoundedCornerShape(5.dp)).testTag("chat-model-select")
+                    .clickable(role = Role.Button, onClickLabel = selectLabel, onClick = onModels)
+                    .padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(if (effort != null && shown != null) chatOptionLabel(effort, shown) else selectLabel,
+                    Modifier.testTag("chat-model-effort-title"), color = titleTint,
+                    style = MaterialTheme.typography.bodyLarge, fontSize = 16.sp, lineHeight = 22.sp,
+                    letterSpacing = 0.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(model.name, Modifier.weight(1f, fill = false).testTag("chat-model-name"),
+                        color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium,
+                        fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null,
+                        Modifier.size(14.dp).testTag("chat-model-name-chevron"), tint = colors.onSurfaceVariant)
                 }
-                FastButton(speeds.fast, speeds.off, speeds.selected, buttonWidth, fastTint) {
-                    speed?.let { cap -> onChoose(cap, it) }
-                }
-                Column(
-                    keepEditorFocus.weight(1f).heightIn(min = 60.dp)
-                        .clip(RoundedCornerShape(5.dp)).testTag("chat-model-select")
-                        .clickable(role = Role.Button, onClickLabel = selectLabel, onClick = onModels)
-                        .padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 2.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(if (effort != null && shown != null) chatOptionLabel(effort, shown) else selectLabel,
-                        Modifier.testTag("chat-model-effort-title"), color = titleTint,
-                        style = MaterialTheme.typography.bodyLarge, fontSize = 16.sp, lineHeight = 22.sp,
-                        letterSpacing = 0.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Row(verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(model.name, Modifier.weight(1f, fill = false).testTag("chat-model-name"),
-                            color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium,
-                            fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null,
-                            Modifier.size(14.dp).testTag("chat-model-name-chevron"), tint = colors.onSurfaceVariant)
-                    }
-                }
-                val resetLabel = stringResource(R.string.chat_controls_reset)
-                Box(keepEditorFocus.width(buttonWidth).height(48.dp).testTag("chat-model-reset")
-                    .semantics { contentDescription = resetLabel }
-                    .clickable(role = Role.Button, onClick = onReset), contentAlignment = Alignment.Center) {
-                    EffortToolGlyph(resetGlyph, colors.onSurfaceVariant, Modifier.offset(x = 3.dp, y = (-3).dp))
-                }
+            }
+            val resetLabel = stringResource(R.string.chat_controls_reset)
+            Box(Modifier.align(Alignment.TopEnd).then(keepEditorFocus).width(buttonWidth).height(48.dp).testTag("chat-model-reset")
+                .semantics { contentDescription = resetLabel }
+                .clickable(role = Role.Button, onClick = onReset), contentAlignment = Alignment.Center) {
+                EffortToolGlyph(resetGlyph, colors.onSurfaceVariant, Modifier.offset(x = 3.dp, y = (-3).dp))
             }
         }
         if (effort != null && level != null) {
@@ -183,7 +189,7 @@ internal fun orderedEffortLevels(choices: List<String>, declared: List<String>):
 
 @Composable
 private fun FastButton(tier: String?, off: String?, selected: String?, width: Dp, activeTint: Color,
-    onChange: (String) -> Unit) {
+    modifier: Modifier, onChange: (String) -> Unit) {
     val enabled = tier != null && off != null
     val active = tier != null && selected == tier
     val name = stringResource(R.string.chat_controls_fast)
@@ -198,7 +204,7 @@ private fun FastButton(tier: String?, off: String?, selected: String?, width: Dp
         !enabled -> colors.onSurface.copy(alpha = .32f)
         else -> colors.onSurfaceVariant
     }
-    Box(Modifier.width(width).height(48.dp).focusProperties { canFocus = false }
+    Box(modifier.width(width).height(48.dp).focusProperties { canFocus = false }
         .testTag("chat-model-fast")
         .semantics { contentDescription = description }
         .toggleable(active, enabled = enabled, role = Role.Switch) { on ->
