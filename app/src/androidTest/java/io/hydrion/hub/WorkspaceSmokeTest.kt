@@ -73,6 +73,7 @@ class WorkspaceSmokeTest {
         screen.onNodeWithText("置顶会话").assertIsDisplayed()
         screen.onNode(hasContentDescription("新建会话") and hasAnySibling(hasText("HydrionHub"))).performClick()
         screen.onNode(modeTab("Chat")).assertIsSelected()
+        screen.onNodeWithText(prompt).assertDoesNotExist()
         screen.onNodeWithContentDescription("打开侧栏").performClick()
         // Now switch from the fresh draft back into the pinned, mode-locked conversation.
         screen.onNode(hasText(prompt) and hasContentDescription("Chat") and hasClickAction()).performClick()
@@ -82,8 +83,9 @@ class WorkspaceSmokeTest {
 
     @Test
     fun imageGenerationAllowsReferenceOnlyFollowup() {
+        val prompt = "冒烟图片-" + UUID.randomUUID().toString().take(8)
         screen.onNode(modeTab("Image")).performClick()
-        send("冒烟图片-" + UUID.randomUUID().toString().take(8))
+        send(prompt)
 
         awaitNode(hasText("作为参考图"))
         screen.onNode(hasText("Image") and hasText("0.0k") and hasContentDescription("已锁定")).assertIsDisplayed()
@@ -93,6 +95,10 @@ class WorkspaceSmokeTest {
         screen.onNodeWithContentDescription("发送消息").assertIsEnabled()
         screen.onNodeWithContentDescription("移除 参考图").performClick()
         screen.onNodeWithContentDescription("发送消息").assertIsNotEnabled()
+        screen.onNodeWithContentDescription("打开侧栏").performClick()
+        screen.onNode(hasContentDescription("新建会话") and hasAnySibling(hasText("HydrionHub"))).performClick()
+        screen.onNode(modeTab("Image")).performClick()
+        screen.onNode(hasText(prompt) and hasClickAction()).assertIsDisplayed().performClick()
         deleteCurrentConversation()
     }
 }

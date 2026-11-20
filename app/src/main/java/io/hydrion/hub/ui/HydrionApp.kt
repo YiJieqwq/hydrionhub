@@ -177,17 +177,17 @@ private fun Workspace(vm: HubViewModel) {
                     },
                     snackbarHost = { SnackbarHost(snackbar) }
                 ) { bars ->
-                    if (current.messages.isEmpty()) {
-                        RecentConversations(
-                            history = state.history, mode = current.mode,
-                            visible = !state.modeLocked && state.draft.text.isBlank() && state.draft.attachments.isEmpty(),
-                            onOpen = { id -> focus.clearFocus(); vm.openConversation(id) },
-                            modifier = Modifier.fillMaxSize().padding(bars)
-                        )
-                    } else {
+                    if (current.messages.isNotEmpty()) {
                         timelines.SaveableStateProvider(current.id) {
                             MessageList(vm, state, if (finding) query else "", index, floatingBars = bars)
                         }
+                    } else if (current.mode == Mode.Image && !state.modeLocked &&
+                        state.draft.text.isBlank() && state.draft.attachments.isEmpty()) {
+                        RecentImageConversations(
+                            history = state.history,
+                            onOpen = { id -> focus.clearFocus(); vm.openConversation(id) },
+                            modifier = Modifier.fillMaxSize().padding(bars)
+                        )
                     }
                 }
                 if (current.mode == Mode.Chat && chatPicker.page != null) {
@@ -237,11 +237,11 @@ private fun ComposerError(detail: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun RecentConversations(
-    history: List<Conversation>, mode: Mode, visible: Boolean, onOpen: (String) -> Unit, modifier: Modifier
+private fun RecentImageConversations(
+    history: List<Conversation>, onOpen: (String) -> Unit, modifier: Modifier
 ) {
-    val recent = remember(history, mode, visible) {
-        if (visible) history.asSequence().filter { it.mode == mode }.take(3).toList() else emptyList()
+    val recent = remember(history) {
+        history.asSequence().filter { it.mode == Mode.Image }.take(3).toList()
     }
     BoxWithConstraints(modifier, contentAlignment = Alignment.BottomCenter) {
         val count = (maxHeight.value / 46f).toInt().coerceIn(0, recent.size)
@@ -252,7 +252,7 @@ private fun RecentConversations(
                     .heightIn(min = 46.dp).padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Icon(if (mode == Mode.Chat) Icons.Outlined.ChatBubbleOutline else Icons.Outlined.Image,
+                    Icon(Icons.Outlined.Image,
                         contentDescription = null, modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(conversation.title, style = MaterialTheme.typography.bodyMedium,
