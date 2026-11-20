@@ -3,6 +3,7 @@ package io.hydrion.hub.ui.composer
 import android.content.res.Configuration
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -49,10 +50,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,10 +92,36 @@ import io.hydrion.hub.ui.messages.AttachmentPicture
 import io.hydrion.hub.ui.messages.GeneratedPicture
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.capsuleEdge
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 private const val ComposerTransitionMillis = 33
 private val ComposerSecondary = Color(0xFFAFAFAF)
 private val ToolbarGlyphGapReduction = 3.dp
+
+internal data class ComposerMotionInput(
+    val height: Int, val source: Int, val target: Int, val editing: Boolean, val hardwareOnly: Boolean,
+)
+
+@Composable
+internal fun rememberComposerShape(input: () -> ComposerMotionInput): State<Float> {
+    val readInput by rememberUpdatedState(input)
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(progress) {
+        val motion = ComposerMotion()
+        snapshotFlow { readInput() }.map { sample ->
+            // Read the rendered value outside snapshotFlow so tween frames don't retrigger the input.
+            motion.update(sample.height, sample.source, sample.target, sample.editing, sample.hardwareOnly, progress.value)
+        }.distinctUntilChanged().collectLatest { goal ->
+            when (goal) {
+                is ComposerMorph.Tween -> progress.animateTo(goal.end, tween(goal.millis, easing = LinearEasing))
+                is ComposerMorph.At -> progress.snapTo(goal.fraction)
+            }
+        }
+    }
+    return progress.asState()
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -112,13 +143,17 @@ fun HubComposer(
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     val imeVisible = WindowInsets.isImeVisible
     val nav = WindowInsets.navigationBars.getBottom(density)
-    val ime = (WindowInsets.ime.getBottom(density) - nav).coerceAtLeast(0)
-    val imeStart = (WindowInsets.imeAnimationSource.getBottom(density) - nav).coerceAtLeast(0)
-    val imeEnd = (WindowInsets.imeAnimationTarget.getBottom(density) - nav).coerceAtLeast(0)
+    val current = WindowInsets.ime
+    val source = WindowInsets.imeAnimationSource
+    val target = WindowInsets.imeAnimationTarget
+    val hasImeHeight by remember(current, density, nav) { derivedStateOf { current.getBottom(density) > nav } }
+    val hasImeTarget by remember(target, density, nav) { derivedStateOf { target.getBottom(density) > nav } }
+    val hiding by remember(source, target, density, nav) {
+        derivedStateOf { source.getBottom(density) > nav && target.getBottom(density) <= nav }
+    }
     var focused by remember { mutableStateOf(false) }
     var sawKeyboard by remember { mutableStateOf(false) }
     var sawHideAnimation by remember { mutableStateOf(false) }
-    var previousImeFrame by remember { mutableStateOf<ComposerImeFrame?>(null) }
     var showTools by remember(state.current.id) { mutableStateOf(false) }
     var importError by remember(state.current.id) { mutableStateOf<String?>(null) }
     val pick = rememberAttachmentPicker(vm) { importError = it }
@@ -127,8 +162,7 @@ fun HubComposer(
         focusManager.clearFocus()
         keyboard?.hide()
     }
-    val hiding = imeStart > 0 && imeEnd == 0
-    val imeActive = imeVisible || ime > 0 || imeEnd > 0
+    val imeActive = imeVisible || hasImeHeight || hasImeTarget
     val hiddenAfterEditing = sawKeyboard && !imeActive
     val configuration = LocalConfiguration.current
     val hardwareKeyboard = configuration.keyboard == Configuration.KEYBOARD_QWERTY &&
@@ -137,14 +171,10 @@ fun HubComposer(
     val hardwareKeyboardOnly = remember(resolver, hardwareKeyboard, windowFocused) {
         hardwareKeyboard && Settings.Secure.getInt(resolver, "show_ime_with_hard_keyboard", 0) == 0
     }
-    val imeFrame = nextComposerImeFrame(
-        previousImeFrame, ime, imeStart, imeEnd,
-        expandWithoutIme = hardwareKeyboardOnly && !hiddenAfterEditing && !sawHideAnimation,
-    )
+    val hardwareOnly = hardwareKeyboardOnly && !hiddenAfterEditing && !sawHideAnimation
     SideEffect {
-        previousImeFrame = imeFrame
-        if (focused && ime > 0) sawKeyboard = true
-        if (hiding && ime > 0) sawHideAnimation = true
+        if (focused && hasImeHeight) sawKeyboard = true
+        if (hiding && hasImeHeight) sawHideAnimation = true
     }
     // Some keyboards consume Back themselves. A hardware keyboard has no IME
     // height, so clear focus only after a software keyboard actually appeared.
@@ -154,11 +184,16 @@ fun HubComposer(
     BackHandler(enabled = focused && !showTools) { collapse() }
     // A system overlay can take window focus while the editor still owns a visible IME.
     val editing = focused && !showTools && !hiddenAfterEditing && (windowFocused || (sawKeyboard && imeActive))
-    val editGate by animateFloatAsState(
-        if (editing) 1f else 0f,
-        tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerFocus"
-    )
-    val expansion = minOf(editGate, imeFrame.fraction)
+    val shapeProgress = rememberComposerShape {
+        ComposerMotionInput(
+            (current.getBottom(density) - nav).coerceAtLeast(0),
+            (source.getBottom(density) - nav).coerceAtLeast(0),
+            (target.getBottom(density) - nav).coerceAtLeast(0),
+            editing, hardwareOnly,
+        )
+    }
+    // Legacy keyboards may jump straight to zero before the flow collector sees the final inset.
+    val expansion = if (hasImeHeight || hasImeTarget || hardwareOnly) shapeProgress.value else 0f
 
     val draft = state.draft
     val hasContent = draft.text.isNotEmpty() || draft.attachments.isNotEmpty()

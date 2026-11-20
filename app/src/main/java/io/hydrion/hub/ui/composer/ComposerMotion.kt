@@ -1,41 +1,56 @@
 package io.hydrion.hub.ui.composer
 
-/** One direction of travel. A new destination begins at the last rendered height and fraction. */
-internal data class ComposerImeLeg(
-    val start: Int,
-    val destination: Int,
-    val startFraction: Float,
-) {
-    fun at(height: Int): Float {
-        val closing = destination == 0
-        val endFraction = if (closing) 0f else 1f
-        val distance = destination - start
-        if (distance == 0) return endFraction
-        // Leave the second half of dismissal to Android: the collapsed capsule just follows the IME.
-        val travel = if (closing) distance / 2f else distance.toFloat()
-        val fraction = ((height - start) / travel).coerceIn(0f, 1f)
-        return startFraction + (endFraction - startFraction) * fraction
+internal sealed interface ComposerMorph {
+    enum class Tween(val end: Float, val millis: Int) : ComposerMorph {
+        Open(1f, 48),
+        LoseFocus(0f, 33),
     }
+
+    data class At(val fraction: Float) : ComposerMorph
 }
 
-internal data class ComposerImeFrame(val height: Int, val fraction: Float, val leg: ComposerImeLeg?)
+/** The host follows the physical IME. Only dismissal couples the composer's shape to its height. */
+internal class ComposerMotion {
+    private data class Dismissal(val startHeight: Int, val startFraction: Float) {
+        fun at(height: Int) = startFraction * (2f * height / startHeight - 1f).coerceIn(0f, 1f)
+    }
 
-internal fun nextComposerImeFrame(
-    previous: ComposerImeFrame?, height: Int, source: Int, target: Int,
-    expandWithoutIme: Boolean = false,
-): ComposerImeFrame {
-    val active = previous?.leg
-    if (source == target) {
-        // Some keyboards briefly stop reporting animation bounds while the inset is still travelling.
-        if (active != null && height != target) return ComposerImeFrame(height, active.at(height), active)
-        val fraction = if (height > 0 || expandWithoutIme) 1f else 0f
-        return ComposerImeFrame(height, fraction, null)
+    private var lastHeight = 0
+    private var dismissal: Dismissal? = null
+
+    fun update(
+        height: Int, source: Int, target: Int, editing: Boolean, hardwareOnly: Boolean,
+        renderedFraction: Float,
+    ): ComposerMorph {
+        val previous = lastHeight
+        // A target may precede all travel, or briefly outlive a missing current inset mid-opening.
+        if (height == 0 && target > 0 && previous > 0 && dismissal == null && editing) {
+            return ComposerMorph.Tween.Open
+        }
+        lastHeight = height
+        if (height == 0) {
+            dismissal = null
+            return when {
+                !hardwareOnly -> ComposerMorph.At(0f)
+                editing -> ComposerMorph.Tween.Open
+                else -> ComposerMorph.Tween.LoseFocus
+            }
+        }
+        if (!editing) {
+            dismissal = null
+            return ComposerMorph.Tween.LoseFocus
+        }
+
+        val hiding = source > 0 && target == 0
+        if (hiding && dismissal == null) {
+            // Reversals start where we actually drew the fast opening, not at the IME's travel ratio.
+            val start = if (previous > 0) previous else maxOf(source, height)
+            dismissal = Dismissal(start, renderedFraction)
+        } else if (!hiding && (source != target || height > previous)) {
+            // Also accept a real rise when the keyboard omits the reversal's animation bounds.
+            dismissal = null
+        }
+        // During a close, identical/missing bounds alone do not change direction.
+        return dismissal?.let { ComposerMorph.At(it.at(height)) } ?: ComposerMorph.Tween.Open
     }
-    val leg = when {
-        active?.destination == target -> active
-        // Bounds may arrive after focus or even after an inset jump. Start at the last rendered frame.
-        previous != null -> ComposerImeLeg(previous.height, target, previous.fraction)
-        else -> ComposerImeLeg(source, target, if (source > 0 || expandWithoutIme) 1f else 0f)
-    }
-    return ComposerImeFrame(height, leg.at(height), leg)
 }
