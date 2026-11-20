@@ -101,24 +101,26 @@ internal fun ChatSlidingPage(progress: () -> Float, interactive: Boolean, tag: S
     // The shield covers the whole previous page, including the area the moving surface has not reached.
     Box(Modifier.fillMaxSize()) {
         Spacer(shield)
-        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)).clipToBounds()) {
-            val material = MaterialTheme.colorScheme.background.copy(alpha = SlidingPageBackdrop.BodyOpacity)
-            Spacer(Modifier.matchParentSize().drawWithCache {
-                val backdrop = SlidingPageBackdrop(size.height, 36.dp.toPx())
-                val feather = if (backdrop.featherPx > 0f) Brush.verticalGradient(
-                    listOf(material, material.copy(alpha = 0f)), endY = backdrop.featherPx
-                ) else null
-                onDrawBehind {
-                    val solidBottom = backdrop.solidBottomPx(progress())
-                    val visibleBottom = minOf(size.height, solidBottom + backdrop.featherPx)
-                    if (solidBottom >= size.height) drawRect(material)
-                    else if (feather != null && visibleBottom > 0f) translate(top = solidBottom) {
-                        // The brush clamps to its first colour before the feather. One draw avoids
-                        // a raster seam where the flat material meets its fractional-pixel edge.
-                        drawRect(feather, topLeft = Offset(0f, -solidBottom), size = Size(size.width, visibleBottom))
-                    }
+        // The outgoing header can slide behind the status bar. Only the incoming controls
+        // are inset; the glass must shade the app content on both sides of that boundary.
+        val material = MaterialTheme.colorScheme.background.copy(alpha = SlidingPageBackdrop.BodyOpacity)
+        Spacer(Modifier.matchParentSize().drawWithCache {
+            val backdrop = SlidingPageBackdrop(size.height, 36.dp.toPx())
+            val feather = if (backdrop.featherPx > 0f) Brush.verticalGradient(
+                listOf(material, material.copy(alpha = 0f)), endY = backdrop.featherPx
+            ) else null
+            onDrawBehind {
+                val solidBottom = backdrop.solidBottomPx(progress())
+                val visibleBottom = minOf(size.height, solidBottom + backdrop.featherPx)
+                if (solidBottom >= size.height) drawRect(material)
+                else if (feather != null && visibleBottom > 0f) translate(top = solidBottom) {
+                    // The brush clamps to its first colour before the feather. One draw avoids
+                    // a raster seam where the flat material meets its fractional-pixel edge.
+                    drawRect(feather, topLeft = Offset(0f, -solidBottom), size = Size(size.width, visibleBottom))
                 }
-            })
+            }
+        })
+        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)).clipToBounds()) {
             Box(Modifier.fillMaxSize().graphicsLayer {
                 val travel = progress()
                 translationY = (travel - 1f) * size.height

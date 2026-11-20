@@ -90,6 +90,69 @@ class ChatPageBackdropRenderingTest {
         }
     }
 
+    @OptIn(ExperimentalLayoutApi::class)
+    @Test fun glassCoversTheMovingHeaderOnBothSidesOfTheStatusBarInset() {
+        val travel = mutableFloatStateOf(0f)
+        val showPage = mutableStateOf(false)
+        screen.activityRule.scenario.onActivity { activity ->
+            activity.setContent {
+                HydrionTheme {
+                    val safeTop = WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
+                    val inset = safeTop.asPaddingValues().calculateTopPadding()
+                    // Center the probe away from OS icons while keeping the activity's real, unconsumed inset.
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(160.dp, inset * 2 + 208.dp).background(Color.Black).testTag("inset-probe")) {
+                            Spacer(Modifier.fillMaxWidth().height(inset * 2 + 64.dp)
+                                .chatPageHeader { travel.floatValue }.windowInsetsPadding(safeTop).background(Color.White))
+                            if (showPage.value) ChatSlidingPage({ travel.floatValue }, true, "sample-page") {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Spacer(Modifier.width(12.dp).fillMaxHeight().background(Color.Blue))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fun frame(progress: Float, withPage: Boolean): Bitmap {
+            screen.runOnIdle {
+                travel.floatValue = progress
+                showPage.value = withPage
+            }
+            return screen.onNodeWithTag("inset-probe").captureToImage().asAndroidBitmap()
+        }
+        val initial = frame(0f, false)
+        val x = initial.width / 8
+        val boundary = (0 until initial.height).first { initial.red(x, it) == 255 }
+        assertTrue("Exercise a nonzero status-bar inset", boundary >= 2)
+        val rows = listOf(boundary - 2, boundary + 2)
+
+        val headerOnly = frame(.5f, false)
+        val entering = frame(.5f, true)
+        for (y in rows) {
+            // At this frame, the same bright header is sliding through both sampled rows.
+            val header = headerOnly.red(x, y)
+            assertEquals("Header alone at y=$y", 128.0, header.toDouble(), 2.0)
+            val expected = header * (1f - SlidingPageBackdrop.BodyOpacity)
+            assertEquals("Glass over header at y=$y", expected.toDouble(), entering.red(x, y).toDouble(), 2.0)
+        }
+        val stripX = entering.width / 2
+        val above = entering.getPixel(stripX, rows.first())
+        val below = entering.getPixel(stripX, rows.last())
+        assertEquals("Page foreground remains clipped above the inset",
+            android.graphics.Color.red(above), android.graphics.Color.blue(above))
+        assertTrue("Page foreground appears just below the inset",
+            android.graphics.Color.blue(below) > android.graphics.Color.red(below) + 100)
+
+        frame(1f, true)
+        val returning = frame(.5f, true)
+        for (y in rows) for (column in listOf(x, stripX)) {
+            assertEquals("Reverse follows the same drawn frame", entering.getPixel(column, y), returning.getPixel(column, y))
+        }
+        val closed = frame(0f, true)
+        for (y in rows) assertEquals("Closing restores the original header", initial.getPixel(x, y), closed.getPixel(x, y))
+    }
+
     @Test fun headerMovesUpAndDimsWhileTheFollowingLayoutStaysInItsSlot() {
         val travel = mutableFloatStateOf(0f)
         screen.activityRule.scenario.onActivity { activity ->
