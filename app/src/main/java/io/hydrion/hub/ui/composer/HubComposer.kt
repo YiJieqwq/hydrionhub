@@ -42,7 +42,6 @@ import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -87,6 +86,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -383,13 +383,19 @@ internal fun HubComposer(
                                         chatPicker.anchor = IntRect(it.positionInWindow().round(), it.size)
                                     }
                                 }
+                                // The former chevron and its gap contribute 17 dp to the trigger’s hit area.
+                                val actionLabel = if (chatPicker != null) stringResource(R.string.chat_controls_select_model)
+                                    else "配置模型"
                                 Row(
-                                    anchor.clip(CircleShape).clickable(enabled = interactive, role = Role.Button) {
+                                    anchor.clip(CircleShape).semantics {
+                                        contentDescription = actionLabel
+                                        stateDescription = modelLabel
+                                    }.clickable(enabled = interactive, role = Role.Button) {
                                         if (chatPicker != null) chatPicker.open() else {
                                             collapse()
                                             onConfigure()
                                         }
-                                    }.heightIn(min = 44.dp).padding(horizontal = 4.dp),
+                                    }.heightIn(min = 44.dp).padding(start = 21.dp, end = 4.dp),
                                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
@@ -397,10 +403,6 @@ internal fun HubComposer(
                                     Text(modelLabel, Modifier.weight(1f, fill = false),
                                         style = MaterialTheme.typography.labelLarge, color = colors.onSurface,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Icon(Icons.Outlined.KeyboardArrowDown,
-                                        if (chatPicker != null) stringResource(R.string.chat_controls_select_model)
-                                        else "配置模型", Modifier.size(15.dp),
-                                        tint = colors.onSurfaceVariant)
                                 }
                             }
                         } else Spacer(Modifier.weight(1f))
@@ -441,8 +443,8 @@ private fun ComposerIconButton(label: String, onClick: () -> Unit, enabled: Bool
 
 @Composable
 private fun PlusGlyph() {
-    Canvas(Modifier.size(17.dp)) {
-        val stroke = 1.8.dp.toPx()
+    Canvas(Modifier.size(18.dp)) {
+        val stroke = 2.dp.toPx()
         val r = size.minDimension / 2 - stroke / 2
         drawLine(Color.White, Offset(center.x - r, center.y), Offset(center.x + r, center.y), stroke, StrokeCap.Round)
         drawLine(Color.White, Offset(center.x, center.y - r), Offset(center.x, center.y + r), stroke, StrokeCap.Round)
