@@ -54,19 +54,18 @@ internal fun ProviderModelsList(
     val matches = remember(models, query) { matchingMenuModels(models, query) }
     val nameCounts = remember(models) { models.groupingBy { it.name }.eachCount() }
     val browsingScroll = rememberLazyListState()
-    val scroll = if (query.isNotEmpty()) rememberLazyListState() else browsingScroll
-    if (searching) {
-        LaunchedEffect(query) {
-            if (query.isEmpty()) return@LaunchedEffect
-            val view = scroll.layoutInfo
-            val groupFits = scroll.firstVisibleItemIndex == 0 && view.visibleItemsInfo.any {
-                it.index == FirstModelRow && it.offset + it.size <= view.viewportEndOffset
-            }
-            scroll.requestScrollToItem(if (groupFits) 0 else FirstModelRow)
+    val filteredScroll = rememberLazyListState()
+    val scroll = if (query.isEmpty()) browsingScroll else filteredScroll
+    LaunchedEffect(searching, query) {
+        if (!searching || query.isEmpty()) return@LaunchedEffect
+        val view = filteredScroll.layoutInfo
+        val groupFits = filteredScroll.firstVisibleItemIndex == 0 && view.visibleItemsInfo.any {
+            it.index == FirstModelRow && it.offset + it.size <= view.viewportEndOffset
         }
-        LaunchedEffect(picker.searchSubmissions) {
-            if (picker.searchSubmissions > 0) scroll.requestScrollToItem(if (query.isEmpty()) 0 else FirstModelRow)
-        }
+        filteredScroll.requestScrollToItem(if (groupFits) 0 else FirstModelRow)
+    }
+    LaunchedEffect(searching, picker.searchSubmissions) {
+        if (searching && picker.searchSubmissions > 0) scroll.requestScrollToItem(if (query.isEmpty()) 0 else FirstModelRow)
     }
     val actionLabel = stringResource(if (searching) R.string.chat_picker_search_close else R.string.chat_picker_search)
     val colors = MaterialTheme.colorScheme

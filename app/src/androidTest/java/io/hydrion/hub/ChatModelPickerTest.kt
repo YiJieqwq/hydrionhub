@@ -105,8 +105,8 @@ class ChatModelPickerTest {
             }
             assertEffort(R.string.chat_controls_low, "Low")
 
-            // Down in the outer gutter, outside the drawn rail, exercises the full-width touch target.
-            track.performTouchInput { down(Offset(if (rtl) 2.dp.toPx() else width - 2.dp.toPx(), centerY)) }
+            // Grab near opposing corners of the hit target, outside the painted rail.
+            track.performTouchInput { down(Offset(if (rtl) 2.dp.toPx() else width - 2.dp.toPx(), 2.dp.toPx())) }
             assertEffort(R.string.chat_controls_high, "Low")
             dragWithinMedium(.37f, .63f)
             dragWithinMedium(.63f, .37f)
@@ -115,7 +115,7 @@ class ChatModelPickerTest {
             track.performTouchInput { up() }
             assertEffort(R.string.chat_controls_high, "High")
 
-            track.performTouchInput { down(Offset(if (rtl) width - 2.dp.toPx() else 2.dp.toPx(), centerY)) }
+            track.performTouchInput { down(Offset(if (rtl) width - 2.dp.toPx() else 2.dp.toPx(), height - 2.dp.toPx())) }
             assertEffort(R.string.chat_controls_low, "High")
             track.performTouchInput { moveTo(center) }
             assertEffort(R.string.chat_controls_medium, "High")

@@ -155,6 +155,8 @@ class ChatModelSearchTest {
         field.performTextReplacement("tch-BEt")
         reveal(option(first, "batch-beta"))
         control(option(first, "batch-alpha")).assertDoesNotExist()
+        field.performTextClearance()
+        reveal(option(first, "last"))
         field.performTextReplacement("  /AtLaS-v3  ")
         reveal(option(first, "batch-alpha")).assertIsSelected()
         control(option(first, "batch-beta")).assertDoesNotExist()
