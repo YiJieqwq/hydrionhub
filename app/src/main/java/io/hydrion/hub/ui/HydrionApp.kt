@@ -276,8 +276,11 @@ private fun Workspace(vm: HubViewModel) {
                             )
                         }
                     }
-                    if (toolsPage != null && toolsActive) {
-                        ToolsPageOverlay(toolsPage, state.draft, panelDock, excessDockPx, vm::setSearch, vm::setImageTool)
+                    if (toolsPage != null && toolsPage.hasOpened) {
+                        key(toolsPage) {
+                            ToolsPageOverlay(toolsPage, state.draft.search, state.draft.imageTool, panelDock,
+                                excessDockPx, vm::setSearch, vm::setImageTool)
+                        }
                     }
                     modelBrowse.page?.let { browsePage ->
                         ChatSlidingPage({ modelBrowse.progress }, modelBrowse.interactive && editVisit == null,

@@ -90,7 +90,7 @@ private data class ToolChoice(val value: String, val label: String, val icon: ()
 
 @Composable
 internal fun ChatToolsPage(
-    draft: Draft, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
+    search: String, imageTool: String, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val browsing = rememberScrollState()
@@ -99,12 +99,14 @@ internal fun ChatToolsPage(
     if (term.isNotEmpty()) LaunchedEffect(term) { filtered.scrollTo(0) }
     Column(modifier.fillMaxSize().testTag("chat-tools-page")
         .verticalScroll(if (term.isEmpty()) browsing else filtered).padding(horizontal = 16.dp, vertical = 12.dp)) {
-        ChatToolGroups(draft, term, onSearch, onImageTool)
+        ChatToolGroups(search, imageTool, term, onSearch, onImageTool)
     }
 }
 
 @Composable
-private fun ChatToolGroups(draft: Draft, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit) {
+private fun ChatToolGroups(
+    search: String, imageTool: String, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     val disabled = ToolChoice(Disabled, stringResource(R.string.chat_tools_disabled)) { Icons.Outlined.Block }
     val web = listOf(
@@ -117,7 +119,7 @@ private fun ChatToolGroups(draft: Draft, query: String, onSearch: (String) -> Un
     val imageTitle = stringResource(R.string.chat_tools_image)
     val webMatches = matchingToolChoices(query, webTitle, web) { it.label }
     val imageMatches = matchingToolChoices(query, imageTitle, image) { it.label }
-    val count = listOf(draft.search, draft.imageTool).count { it != Disabled }
+    val count = listOf(search, imageTool).count { it != Disabled }
     val countLabel = stringResource(R.string.chat_tools_enabled_count, count)
     Box(Modifier.fillMaxWidth().padding(bottom = 12.dp), contentAlignment = Alignment.Center) {
         Text(stringResource(R.string.chat_tools_title), Modifier.testTag("chat-tools-title"),
@@ -126,11 +128,11 @@ private fun ChatToolGroups(draft: Draft, query: String, onSearch: (String) -> Un
             .clearAndSetSemantics { contentDescription = countLabel },
             style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
     }
-    ToolGroup("web", webTitle, web, webMatches, draft.search, initiallyOpen = true,
+    ToolGroup("web", webTitle, web, webMatches, search, initiallyOpen = true,
         filtering = query.isNotEmpty(), onSelect = onSearch)
     if (webMatches.isNotEmpty() && imageMatches.isNotEmpty())
         HorizontalDivider(Modifier.padding(horizontal = 8.dp), color = colors.outlineVariant)
-    ToolGroup("image", imageTitle, image, imageMatches, draft.imageTool, initiallyOpen = false,
+    ToolGroup("image", imageTitle, image, imageMatches, imageTool, initiallyOpen = false,
         filtering = query.isNotEmpty(), onSelect = onImageTool)
     if (webMatches.isEmpty() && imageMatches.isEmpty()) {
         Text(stringResource(R.string.chat_tools_empty), Modifier.fillMaxWidth().testTag("chat-tools-empty")

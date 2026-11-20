@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.ui.chrome.ChatHeaderLayout
-import io.hydrion.hub.model.Draft
 import io.hydrion.hub.ui.composer.ChatToolsPage
 import io.hydrion.hub.ui.composer.ToolsPageState
 
@@ -130,12 +129,19 @@ internal fun Modifier.clipSlidingPageContent(excessDockPx: () -> Int) = drawWith
 
 @Composable
 internal fun ToolsPageOverlay(
-    state: ToolsPageState, draft: Draft, panelDock: Dp, excessDockPx: () -> Int,
+    state: ToolsPageState, search: String, imageTool: String, panelDock: Dp, excessDockPx: () -> Int,
     onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
 ) {
-    ChatSlidingPage({ state.progress }, state.interactive, "chat-tools-surface") {
-        Box(Modifier.fillMaxSize().padding(bottom = panelDock).clipSlidingPageContent(excessDockPx)) {
-            ChatToolsPage(draft, state.query.text, onSearch, onImageTool)
+    val active = state.active
+    val travel = { state.progress }
+    SlidingPageLayers(active, travel, state.interactive) {
+        val surface = if (active) {
+            slidingViewport()
+                .then(slidingSurface(travel, state.interactive, "chat-tools-surface"))
+                .padding(bottom = panelDock).clipSlidingPageContent(excessDockPx)
+        } else Modifier
+        RetainedToolOptions(active, surface) {
+            ChatToolsPage(search, imageTool, state.query.text, onSearch, onImageTool)
         }
     }
 }
@@ -143,40 +149,61 @@ internal fun ToolsPageOverlay(
 /** Both tool-style pages sit above the chat but below the single live composer. */
 @Composable
 internal fun ChatSlidingPage(progress: () -> Float, interactive: Boolean, tag: String, content: @Composable () -> Unit) {
-    val shield = Modifier.fillMaxSize().pointerInput(Unit) {
-        awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+    SlidingPageLayers(true, progress, interactive) {
+        Box(slidingViewport()) {
+            Box(slidingSurface(progress, interactive, tag)) { content() }
+        }
     }
-    // The shield covers the whole previous page, including the area the moving surface has not reached.
-    Box(Modifier.fillMaxSize()) {
-        Spacer(shield)
-        // The outgoing header can slide behind the status bar. Only the incoming controls
-        // are inset; the glass must shade the app content on both sides of that boundary.
-        val material = MaterialTheme.colorScheme.background.copy(alpha = SlidingPageBackdrop.BodyOpacity)
-        Spacer(Modifier.matchParentSize().drawWithCache {
-            val backdrop = SlidingPageBackdrop(size.height, 36.dp.toPx())
-            val feather = if (backdrop.featherPx > 0f) Brush.verticalGradient(
-                listOf(material, material.copy(alpha = 0f)), endY = backdrop.featherPx
-            ) else null
-            onDrawBehind {
-                val solidBottom = backdrop.solidBottomPx(progress())
-                val visibleBottom = minOf(size.height, solidBottom + backdrop.featherPx)
-                if (solidBottom >= size.height) drawRect(material)
-                else if (feather != null && visibleBottom > 0f) translate(top = solidBottom) {
-                    // The brush clamps to its first colour before the feather. One draw avoids
-                    // a raster seam where the flat material meets its fractional-pixel edge.
-                    drawRect(feather, topLeft = Offset(0f, -solidBottom), size = Size(size.width, visibleBottom))
-                }
-            }
-        })
-        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)).clipToBounds()) {
-            Box(Modifier.fillMaxSize().graphicsLayer {
-                val travel = progress()
-                translationY = (travel - 1f) * size.height
-                alpha = travel
-            }.testTag(tag).behindToolsPage(!interactive)) {
-                content()
+}
+
+@Composable
+private fun slidingViewport() = Modifier.fillMaxSize()
+    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)).clipToBounds()
+
+private fun slidingSurface(progress: () -> Float, interactive: Boolean, tag: String) = Modifier.fillMaxSize()
+    .graphicsLayer {
+        val travel = progress()
+        translationY = (travel - 1f) * size.height
+        alpha = travel
+    }.testTag(tag).behindToolsPage(!interactive)
+
+@Composable
+private fun SlidingPageLayers(active: Boolean, progress: () -> Float, interactive: Boolean, content: @Composable () -> Unit) {
+    Box(if (active) Modifier.fillMaxSize() else Modifier) {
+        if (active) {
+            SlidingPageShield()
+            SlidingPageGlass(progress)
+        }
+        content()
+        if (active && !interactive) SlidingPageShield()
+    }
+}
+
+@Composable
+private fun SlidingPageShield() {
+    // Cover the previous page, including the area the moving surface has not reached.
+    Spacer(Modifier.fillMaxSize().pointerInput(Unit) {
+        awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
+    })
+}
+
+@Composable
+private fun BoxScope.SlidingPageGlass(progress: () -> Float) {
+    // Only the incoming controls are inset; shade the outgoing header across the status bar.
+    val material = MaterialTheme.colorScheme.background.copy(alpha = SlidingPageBackdrop.BodyOpacity)
+    Spacer(Modifier.matchParentSize().drawWithCache {
+        val backdrop = SlidingPageBackdrop(size.height, 36.dp.toPx())
+        val feather = if (backdrop.featherPx > 0f) Brush.verticalGradient(
+            listOf(material, material.copy(alpha = 0f)), endY = backdrop.featherPx
+        ) else null
+        onDrawBehind {
+            val solidBottom = backdrop.solidBottomPx(progress())
+            val visibleBottom = minOf(size.height, solidBottom + backdrop.featherPx)
+            if (solidBottom >= size.height) drawRect(material)
+            else if (feather != null && visibleBottom > 0f) translate(top = solidBottom) {
+                // One draw avoids a raster seam at the fractional-pixel edge.
+                drawRect(feather, topLeft = Offset(0f, -solidBottom), size = Size(size.width, visibleBottom))
             }
         }
-        if (!interactive) Spacer(shield)
-    }
+    })
 }

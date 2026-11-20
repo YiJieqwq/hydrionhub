@@ -10,25 +10,45 @@ import android.view.KeyEvent
 import android.view.ViewTreeObserver
 import android.view.View
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.model.Attachment
+import io.hydrion.hub.model.Draft
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.ui.ToolsPageOverlay
 import io.hydrion.hub.ui.composer.AwaitToolsImeDismissal
+import io.hydrion.hub.ui.composer.ToolsPageState
+import io.hydrion.hub.ui.composer.rememberToolsPageState
+import io.hydrion.hub.ui.theme.HydrionTheme
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -229,6 +249,7 @@ class ComposerToolsTest {
             withStableIme(false) {
                 tools.performTouchInput { click(center) }
                 page.assertIsDisplayed()
+                val optionsLayout = page.fetchSemanticsNode().layoutInfo
                 action("count").assertIsDisplayed()
                 option("web", "模型内置搜索").assertIsSelected()
                 val custom = option("web", "自定义搜索")
@@ -237,13 +258,18 @@ class ComposerToolsTest {
                 action("group:image").performClick()
                 option("image", "禁用").performClick().assertIsSelected()
                 screen.runOnIdle { assertEquals("禁用", vm.state.value.draft.imageTool) }
+                action("group:web").performClick()
+                custom.assertDoesNotExist()
                 action("back").performTouchInput { click(center) }
                 page.assertDoesNotExist()
+                screen.onNodeWithTag("chat-tools-surface", useUnmergedTree = true).assertDoesNotExist()
                 editor.assertTextEquals("parked draft")
 
                 tools.performTouchInput { click(center) }
+                assertSame("Reopening reuses the options layout", optionsLayout, page.fetchSemanticsNode().layoutInfo)
                 custom.assertIsSelected()
-                if (!option("image", "禁用").isDisplayed()) action("group:image").performClick()
+                option("image", "禁用").assertDoesNotExist()
+                action("group:image").performClick()
                 option("image", "禁用").assertIsSelected()
                 screen.runOnUiThread { screen.activity.onBackPressedDispatcher.onBackPressed() }
                 page.assertDoesNotExist()
@@ -255,6 +281,99 @@ class ComposerToolsTest {
                 vm.setImageTool(before.imageTool)
             }
         }
+    }
+
+    @Test fun switchingConversationReleasesThePreviousChatsToolOptions() {
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        val before = screen.runOnIdle { vm.state.value }
+        check(before.current.messages.isEmpty() && before.draft == Draft())
+        try {
+            screen.runOnIdle { vm.setDraft("first chat") }
+            tools.performTouchInput { click(center) }
+            val firstOptions = page.fetchSemanticsNode().layoutInfo
+            action("group:image").performClick()
+            option("image", "禁用").assertExists()
+            action("back").performTouchInput { click(center) }
+            page.assertDoesNotExist()
+
+            screen.runOnIdle { vm.newConversation() }
+            screen.waitForIdle()
+            screen.runOnIdle {
+                assertTrue(before.current.id != vm.state.value.current.id)
+                assertFalse("Closing the conversation releases its retained nodes", firstOptions.isAttached)
+                vm.setDraft("second chat")
+            }
+            page.assertDoesNotExist()
+            tools.performTouchInput { click(center) }
+            assertTrue(firstOptions !== page.fetchSemanticsNode().layoutInfo)
+            assertQuery("")
+            option("web", "模型内置搜索").assertExists()
+            option("image", "禁用").assertDoesNotExist()
+        } finally {
+            screen.runOnIdle { vm.setDraft("") }
+        }
+    }
+
+    @OptIn(ExperimentalComposeUiApi::class)
+    @Test fun interruptedToolCloseKeepsScrollUntilSettledThenReleasesFocusAndInput() {
+        lateinit var state: ToolsPageState
+        lateinit var inputMode: InputModeManager
+        var chatClicks = 0
+        screen.activityRule.scenario.onActivity { activity ->
+            activity.setContent {
+                HydrionTheme {
+                    state = rememberToolsPageState("short viewport")
+                    inputMode = LocalInputModeManager.current
+                    Box(Modifier.size(260.dp, 220.dp)) {
+                        Spacer(Modifier.fillMaxSize().testTag("chat-under-tools").clickable { chatClicks++ })
+                        if (state.hasOpened) ToolsPageOverlay(
+                            state, "模型内置搜索", "自定义图片生成", 0.dp, { 0 }, {}, {}
+                        )
+                    }
+                }
+            }
+        }
+        val underlay = screen.onNodeWithTag("chat-under-tools")
+        val image = action("group:image")
+        fun scroll() = page.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+        page.assertDoesNotExist()
+        screen.runOnIdle { state.open() }
+        image.performScrollTo().performClick()
+        val choice = option("image", "禁用").performScrollTo()
+        val offset = scroll()
+        assertTrue("Last option requires scrolling in this viewport", offset > 0f)
+
+        val clock = screen.mainClock
+        clock.autoAdvance = false
+        try {
+            screen.runOnUiThread { state.close() }
+            clock.advanceTimeBy(112)
+            screen.runOnUiThread {
+                assertTrue(state.progress > 0f && state.progress < 1f)
+                state.open()
+            }
+            clock.advanceTimeBy(600)
+        } finally {
+            clock.autoAdvance = true
+        }
+        choice.assertIsDisplayed()
+        assertEquals("Reversing before a settled close keeps the visit", offset, scroll(), 1f)
+
+        screen.runOnIdle { assertTrue(inputMode.requestInputMode(InputMode.Keyboard)) }
+        choice.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        screen.runOnIdle { state.close() }
+        screen.waitForIdle()
+        screen.onNodeWithTag("chat-tools-page", useUnmergedTree = true).assertDoesNotExist()
+        screen.onNodeWithTag("chat-tools-surface", useUnmergedTree = true).assertDoesNotExist()
+        underlay.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        underlay.performTouchInput { click(center) }
+        screen.runOnIdle {
+            assertEquals("The closed surface leaves chat touchable", 1, chatClicks)
+            state.open()
+        }
+        page.assertIsDisplayed()
+        assertEquals("A fresh visit starts at the top", 0f, scroll(), 0f)
+        choice.assertDoesNotExist()
     }
 
     @Test fun openingToolsKeepsTheLastMessageStillWhenTheEditorShrinks() {

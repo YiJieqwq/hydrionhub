@@ -42,6 +42,8 @@ internal class PanelTravelClock {
 @Stable
 internal class ToolsPageState {
     private val clock = PanelTravelClock()
+    var hasOpened by mutableStateOf(false)
+        private set
     var targetOpen by mutableStateOf(false)
         private set
     val progress: Float get() = clock.progress
@@ -51,6 +53,7 @@ internal class ToolsPageState {
 
     fun open() {
         if (!active) clearQuery()
+        hasOpened = true
         targetOpen = true
     }
     fun close() { targetOpen = false }
