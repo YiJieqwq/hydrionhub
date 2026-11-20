@@ -1,7 +1,9 @@
 package io.hydrion.hub
 
+import android.graphics.Color
 import android.view.KeyEvent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
@@ -12,6 +14,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
@@ -64,6 +67,69 @@ class ChatModelPickerTest {
     private fun pressBack() {
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         screen.waitForIdle()
+    }
+
+    @Test fun draggingPreviewsEffortUntilReleaseAndCancellationRestoresTheCommittedEffort() {
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        val store = vm.providers
+        val before = store.catalog.value
+        val previous = requireNotNull(before.selectedEntry(Mode.Chat)).route
+        val reason = RemoteModel("demo-chat", "demo-reason")
+        val oldValues = before.overrides[reason].orEmpty()
+        val rtl = screen.activity.resources.configuration.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL
+        try {
+            screen.runOnIdle {
+                store.configure(Mode.Chat, reason, oldValues + mapOf("effort" to "Low", "speed" to "Standard"))
+            }
+            editor.performTouchInput { click(center) }
+            screen.waitUntil(15_000) { softwareKeyboardIsOpen() }
+            control("trigger").performTouchInput { click(center) }
+            val track = control("effort").assertIsDisplayed()
+            val title = screen.onNodeWithTag("chat-model-effort-title", useUnmergedTree = true)
+            fun assertEffort(titleRes: Int, committed: String) {
+                title.assertTextEquals(screen.activity.getString(titleRes))
+                screen.runOnIdle { assertEquals(committed, store.selection(Mode.Chat).parameters["effort"]) }
+            }
+
+            // Both positions belong to Medium. A thumb that snaps while held cannot cover both in turn.
+            fun dragWithinMedium(fraction: Float, other: Float) {
+                track.performTouchInput { moveTo(Offset(width * fraction, centerY)) }
+                assertEffort(R.string.chat_controls_medium, "Low")
+                val image = track.captureToImage().asAndroidBitmap()
+                fun hasThumbAt(x: Float): Boolean {
+                    val pixel = image.getPixel((image.width * x).toInt(), image.height / 2)
+                    return minOf(Color.red(pixel), Color.green(pixel), Color.blue(pixel)) > 242
+                }
+                assertTrue("The thumb should follow the finger at $fraction", hasThumbAt(fraction))
+                assertTrue("The opposite part of the rail should stay exposed", !hasThumbAt(other))
+            }
+            assertEffort(R.string.chat_controls_low, "Low")
+
+            // Down in the outer gutter, outside the drawn rail, exercises the full-width touch target.
+            track.performTouchInput { down(Offset(if (rtl) 2.dp.toPx() else width - 2.dp.toPx(), centerY)) }
+            assertEffort(R.string.chat_controls_high, "Low")
+            dragWithinMedium(.37f, .63f)
+            dragWithinMedium(.63f, .37f)
+            track.performTouchInput { moveTo(Offset(if (rtl) 2.dp.toPx() else width - 2.dp.toPx(), centerY)) }
+            assertEffort(R.string.chat_controls_high, "Low")
+            track.performTouchInput { up() }
+            assertEffort(R.string.chat_controls_high, "High")
+
+            track.performTouchInput { down(Offset(if (rtl) width - 2.dp.toPx() else 2.dp.toPx(), centerY)) }
+            assertEffort(R.string.chat_controls_low, "High")
+            track.performTouchInput { moveTo(center) }
+            assertEffort(R.string.chat_controls_medium, "High")
+            track.performTouchInput { cancel() }
+            assertEffort(R.string.chat_controls_high, "High")
+            control("card").assertIsDisplayed()
+            editor.assertIsFocused()
+            assertTrue("Dragging must preserve the editor's soft keyboard", softwareKeyboardIsOpen())
+        } finally {
+            screen.runOnIdle {
+                store.configure(Mode.Chat, reason, oldValues)
+                if (previous != reason) store.configure(Mode.Chat, previous, before.overrides[previous].orEmpty())
+            }
+        }
     }
 
     @Test fun browsingProvidersDoesNotSwitchModelsUntilAPick() {

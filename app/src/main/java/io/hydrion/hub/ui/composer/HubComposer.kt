@@ -408,8 +408,12 @@ internal fun HubComposer(
                             }
                             Box(Modifier.weight(1f).then(reveal), contentAlignment = Alignment.CenterEnd) {
                                 val trigger = if (chatPicker == null) Modifier else {
-                                    DisposableEffect(chatPicker) { onDispose { chatPicker.dismiss() } }
-                                    Modifier.testTag("chat-model-trigger")
+                                    DisposableEffect(chatPicker) {
+                                        onDispose { chatPicker.triggerBounds = null; chatPicker.dismiss() }
+                                    }
+                                    Modifier.testTag("chat-model-trigger").onGloballyPositioned {
+                                        chatPicker.triggerBounds = IntRect(it.positionInWindow().round(), it.size)
+                                    }
                                 }
                                 // The former chevron and its gap contribute 17 dp to the trigger’s hit area.
                                 val actionLabel = if (chatPicker != null) stringResource(R.string.chat_controls_select_model)

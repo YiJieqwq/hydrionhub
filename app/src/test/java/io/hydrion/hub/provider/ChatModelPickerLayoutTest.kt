@@ -9,7 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatModelPickerLayoutTest {
-    @Test fun phoneCardAlignsToTheComposerEndAndClearsItsTop() {
+    @Test fun phoneListAlignsToTheComposerEndAndClearsItsTop() {
         val density = Density(942f / 410f)
         val composer = IntRect(29, 973, 913, 1192)
         val result = density.pickerSpace(composer, IntSize(942, 1220), LayoutDirection.Ltr)
@@ -52,7 +52,7 @@ class ChatModelPickerLayoutTest {
         assertEquals(168, result.maxHeight)
     }
 
-    @Test fun tabletCardStaysCompact() {
+    @Test fun tabletListStaysCompact() {
         val composer = IntRect(200, 710, 1000, 805)
         val result = Density(1f).pickerSpace(composer, IntSize(1200, 840), LayoutDirection.Ltr)
         assertEquals(248, result.width)
@@ -67,5 +67,38 @@ class ChatModelPickerLayoutTest {
         assertTrue(result.maxHeight >= 88)
         assertTrue(result.edgeY - result.maxHeight >= 0)
         assertTrue(result.edgeY <= composer.bottom - 48)
+    }
+
+    @Test fun reasoningCardCentersOnModelControlWithAnEightDpGap() {
+        val scale = Density(2.5f)
+        val trigger = IntRect(396, 763, 586, 873)
+        val result = scale.reasoningPanelSpace(trigger, IntSize(1000, 1150))
+        assertEquals(680, result.width)
+        assertEquals(151, result.left)
+        assertEquals(743, result.edgeY)
+        assertEquals(713, result.maxHeight)
+        assertTrue(result.above)
+    }
+
+    @Test fun reasoningCardClampsToEitherEdgeIndependentOfTextDirection() {
+        val density = Density(1f)
+        val size = IntSize(410, 730)
+        assertEquals(12, density.reasoningPanelSpace(IntRect(8, 560, 32, 604), size).left)
+        assertEquals(126, density.reasoningPanelSpace(IntRect(380, 560, 404, 604), size).left)
+        val narrow = density.reasoningPanelSpace(IntRect(90, 560, 156, 604), IntSize(186, 730))
+        assertEquals(162, narrow.width)
+        assertEquals(12, narrow.left)
+    }
+
+    @Test fun constrainedReasoningCardScrollsAboveOrFlipsForOneTouchRow() {
+        val density = Density(1f)
+        val size = IntSize(320, 232)
+        val short = density.reasoningPanelSpace(IntRect(170, 86, 286, 130), size)
+        assertTrue(short.above)
+        assertEquals(66, short.maxHeight)
+        val flipped = density.reasoningPanelSpace(IntRect(170, 25, 286, 69), size)
+        assertEquals(false, flipped.above)
+        assertEquals(77, flipped.edgeY)
+        assertEquals(143, flipped.maxHeight)
     }
 }

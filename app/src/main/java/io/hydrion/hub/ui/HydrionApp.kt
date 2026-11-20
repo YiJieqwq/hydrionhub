@@ -191,7 +191,7 @@ private fun Workspace(vm: HubViewModel) {
                         )
                     }
                 }
-                if (current.mode == Mode.Chat && chatPicker.page != null) {
+                if (current.mode == Mode.Chat) {
                     ChatModelPicker(providers, chatPicker, Modifier.matchParentSize())
                 }
             }
