@@ -138,6 +138,8 @@ class DraftImagePreviewTest {
             editor.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
             val text = layouts.single()
             assertEquals("Actual input size", 16.sp, text.layoutInput.style.fontSize)
+            assertEquals("Chat draft line height", 24.sp, text.layoutInput.style.lineHeight)
+            assertEquals("Chat draft letter spacing", 0.1.sp, text.layoutInput.style.letterSpacing)
             assertTrue("There is room for a complete line of real input",
                 field.height >= text.getLineBottom(0) - text.getLineTop(0) && !text.didOverflowWidth)
             screen.onNodeWithContentDescription("发送消息").assertIsDisplayed().assertIsEnabled()

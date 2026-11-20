@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.sp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -51,6 +52,7 @@ class FloatingChatChromeTest {
         val layouts = mutableListOf<TextLayoutResult>()
         hint.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         val layout = layouts.single()
+        assertEquals("Placeholder retains its original letter spacing", 0.5.sp, layout.layoutInput.style.letterSpacing)
         val box = hint.fetchSemanticsNode().boundsInRoot
         val baseline = box.top - shell.top + layout.firstBaseline
         assertDp("placeholder start", startDp, box.left - shell.left)

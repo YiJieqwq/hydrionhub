@@ -497,6 +497,7 @@ internal fun HubComposer(
                             val toolHint = stringResource(R.string.tools_search_hint)
                             val visibleModelQuery = modelSearch != null && !forceReturnFolded
                             val shown = if (visibleModelQuery) modelQuery else toolEditor?.query ?: editorValue
+                            val showingChatDraft = chat && !visibleModelQuery && toolEditor == null
                             val inputHint = if (visibleModelQuery) modelHint else if (toolEditor != null) toolHint
                                 else if (state.current.mode == Mode.Chat) ChatDraftHint else "描述想生成的图片"
                             BasicTextField(
@@ -541,7 +542,10 @@ internal fun HubComposer(
                                             true
                                         }
                                     },
-                                textStyle = editorTextStyle.copy(color = colors.onSurface),
+                                textStyle = editorTextStyle.copy(
+                                    color = colors.onSurface,
+                                    letterSpacing = if (showingChatDraft) 0.1.sp else editorTextStyle.letterSpacing,
+                                ),
                                 cursorBrush = SolidColor(colors.primary),
                                 maxLines = if (!editingQuery && !forceReturnFolded && (hasContent || focused)) 5 else 1,
                                 keyboardActions = if (editingQuery) KeyboardActions(onSearch = { modelSearch?.submitSearch() },
