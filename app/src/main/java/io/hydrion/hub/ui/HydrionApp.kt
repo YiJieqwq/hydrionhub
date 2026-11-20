@@ -13,7 +13,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.draw.clip
@@ -39,6 +38,7 @@ import io.hydrion.hub.ui.messages.ProvideMessageStyle
 import io.hydrion.hub.ui.messages.MessageList
 import io.hydrion.hub.ui.messages.matchingMessages
 import io.hydrion.hub.ui.sidebar.ConversationDrawer
+import io.hydrion.hub.ui.sidebar.WorkspaceDrawer
 import io.hydrion.hub.ui.theme.HydrionTheme
 import io.hydrion.hub.ui.theme.ProviderTheme
 import kotlinx.coroutines.launch
@@ -88,8 +88,9 @@ private fun Workspace(vm: HubViewModel) {
         focus.clearFocus()
         vm.newConversation()
     }
-    BackHandler(enabled = !settings && (drawer.isOpen || finding)) {
-        if (drawer.isOpen) closeDrawer() else { finding = false; query = "" }
+    val drawerOpening = drawer.isOpen || (current.mode == Mode.Chat && drawer.targetValue == DrawerValue.Open)
+    BackHandler(enabled = !settings && (drawerOpening || finding)) {
+        if (drawerOpening) closeDrawer() else { finding = false; query = "" }
     }
 
     if (settings) {
@@ -99,15 +100,13 @@ private fun Workspace(vm: HubViewModel) {
             ProviderTheme { ProviderSettings(providers, onBack = { settings = false }) }
         }
     } else {
-        ModalNavigationDrawer(
-            drawerState = drawer,
-            drawerContent = {
-                val drawerWidth = (LocalConfiguration.current.screenWidthDp.dp - 44.dp).coerceIn(220.dp, 348.dp)
-                val widthPx = with(LocalDensity.current) { drawerWidth.toPx() }
-                val visible by remember(drawer, widthPx) { derivedStateOf {
-                    drawer.isOpen || drawer.targetValue == DrawerValue.Open || drawer.currentOffset > -widthPx + 1f
-                } }
+        WorkspaceDrawer(
+            mode = current.mode, drawer = drawer, onClose = ::closeDrawer,
+            drawerContent = { width, visible ->
                 ConversationDrawer(
+                    width = width,
+                    containerColor = if (current.mode == Mode.Chat) MaterialTheme.colorScheme.background
+                        else MaterialTheme.colorScheme.surfaceContainerLow,
                     history = if (visible) state.history else emptyList(),
                     currentId = current.id, onNew = ::newChat,
                     onOpen = { vm.openConversation(it); focus.clearFocus(); closeDrawer() },

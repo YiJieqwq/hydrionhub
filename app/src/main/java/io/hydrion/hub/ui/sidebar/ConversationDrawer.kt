@@ -16,11 +16,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.model.Mode
@@ -44,7 +46,7 @@ private fun dateLabel(date: LocalDate): String {
 
 @Composable
 internal fun ConversationDrawer(
-    history: List<Conversation>, currentId: String,
+    width: Dp, containerColor: Color, history: List<Conversation>, currentId: String,
     onNew: () -> Unit, onOpen: (String) -> Unit, onSettings: () -> Unit,
     onRename: (String) -> Unit, onPin: (String) -> Unit, onDelete: (String) -> Unit
 ) {
@@ -59,8 +61,8 @@ internal fun ConversationDrawer(
     val groups = results.filterNot { it.pinned }.groupBy { day(it.updatedAt) }
     val colors = MaterialTheme.colorScheme
     ModalDrawerSheet(
-        modifier = Modifier.width((LocalConfiguration.current.screenWidthDp.dp - 44.dp).coerceIn(220.dp, 348.dp)),
-        drawerContainerColor = colors.surfaceContainerLow,
+        modifier = Modifier.width(width).testTag("drawer-sheet"),
+        drawerContainerColor = containerColor,
         drawerShape = MaterialTheme.shapes.large.copy(topStart = androidx.compose.foundation.shape.CornerSize(0.dp),
             bottomStart = androidx.compose.foundation.shape.CornerSize(0.dp))
     ) {
