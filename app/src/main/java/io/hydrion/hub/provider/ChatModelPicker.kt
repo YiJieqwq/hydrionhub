@@ -63,6 +63,7 @@ internal class ChatModelPickerState {
     var optionKey by mutableStateOf("")
         private set
     var composerBounds by mutableStateOf<IntRect?>(null)
+    var draftFieldBounds by mutableStateOf<IntRect?>(null)
     var searchFieldBounds by mutableStateOf<IntRect?>(null)
     var searchQuery by mutableStateOf(TextFieldValue())
         private set
@@ -151,10 +152,13 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
     // The picker and draft share a window. Only an explicitly opened search field borrows focus.
     Box(modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))) {
         var origin by remember { mutableStateOf<IntOffset?>(null) }
-        if (page == ChatModelPickerState.Page.Search) {
-            SearchDismissLayer(
+        if (page == ChatModelPickerState.Page.Controls || page == ChatModelPickerState.Page.Search) {
+            PickerDismissLayer(
                 picker, close, Modifier.matchParentSize(),
-                fieldBounds = { origin?.let { picker.searchFieldBounds?.translate(-it) } },
+                fieldBounds = {
+                    val field = if (page == ChatModelPickerState.Page.Controls) picker.draftFieldBounds else picker.searchFieldBounds
+                    origin?.let { field?.translate(-it) }
+                },
             )
         } else if (!closing) Box(Modifier.matchParentSize().focusProperties { canFocus = false }
             .clickable(interactionSource = null, indication = null, role = Role.Button, onClick = picker::dismiss)

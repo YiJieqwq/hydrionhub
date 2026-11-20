@@ -1,6 +1,9 @@
 package io.hydrion.hub
 
 import android.view.View
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.click
@@ -10,7 +13,11 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.dp
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.model.HubViewModel
@@ -54,6 +61,59 @@ class ChatModelPickerAnchorTest {
             assertEquals(width, checkPage("chat-model-list"), 1f)
             screen.onNodeWithTag("chat-model-provider-trigger").performClick()
             assertEquals(width, checkPage("chat-provider-list"), 1f)
+        } finally {
+            screen.runOnIdle { vm.setDraft(previous) }
+        }
+    }
+
+    @Test fun parkedDraftReceivesEditingTapsWhileTheReasoningCardFollowsTheKeyboard() {
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        val previous = screen.runOnIdle { vm.state.value.draft.text }
+        val editor = screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction())
+        val card = screen.onNodeWithTag("chat-model-card")
+        val composer = screen.onNodeWithTag("composer-capsule", useUnmergedTree = true)
+        val viewport = screen.onNodeWithTag("chat-picker-viewport", useUnmergedTree = true)
+        val density = screen.activity.resources.displayMetrics.density
+        fun keyboardVisible() = screen.runOnUiThread {
+            val view = screen.activity.window.decorView
+            ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        }
+        try {
+            screen.runOnIdle { vm.setDraft("4111") }
+            screen.onNodeWithTag("chat-model-trigger").performTouchInput { click(center) }
+            editor.assertIsNotFocused()
+            assertTrue("The draft must start parked", !keyboardVisible())
+            val parkedBottom = card.assertIsDisplayed().fetchSemanticsNode().boundsInRoot.bottom
+
+            editor.performTouchInput { click(center) }
+            editor.assertIsFocused()
+            card.assertIsDisplayed()
+            screen.waitUntil(15_000) {
+                keyboardVisible() && card.fetchSemanticsNode().boundsInRoot.bottom < parkedBottom
+            }
+            val cardNode = card.fetchSemanticsNode()
+            val composerNode = composer.fetchSemanticsNode()
+            screen.runOnIdle {
+                assertEquals(11.5f * density, composerNode.boundsInRoot.top - cardNode.boundsInRoot.bottom, 2f)
+            }
+
+            val firstCaret = editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
+            val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+            editor.performTouchInput { click(Offset(if (rtl) width - 1.dp.toPx() else 1.dp.toPx(), centerY)) }
+            val secondCaret = editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
+            assertTrue("Each tap should position the cursor",
+                firstCaret.collapsed && secondCaret.collapsed && firstCaret != secondCaret)
+            editor.performTextInput("a")
+            val expected = "4111".replaceRange(secondCaret.start, secondCaret.end, "a")
+            screen.runOnIdle { assertEquals(expected, vm.state.value.draft.text) }
+            card.assertIsDisplayed()
+            assertTrue("Editing should retain the keyboard", keyboardVisible())
+
+            val blank = viewport.fetchSemanticsNode().boundsInRoot.topLeft + Offset(2f * density, 2f * density)
+            assertTrue(!card.fetchSemanticsNode().boundsInRoot.contains(blank))
+            assertTrue(!composer.fetchSemanticsNode().boundsInRoot.contains(blank))
+            viewport.performTouchInput { click(Offset(2.dp.toPx(), 2.dp.toPx())) }
+            card.assertDoesNotExist()
         } finally {
             screen.runOnIdle { vm.setDraft(previous) }
         }

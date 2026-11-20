@@ -312,6 +312,7 @@ internal fun HubComposer(
         DisposableEffect(chatPicker) {
             chatPicker.searchFocus.readDraft = { readDraft() }
             onDispose {
+                chatPicker.draftFieldBounds = null
                 chatPicker.searchFocus.readDraft = null
                 chatPicker.searchFocus.finish()
             }
@@ -428,7 +429,11 @@ internal fun HubComposer(
                                 cursorBrush = SolidColor(colors.primary),
                                 maxLines = if (hasContent || focused) 5 else 1,
                                 decorationBox = { editor ->
-                                    Box(Modifier.fillMaxWidth().heightIn(min = editorMinHeight)
+                                    Box(Modifier.fillMaxWidth()
+                                        .then(if (chatPicker == null) Modifier else Modifier.onGloballyPositioned {
+                                            chatPicker.draftFieldBounds = IntRect(it.positionInWindow().round(), it.size)
+                                        })
+                                        .heightIn(min = editorMinHeight)
                                         .padding(top = lerp(5.dp, 16.dp, toolbar), bottom = 4.dp),
                                         contentAlignment = Alignment.CenterStart) {
                                         if (draft.text.isEmpty()) {

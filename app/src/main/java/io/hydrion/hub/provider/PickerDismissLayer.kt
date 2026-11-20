@@ -20,8 +20,8 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 
-/** Rectangles in viewport coordinates; the composer search field must receive its original pointer stream. */
-internal fun outsideSearchField(viewport: IntSize, field: IntRect?): List<IntRect> {
+/** Leaves the visible editor out of hit testing so it receives the original gesture. */
+internal fun outsideEditor(viewport: IntSize, field: IntRect?): List<IntRect> {
     val w = viewport.width
     val h = viewport.height
     val full = IntRect(0, 0, w, h)
@@ -36,7 +36,7 @@ internal fun outsideSearchField(viewport: IntSize, field: IntRect?): List<IntRec
 }
 
 @Composable
-internal fun SearchDismissLayer(
+internal fun PickerDismissLayer(
     picker: ChatModelPickerState, label: String, modifier: Modifier, fieldBounds: () -> IntRect?,
 ) {
     // These are hit regions around an editor, not individual buttons. Android's expanded touch
@@ -56,7 +56,7 @@ internal fun SearchDismissLayer(
                 Spacer(accessible.pointerInput(picker) { detectTapGestures(onTap = { picker.dismiss() }) })
             }
         }) { children, limits ->
-            val rects = outsideSearchField(IntSize(limits.maxWidth, limits.maxHeight), fieldBounds())
+            val rects = outsideEditor(IntSize(limits.maxWidth, limits.maxHeight), fieldBounds())
             val pieces = children.mapIndexed { i, child ->
                 child.measure(Constraints.fixed(rects[i].width, rects[i].height))
             }
