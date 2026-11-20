@@ -120,26 +120,26 @@ internal fun ChatModelControls(
                     speed?.let { cap -> onChoose(cap, it) }
                 }
                 Column(
-                    keepEditorFocus.weight(1f).heightIn(min = 54.dp)
+                    keepEditorFocus.weight(1f).heightIn(min = 60.dp)
                         .clip(RoundedCornerShape(5.dp)).testTag("chat-model-select")
                         .clickable(role = Role.Button, onClickLabel = selectLabel, onClick = onModels)
                         .padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
+                    Text(if (effort != null && shown != null) chatOptionLabel(effort, shown) else selectLabel,
+                        Modifier.testTag("chat-model-effort-title"), color = titleTint,
+                        style = MaterialTheme.typography.bodyLarge, fontSize = 16.sp, lineHeight = 22.sp,
+                        letterSpacing = 0.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Row(verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(if (effort != null && shown != null) chatOptionLabel(effort, shown) else selectLabel,
-                            Modifier.weight(1f, fill = false).testTag("chat-model-effort-title"),
-                            color = titleTint,
-                            style = MaterialTheme.typography.bodyMedium, fontSize = 14.sp, lineHeight = 20.sp,
-                            letterSpacing = 0.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(model.name, Modifier.weight(1f, fill = false).testTag("chat-model-name"),
+                            color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium,
+                            fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null,
-                            Modifier.size(10.dp), tint = colors.onSurfaceVariant)
+                            Modifier.size(14.dp).testTag("chat-model-name-chevron"), tint = colors.onSurfaceVariant)
                     }
-                    Text(model.name, color = colors.onSurfaceVariant, style = MaterialTheme.typography.bodySmall,
-                        fontSize = 12.sp, lineHeight = 18.sp, letterSpacing = 0.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 val resetLabel = stringResource(R.string.chat_controls_reset)
                 Box(keepEditorFocus.width(buttonWidth).height(48.dp).testTag("chat-model-reset")

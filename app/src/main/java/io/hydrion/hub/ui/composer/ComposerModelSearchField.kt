@@ -50,9 +50,10 @@ internal fun ComposerEditorSlot(
     picker: ChatModelPickerState?,
     minHeight: Dp,
     textStyle: TextStyle,
+    modifier: Modifier = Modifier,
     draftEditor: @Composable () -> Unit,
 ) {
-    Box(Modifier.fillMaxWidth()) {
+    Box(modifier.fillMaxWidth()) {
         // Keep the draft editor and its measured slot. Only the placed editor receives touches,
         // and changing between a multiline draft and a single-line query cannot shift the menu.
         val draftPlacement = if (picker == null) Modifier else Modifier.clearAndSetSemantics { }

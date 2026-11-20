@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.imeAnimationSource
 import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -72,6 +73,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -101,6 +103,7 @@ import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
 import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.provider.PickerDraftFocus
+import io.hydrion.hub.provider.pickerComposerMaxHeight
 import io.hydrion.hub.provider.chatModelPickerPreImeBack
 import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubState
@@ -123,6 +126,7 @@ private const val ComposerTransitionMillis = 33
 private val ComposerSecondary = Color(0xFFAFAFAF)
 private val ComposerGlyphSize = 18.dp
 private val ComposerGlyphStroke = 2.dp
+private val ComposerGlyphFineStroke = 1.5.dp
 private val ToolbarGlyphGapReduction = 3.dp
 
 internal data class ComposerMotionInput(
@@ -176,7 +180,8 @@ internal fun HubComposer(
     val colors = MaterialTheme.colorScheme
     val darkComposer = colors.onSurface.luminance() > colors.surfaceContainerHigh.luminance()
     val glyphAccent = if (darkComposer) Color.White else colors.onSurface
-    val glyphSecondary = if (darkComposer) ComposerSecondary else colors.onSurfaceVariant
+    val glyphLine = if (darkComposer) Color.White else colors.onSurfaceVariant
+    val toolTrack = if (darkComposer && !toolsAvailable) ComposerSecondary else glyphLine
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
@@ -352,7 +357,14 @@ internal fun HubComposer(
     val editorMinHeight = lerp(49.25.dp, 46.5.dp, toolbar)
     val controlRowHeight = 47.75.dp
     val editorTextStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
-    Column(modifier.fillMaxWidth().padding(start = sideInset, end = sideInset, bottom = bottomGap)) {
+    val safeArea = WindowInsets.safeDrawing
+    val pickerRoom = if (!pickerOpen) Modifier else Modifier.layout { measurable, limits ->
+        val keep = (editorMinHeight + controlRowHeight + bottomGap).roundToPx()
+        val height = pickerComposerMaxHeight(limits.maxHeight, safeArea.getTop(this), keep)
+        val composer = measurable.measure(limits.copy(maxHeight = height.coerceAtLeast(limits.minHeight)))
+        layout(composer.width, composer.height) { composer.place(0, 0) }
+    }
+    Column(modifier.then(pickerRoom).fillMaxWidth().padding(start = sideInset, end = sideInset, bottom = bottomGap)) {
         importError?.let { error ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(error, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = colors.error)
@@ -392,7 +404,8 @@ internal fun HubComposer(
                 }
                 Box(Modifier.fillMaxWidth()) {
                     Column {
-                        ComposerEditorSlot(searchPicker, editorMinHeight, editorTextStyle) {
+                        ComposerEditorSlot(searchPicker, editorMinHeight, editorTextStyle,
+                            modifier = if (pickerOpen) Modifier.weight(1f, fill = false) else Modifier) {
                             BasicTextField(
                                 value = editorValue,
                                 onValueChange = { updated ->
@@ -453,22 +466,20 @@ internal fun HubComposer(
                                         if (imeActive) keyboard?.hide()
                                     }
                                 }, enabled = interactive && toolsAvailable) {
-                                    ToolGlyph(trackColor = glyphSecondary, thumbColor = if (toolsAvailable) glyphAccent else glyphSecondary)
+                                    ToolGlyph(trackColor = toolTrack, thumbColor = if (toolsAvailable) glyphAccent else toolTrack)
                                 }
                                 Box(Modifier.width(42.dp).height(48.dp).clearAndSetSemantics {
                                     contentDescription = "工作区终端"
                                     role = Role.Button
                                     disabled()
-                                }, contentAlignment = Alignment.Center) { TerminalGlyph(promptColor = glyphAccent, underlineColor = glyphSecondary) }
+                                }, contentAlignment = Alignment.Center) { TerminalGlyph(promptColor = glyphAccent, underlineColor = glyphLine) }
                             }
                             Box(Modifier.weight(1f).then(reveal), contentAlignment = Alignment.CenterEnd) {
                                 val trigger = if (chatPicker == null) Modifier else {
                                     DisposableEffect(chatPicker) {
-                                        onDispose { chatPicker.triggerBounds = null; chatPicker.dismiss() }
+                                        onDispose { chatPicker.dismiss() }
                                     }
-                                    Modifier.testTag("chat-model-trigger").onGloballyPositioned {
-                                        chatPicker.triggerBounds = IntRect(it.positionInWindow().round(), it.size)
-                                    }
+                                    Modifier.testTag("chat-model-trigger")
                                 }
                                 // The former chevron and its gap contribute 17 dp to the trigger’s hit area.
                                 val actionLabel = if (chatPicker != null) stringResource(R.string.chat_controls_select_model)
@@ -561,13 +572,14 @@ private fun PlusGlyph() {
 private fun ToolGlyph(trackColor: Color, thumbColor: Color) {
     // Bring the glyphs closer to the attachment icon inside their existing hit areas.
     Canvas(Modifier.offset(x = -ToolbarGlyphGapReduction).size(ComposerGlyphSize)) {
-        val stroke = ComposerGlyphStroke.toPx()
-        val margin = stroke / 2
+        val trackWidth = ComposerGlyphFineStroke.toPx()
+        val thumbWidth = ComposerGlyphStroke.toPx()
+        val margin = trackWidth / 2
         fun slider(row: Float, thumb: Float) {
             val y = row.dp.toPx()
             val x = thumb.dp.toPx()
-            drawLine(trackColor, Offset(margin, y), Offset(size.width - margin, y), stroke, StrokeCap.Round)
-            drawLine(thumbColor, Offset(x, y - 1.8.dp.toPx()), Offset(x, y + 1.8.dp.toPx()), stroke, StrokeCap.Round)
+            drawLine(trackColor, Offset(margin, y), Offset(size.width - margin, y), trackWidth, StrokeCap.Round)
+            drawLine(thumbColor, Offset(x, y - 1.8.dp.toPx()), Offset(x, y + 1.8.dp.toPx()), thumbWidth, StrokeCap.Round)
         }
         slider(3.5f, 11.5f)
         slider(9f, 5.5f)
@@ -582,7 +594,7 @@ private fun TerminalGlyph(promptColor: Color, underlineColor: Color) {
         val stroke = ComposerGlyphStroke.toPx()
         drawLine(promptColor, point(1f, 4f), point(6f, 9f), stroke, StrokeCap.Round)
         drawLine(promptColor, point(6f, 9f), point(1f, 14f), stroke, StrokeCap.Round)
-        drawLine(underlineColor, point(9f, 14f), point(17f, 14f), stroke, StrokeCap.Round)
+        drawLine(underlineColor, point(9f, 14f), point(17f, 14f), ComposerGlyphFineStroke.toPx(), StrokeCap.Round)
     }
 }
 
@@ -596,11 +608,26 @@ private fun SendButton(generating: Boolean, canSend: Boolean, onClick: () -> Uni
             canSend -> colors.primary
             else -> colors.surfaceContainerHighest
         }
-        Box(Modifier.size(32.dp).then(if (generating) Modifier else Modifier.capsuleEdge())
+        val face = when {
+            generating -> Modifier
+            canSend -> Modifier.offset(x = (-1.75).dp)
+            else -> Modifier.capsuleEdge()
+        }
+        Box(Modifier.size(32.dp).then(face)
             .background(fill, CircleShape), contentAlignment = Alignment.Center) {
-            if (generating) Box(Modifier.size(11.dp).background(Color.Black, RoundedCornerShape(1.25.dp)))
-            else Icon(Icons.Outlined.ArrowUpward, null, Modifier.size(20.dp),
-                tint = if (canSend) colors.onPrimary else colors.onSurfaceVariant)
+            when {
+                generating -> Box(Modifier.size(11.dp).background(Color.Black, RoundedCornerShape(1.25.dp)))
+                canSend -> Canvas(Modifier.size(20.dp)) {
+                    val tip = Offset(center.x, center.y - 6.67.dp.toPx())
+                    val tail = Offset(center.x, center.y + 6.67.dp.toPx())
+                    val wing = 5.67.dp.toPx()
+                    val stroke = 2.dp.toPx()
+                    drawLine(colors.onPrimary, tail, tip, stroke, StrokeCap.Round)
+                    drawLine(colors.onPrimary, tip, tip + Offset(-wing, wing), stroke, StrokeCap.Round)
+                    drawLine(colors.onPrimary, tip, tip + Offset(wing, wing), stroke, StrokeCap.Round)
+                }
+                else -> Icon(Icons.Outlined.ArrowUpward, null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
+            }
         }
     }
 }

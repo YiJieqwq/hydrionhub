@@ -271,7 +271,19 @@ class ChatModelPickerTest {
         }
         val center = targets.getValue("select")
         assertTrue("The whole center, including the space around its text, is clickable: $center",
-            center.height >= 54f * density - 1f && center.width >= minTarget)
+            center.height >= 60f * density - 1f && center.width >= minTarget)
+        fun labelBounds(suffix: String) = screen.onNodeWithTag("chat-model-$suffix", useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val title = labelBounds("effort-title")
+        val model = labelBounds("name")
+        val chevron = labelBounds("name-chevron")
+        assertTrue("The model and chevron belong below the effort title", title.bottom <= model.top + 1f)
+        assertEquals("Keep the chevron on the model's line", model.center.y, chevron.center.y, 1f)
+        val rtl = screen.activity.resources.configuration.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL
+        assertTrue("The chevron follows the model name", if (rtl) chevron.right <= model.left else model.right <= chevron.left)
+        for (label in listOf(title, model, chevron)) {
+            assertTrue("Both lines share the model selection click target", center.contains(label.center))
+        }
         assertTrue("The effort track spans the central selection area", targets.getValue("effort").width >= center.width)
         targets.entries.forEachIndexed { index, (name, box) ->
             assertTrue("$name has a 48dp touch target: $box", box.width >= minTarget && box.height >= minTarget)

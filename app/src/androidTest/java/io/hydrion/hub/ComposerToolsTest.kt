@@ -50,7 +50,7 @@ class ComposerToolsTest {
                 .captureToImage().asAndroidBitmap().apply {
                     assertStroke("terminal upper chevron", 255, -6f, 3.5f, 6.5f)
                     assertStroke("terminal lower chevron", 255, -6f, 3.5f, 11.5f)
-                    assertStroke("terminal underline", 175, -6f, 13f, 14f)
+                    assertStroke("terminal underline", 255, -6f, 13f, 14f)
                 }
         }
         screen.onNodeWithContentDescription("打开工具箱").assertIsEnabled().performTouchInput { click(center) }
@@ -184,12 +184,12 @@ internal fun SemanticsNodeInteraction.assertGlyphGray(label: String, expectedGra
 
 internal fun SemanticsNodeInteraction.assertToolInk(enabled: Boolean) {
     val bitmap = captureToImage().asAndroidBitmap()
+    val gray = if (enabled) 255 else 175
     for ((y, thumb) in listOf(3.5f to 11.5f, 9f to 5.5f, 14.5f to 10.5f)) {
-        bitmap.assertStroke("tool track at $y, left", 175, -3f, 2f, y)
-        bitmap.assertStroke("tool track at $y, right", 175, -3f, 15.5f, y)
-        val thumbGray = if (enabled) 255 else 175
-        bitmap.assertStroke("tool thumb above $y", thumbGray, -3f, thumb, y - 1.6f)
-        bitmap.assertStroke("tool thumb below $y", thumbGray, -3f, thumb, y + 1.6f)
+        bitmap.assertStroke("tool track at $y, left", gray, -3f, 2f, y)
+        bitmap.assertStroke("tool track at $y, right", gray, -3f, 15.5f, y)
+        bitmap.assertStroke("tool thumb above $y", gray, -3f, thumb, y - 1.6f)
+        bitmap.assertStroke("tool thumb below $y", gray, -3f, thumb, y + 1.6f)
     }
 }
 

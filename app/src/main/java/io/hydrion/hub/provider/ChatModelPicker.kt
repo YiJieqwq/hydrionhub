@@ -39,6 +39,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -62,7 +63,6 @@ internal class ChatModelPickerState {
     var optionKey by mutableStateOf("")
         private set
     var composerBounds by mutableStateOf<IntRect?>(null)
-    var triggerBounds by mutableStateOf<IntRect?>(null)
     var searchFieldBounds by mutableStateOf<IntRect?>(null)
     var searchQuery by mutableStateOf(TextFieldValue())
         private set
@@ -130,13 +130,13 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
     } else null
     val closing = page == null
     val drawing = if (controls) rememberGraphicsLayer() else null
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val motion = if (visibility == null) Modifier else Modifier.graphicsLayer {
         val hidden = 1f - visibility.value
         alpha = visibility.value
         scaleX = 1f - 0.02f * hidden
         scaleY = scaleX
-        translationY = 5.dp.toPx() * hidden
-        transformOrigin = TransformOrigin(0f, 1f)
+        transformOrigin = TransformOrigin(if (rtl) 0f else 1f, 1f)
     }
     val catalog by store.catalog.collectAsState()
     val models = remember(catalog) { catalog.entries(Mode.Chat) }
@@ -250,7 +250,7 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
             },
         ) { children, limits ->
             val windowOrigin = origin
-            val anchor = if (controls) picker.triggerBounds else picker.composerBounds
+            val anchor = picker.composerBounds
             if (windowOrigin == null || anchor == null) {
                 // The safe viewport can start below a status bar or cutout. Wait for its coordinates
                 // before placing the first visible frame.
@@ -258,18 +258,17 @@ internal fun ChatModelPicker(store: ProviderStore, picker: ChatModelPickerState,
             } else {
                 val viewport = IntSize(limits.maxWidth, limits.maxHeight)
                 val localAnchor = anchor.translate(-windowOrigin)
-                val space = if (controls) reasoningPanelSpace(localAnchor, viewport)
-                    else {
-                        // The model list also needs room for its independent search control.
-                        val minimum = if (page == ChatModelPickerState.Page.Models ||
-                            page == ChatModelPickerState.Page.Search) 104.dp else 88.dp
-                        pickerSpace(localAnchor, viewport, layoutDirection, minimum)
-                    }
+                val space = pickerSpace(localAnchor, viewport, layoutDirection, reasoning = controls)
                 val card = children.first().measure(Constraints(minWidth = space.width, maxWidth = space.width,
                     maxHeight = space.maxHeight))
                 val y = if (space.above) space.edgeY - card.height else space.edgeY
                 val visibleCard = if (closing) children.last().measure(Constraints.fixed(card.width, card.height)) else card
-                layout(viewport.width, viewport.height) { visibleCard.place(space.left, y) }
+                val gap = if (space.above) localAnchor.top - space.edgeY else space.edgeY - localAnchor.bottom
+                val travel = minOf(5.dp.toPx(), gap.coerceAtLeast(0).toFloat())
+                layout(viewport.width, viewport.height) {
+                    val shift = (travel * (1f - (visibility?.value ?: 1f))).roundToInt()
+                    visibleCard.place(space.left, if (space.above) y + shift else y - shift)
+                }
             }
         }
     }
@@ -279,49 +278,39 @@ private val PanelEasing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
 
 internal data class PickerSpace(val left: Int, val edgeY: Int, val width: Int, val maxHeight: Int, val above: Boolean)
 
-// The reasoning control follows its trigger; the drill-down lists keep their composer anchor.
-internal fun Density.reasoningPanelSpace(trigger: IntRect, viewport: IntSize): PickerSpace {
-    val margin = 12.dp.roundToPx()
-    val insetX = minOf(margin, viewport.width / 2)
-    val insetY = minOf(margin, viewport.height / 2)
-    val width = minOf(272.dp.roundToPx(), viewport.width - 2 * insetX)
-    val left = (trigger.center.x - width / 2).coerceIn(insetX, viewport.width - insetX - width)
-    val gap = 8.dp.roundToPx()
-    val upperEdge = (trigger.top - gap).coerceIn(insetY, viewport.height - insetY)
-    val lowerEdge = (trigger.bottom + gap).coerceIn(insetY, viewport.height - insetY)
-    val roomAbove = upperEdge - insetY
-    val roomBelow = viewport.height - insetY - lowerEdge
-    // Desktop always opens upward. Flip only if a short mobile viewport cannot fit one touch row.
-    val row = minOf(48.dp.roundToPx(), viewport.height)
-    return if (roomAbove >= row || roomAbove >= roomBelow) {
-        PickerSpace(left, maxOf(upperEdge, row), width, maxOf(roomAbove, row), true)
-    } else {
-        PickerSpace(left, minOf(lowerEdge, viewport.height - row), width, maxOf(roomBelow, row), false)
-    }
+private val PickerGap = 11.5.dp
+private val PickerMargin = 12.dp
+// A visible model option and the independent search button can share this height.
+private val PickerMinListHeight = 104.dp
+
+internal fun Density.pickerComposerMaxHeight(available: Int, safeTop: Int, editorAndToolbar: Int): Int {
+    val reserve = safeTop + PickerMargin.roundToPx() + PickerGap.roundToPx() + PickerMinListHeight.roundToPx()
+    return (available - reserve).coerceIn(editorAndToolbar.coerceAtMost(available), available)
 }
 
 internal fun Density.pickerSpace(
-    composer: IntRect, viewport: IntSize, direction: LayoutDirection, minimumHeight: Dp = 88.dp,
+    composer: IntRect, viewport: IntSize, direction: LayoutDirection, reasoning: Boolean = false,
 ): PickerSpace {
-    val gap = 11.5.dp.roundToPx()
-    val sideMargin = minOf(12.dp.roundToPx(), viewport.width / 2)
-    val verticalMargin = minOf(12.dp.roundToPx(), viewport.height / 2)
-    val preferredWidth = (viewport.width * 0.6f).roundToInt().coerceIn(240.dp.roundToPx(), 248.dp.roundToPx())
+    val sideMargin = minOf(PickerMargin.roundToPx(), viewport.width / 2)
+    val preferredWidth = if (reasoning) 288.dp.roundToPx()
+        else (viewport.width * 0.6f).roundToInt().coerceIn(240.dp.roundToPx(), 248.dp.roundToPx())
     val width = minOf(preferredWidth, viewport.width - 2 * sideMargin)
     val endAligned = if (direction == LayoutDirection.Ltr) composer.right - width else composer.left
     val left = endAligned.coerceIn(sideMargin, viewport.width - sideMargin - width)
-    val upperEdge = (composer.top - gap).coerceIn(verticalMargin, viewport.height - verticalMargin)
-    val lowerEdge = (composer.bottom + gap).coerceIn(verticalMargin, viewport.height - verticalMargin)
-    val above = upperEdge - verticalMargin
-    val below = viewport.height - verticalMargin - lowerEdge
-    // In split-screen a tall draft can fill almost the entire area above the IME. Give the
-    // scrollable content a heading and a tappable row, even if that uses the top of the editor.
-    val oneRow = minOf(minimumHeight.roundToPx(), viewport.height)
-    return if (above >= 96.dp.roundToPx() || above >= below) {
-        PickerSpace(left, maxOf(upperEdge, oneRow), width, maxOf(above, oneRow), true)
-    } else {
-        PickerSpace(left, minOf(lowerEdge, viewport.height - oneRow), width, maxOf(below, oneRow), false)
-    }
+
+    val above = composer.top.coerceIn(0, viewport.height)
+    val below = viewport.height - composer.bottom.coerceIn(0, viewport.height)
+    val minimum = PickerMinListHeight.roundToPx()
+    val gap = PickerGap.roundToPx()
+    val margin = PickerMargin.roundToPx()
+    val placeAbove = above >= minimum + gap + margin || above >= below
+    val room = if (placeAbove) above else below
+    // Give up decorative space first in split screen. The card never borrows editor pixels.
+    val spare = (room - minimum).coerceAtLeast(0)
+    val actualGap = minOf(gap, spare)
+    val maxHeight = room - actualGap - minOf(margin, spare - actualGap)
+    val edge = if (placeAbove) above - actualGap else viewport.height - below + actualGap
+    return PickerSpace(left, edge, width, maxHeight, placeAbove)
 }
 
 @Composable

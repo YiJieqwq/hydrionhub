@@ -1,7 +1,11 @@
 package io.hydrion.hub
 
 import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.Rect
 import android.view.KeyEvent
+import android.view.View
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -31,6 +35,39 @@ class ComposerDraftTest {
     private fun waitFor(matcher: SemanticsMatcher, count: Int = 1) {
         screen.waitUntil(timeoutMillis = 15_000) {
             screen.onAllNodes(matcher).fetchSemanticsNodes().size == count
+        }
+    }
+
+    @Test
+    fun enabledSendHasAFullDiskAndCenteredArrowInsideItsTouchTarget() {
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        val previous = screen.runOnIdle { vm.state.value.draft.text }
+        try {
+            screen.runOnIdle { vm.setDraft("1") }
+            val send = screen.onNodeWithTag("chat-composer-send").assertIsEnabled()
+            val image = send.captureToImage().asAndroidBitmap()
+            val disk = Rect()
+            val arrow = Rect()
+            for (y in 0 until image.height) for (x in 0 until image.width) {
+                val pixel = image.getPixel(x, y)
+                val r = Color.red(pixel)
+                val g = Color.green(pixel)
+                val b = Color.blue(pixel)
+                if (b - r > 110 && b - g > 80) disk.union(x, y, x + 1, y + 1)
+                if (minOf(r, g, b) > 240) arrow.union(x, y, x + 1, y + 1)
+            }
+            val density = screen.activity.resources.displayMetrics.density
+            val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+            assertEquals(32f * density, disk.width().toFloat(), 2f)
+            assertEquals(32f * density, disk.height().toFloat(), 2f)
+            assertEquals(image.width / 2f + (if (rtl) 1.75f else -1.75f) * density, disk.exactCenterX(), 1.5f)
+            assertEquals(image.height / 2f, disk.exactCenterY(), 1.5f)
+            assertEquals(13.34f * density, arrow.width().toFloat(), 2f)
+            assertEquals(15.34f * density, arrow.height().toFloat(), 2f)
+            assertEquals(disk.exactCenterX(), arrow.exactCenterX(), 1.5f)
+            assertEquals(disk.exactCenterY(), arrow.exactCenterY(), 1.5f)
+        } finally {
+            screen.runOnIdle { vm.setDraft(previous) }
         }
     }
 

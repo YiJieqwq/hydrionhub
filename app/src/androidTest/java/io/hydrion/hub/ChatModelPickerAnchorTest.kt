@@ -24,7 +24,7 @@ import org.junit.runner.RunWith
 class ChatModelPickerAnchorTest {
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
 
-    @Test fun reasoningCardFollowsTheTriggerAndDrillDownListsStayAboveTheMultilineComposer() {
+    @Test fun reasoningAndListsShareTheMultilineComposerTopAndTrailingEdge() {
         val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
         val previous = screen.runOnIdle { vm.state.value.draft.text }
         try {
@@ -44,15 +44,8 @@ class ChatModelPickerAnchorTest {
                     page.width
                 }
             }
-            val trigger = screen.onNodeWithTag("chat-model-trigger").fetchSemanticsNode().boundsInRoot
             val viewport = screen.onNodeWithTag("chat-picker-viewport", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-            val card = screen.onNodeWithTag("chat-model-card").fetchSemanticsNode().boundsInRoot
-            val margin = 12f * density
-            assertEquals(minOf(272f * density, viewport.width - 2 * margin), card.width, 2f)
-            val left = (trigger.center.x - card.width / 2).coerceIn(viewport.left + margin,
-                maxOf(viewport.left + margin, viewport.right - margin - card.width))
-            assertEquals(left, card.left, 2f)
-            assertEquals(8f * density, trigger.top - card.bottom, 2f)
+            assertEquals(minOf(288f * density, viewport.width - 24f * density), checkPage("chat-model-card"), 2f)
             screen.onNodeWithTag("chat-model-select").performClick()
             screen.onNodeWithTag("chat-model-search-field").assertIsFocused()
             val width = checkPage("chat-model-list")
@@ -66,7 +59,7 @@ class ChatModelPickerAnchorTest {
         }
     }
 
-    @Test fun fadingCardLetsTapsThroughToThePreviouslyCoveredEditor() {
+    @Test fun fadingCardLetsTheNextTapFocusTheEditor() {
         val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
         val previous = screen.runOnIdle { vm.state.value.draft.text }
         val editor = screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction())
@@ -76,15 +69,15 @@ class ChatModelPickerAnchorTest {
             trigger.performClick()
             val card = screen.onNodeWithTag("chat-model-card").fetchSemanticsNode().boundsInRoot
             editor.assertIsNotFocused()
-            val overlap = card.intersect(editor.fetchSemanticsNode().boundsInRoot)
-            assertTrue("The card covers part of the multiline editor", !overlap.isEmpty)
+            val field = editor.fetchSemanticsNode().boundsInRoot
+            assertTrue("The card must clear the multiline editor", card.bottom <= field.top)
             val root = screen.onRoot()
             val origin = root.fetchSemanticsNode().boundsInRoot.topLeft
             screen.mainClock.autoAdvance = false
             trigger.performTouchInput { click(center) }
             screen.mainClock.advanceTimeByFrame()
             screen.mainClock.advanceTimeByFrame()
-            root.performTouchInput { click(overlap.center - origin) }
+            root.performTouchInput { click(field.center - origin) }
             screen.mainClock.advanceTimeByFrame()
             editor.assertIsFocused()
         } finally {

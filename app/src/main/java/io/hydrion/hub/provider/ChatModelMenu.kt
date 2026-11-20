@@ -71,8 +71,11 @@ internal fun ProviderModelsList(
     val colors = MaterialTheme.colorScheme
     val keepEditorFocus = Modifier.focusProperties { canFocus = false }
 
-    Column(Modifier.fillMaxWidth().testTag("chat-model-list")) {
-        LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).testTag("chat-model-results"),
+    BoxWithConstraints(Modifier.fillMaxWidth().testTag("chat-model-list")) {
+        // In a short landscape window, leave the last row reachable beside the search action.
+        val actionSpace = if (maxHeight < 104.dp) Modifier.padding(end = 52.dp)
+            else Modifier.padding(bottom = 50.dp)
+        LazyColumn(Modifier.fillMaxWidth().then(actionSpace).testTag("chat-model-results"),
             state = scroll, contentPadding = PaddingValues(top = 6.dp)) {
             item { PickerHeading(stringResource(R.string.chat_picker_provider)) }
             item {
@@ -100,7 +103,7 @@ internal fun ProviderModelsList(
         }
         // Keep the same independent control and hit rectangle in both states.
         val enabled = searching || models.isNotEmpty()
-        Box(Modifier.align(Alignment.End).padding(end = 4.dp, bottom = 2.dp).size(48.dp)
+        Box(Modifier.align(Alignment.BottomEnd).padding(end = 4.dp, bottom = 2.dp).size(48.dp)
             .then(keepEditorFocus).clip(CircleShape).testTag(if (searching) "chat-model-search-close" else "chat-model-search")
             .semantics { contentDescription = actionLabel }
             .clickable(enabled = enabled, role = Role.Button) {
