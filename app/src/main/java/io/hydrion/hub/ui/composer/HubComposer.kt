@@ -88,6 +88,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -305,7 +306,11 @@ internal fun HubComposer(
         }
         val shape = if (toolbar == 0f) CircleShape else RoundedCornerShape(24.dp)
         Surface(
-            modifier = Modifier.fillMaxWidth().testTag("composer-capsule").border(0.66.dp, HubStyle.ComposerBorder, shape),
+            modifier = Modifier.fillMaxWidth().testTag("composer-capsule")
+                .then(if (chatPicker == null) Modifier else Modifier.onGloballyPositioned {
+                    chatPicker.composerBounds = IntRect(it.positionInWindow().round(), it.size)
+                })
+                .border(0.66.dp, HubStyle.ComposerBorder, shape),
             shape = shape,
             color = colors.surfaceContainerHigh,
         ) {
@@ -396,32 +401,48 @@ internal fun HubComposer(
                                 }, contentAlignment = Alignment.Center) { TerminalGlyph() }
                             }
                             Box(Modifier.weight(1f).then(reveal), contentAlignment = Alignment.CenterEnd) {
-                                val anchor = if (chatPicker == null) Modifier else {
+                                val trigger = if (chatPicker == null) Modifier else {
                                     DisposableEffect(chatPicker) { onDispose { chatPicker.dismiss() } }
-                                    Modifier.testTag("chat-model-trigger").onGloballyPositioned {
-                                        chatPicker.anchor = IntRect(it.positionInWindow().round(), it.size)
-                                    }
+                                    Modifier.testTag("chat-model-trigger")
                                 }
                                 // The former chevron and its gap contribute 17 dp to the trigger’s hit area.
                                 val actionLabel = if (chatPicker != null) stringResource(R.string.chat_controls_select_model)
                                     else "配置模型"
+                                val effortLabel = if (chatPicker != null) stringResource(R.string.chat_controls_select_effort) else null
+                                val labelStyle = MaterialTheme.typography.labelLarge
+                                val triggerWidth = if (effortLabel != null) {
+                                    val measurer = rememberTextMeasurer()
+                                    val width = remember(measurer, modelLabel, effortLabel, labelStyle, fast, density) {
+                                        fun labelWidth(text: String) = with(density) {
+                                            measurer.measure(text, labelStyle, maxLines = 1, softWrap = false).size.width.toDp()
+                                        }
+                                        // Outer padding, optional bolt, and the open chip's two 8 dp insets.
+                                        val closedLabel = labelWidth(modelLabel) + if (fast) 17.dp else 0.dp
+                                        25.dp + maxOf(closedLabel, labelWidth(effortLabel) + 16.dp)
+                                    }
+                                    Modifier.width(width)
+                                } else Modifier
                                 Row(
-                                    anchor.clip(CircleShape).semantics {
-                                        contentDescription = actionLabel
+                                    trigger.clip(CircleShape).semantics {
+                                        contentDescription = if (pickerOpen && effortLabel != null) effortLabel else actionLabel
                                         stateDescription = modelLabel
                                     }.clickable(enabled = interactive, role = Role.Button) {
                                         cancelPendingTools()
-                                        if (chatPicker != null) chatPicker.open() else {
+                                        if (pickerOpen) chatPicker?.dismiss()
+                                        else if (chatPicker != null) chatPicker.open() else {
                                             collapse()
                                             onConfigure()
                                         }
-                                    }.heightIn(min = 44.dp).padding(start = 21.dp, end = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    }.heightIn(min = 44.dp).then(triggerWidth).padding(start = 21.dp, end = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.End),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    if (fast) Icon(Icons.Outlined.Bolt, "快速", Modifier.size(15.dp), tint = colors.onSurface)
-                                    Text(modelLabel, Modifier.weight(1f, fill = false),
-                                        style = MaterialTheme.typography.labelLarge, color = colors.onSurface,
+                                    if (fast && !pickerOpen) Icon(Icons.Outlined.Bolt, "快速", Modifier.size(15.dp), tint = colors.onSurface)
+                                    val labelSurface = if (pickerOpen) Modifier.background(colors.surfaceContainerHighest, CircleShape)
+                                        .padding(horizontal = 8.dp, vertical = 4.dp) else Modifier
+                                    Text(if (pickerOpen && effortLabel != null) effortLabel else modelLabel,
+                                        Modifier.weight(1f, fill = false).then(labelSurface),
+                                        style = labelStyle, color = if (pickerOpen) colors.onSurfaceVariant else colors.onSurface,
                                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }

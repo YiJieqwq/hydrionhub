@@ -14,7 +14,6 @@ class ChatSpeedControlsTest {
         assertEquals("Fast", controls.fast)
         assertEquals("Standard", controls.off)
         assertEquals("Fast", controls.selected)
-        assertNull(controls.ultra)
         assertNull(model.chatSpeedControls(local, mapOf("speed" to "Standard")).selected)
     }
 

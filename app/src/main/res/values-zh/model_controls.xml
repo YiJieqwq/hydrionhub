@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_controls_select_effort">选择推理档位</string>
     <string name="chat_controls_select_model">选择模型</string>
     <string name="chat_controls_reset">恢复默认</string>
     <string name="chat_controls_effort">推理强度</string>
@@ -14,7 +15,6 @@
     <string name="chat_controls_extra_high">极高</string>
     <string name="chat_controls_max">最高</string>
     <string name="chat_controls_ultra">超高</string>
-    <string name="chat_controls_ultrafast">超快速</string>
     <string name="chat_controls_not_connected">此模型未接入%1$s</string>
     <string name="chat_controls_fixed">此模型固定使用%1$s</string>
 </resources>

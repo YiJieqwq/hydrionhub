@@ -6,7 +6,6 @@ import org.json.JSONObject
 /** Stored choices the selected chat transport actually consumes. */
 internal data class ChatSpeedControls(
     val fast: String? = null,
-    val ultra: String? = null,
     val off: String? = null,
     val selected: String? = null,
 )

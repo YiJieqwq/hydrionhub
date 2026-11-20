@@ -99,7 +99,7 @@ class ChatModelPickerTest {
             screen.runOnIdle { assertEquals(deepSeek, store.catalog.value.active[Mode.Chat]) }
             val networkParameters = store.selection(Mode.Chat).parameters
             control("fast").assertIsNotEnabled().performTouchInput { click(center) }
-            control("ultrafast").assertIsNotEnabled().performTouchInput { click(center) }
+            control("ultrafast").assertDoesNotExist()
             screen.runOnIdle { assertEquals(networkParameters, store.selection(Mode.Chat).parameters) }
             control("select").performClick()
             option(deepSeek).assertIsSelected()
@@ -119,7 +119,6 @@ class ChatModelPickerTest {
             effort.performSemanticsAction(SemanticsActions.SetProgress) { it(otherEnd) }
             screen.runOnIdle { assertNotEquals(initial["effort"], store.selection(Mode.Chat).parameters["effort"]) }
             control("fast").assertIsEnabled().performTouchInput { click(center) }
-            control("ultrafast").assertIsNotEnabled()
             val expectedSpeed = if (initial["speed"] == "Fast") "Standard" else "Fast"
             screen.runOnIdle { assertEquals(expectedSpeed, store.selection(Mode.Chat).parameters["speed"]) }
 
@@ -129,7 +128,6 @@ class ChatModelPickerTest {
             control("card").assertIsDisplayed()
             control("effort").assertDoesNotExist()
             control("fast").assertIsNotEnabled()
-            control("ultrafast").assertIsNotEnabled()
             if (default.route == mini) {
                 control("select").performClick()
                 option(reason).performClick()
@@ -167,7 +165,7 @@ class ChatModelPickerTest {
             }
             control("trigger").performClick()
             control("fast").assertIsNotEnabled().assertIsOff().performTouchInput { click(center) }
-            control("ultrafast").assertIsNotEnabled().assertIsOff()
+            control("ultrafast").assertDoesNotExist()
             screen.runOnIdle {
                 assertEquals(active, store.catalog.value.active[Mode.Chat])
                 assertEquals("Fast", store.catalog.value.overrides[active]?.get("speed"))
@@ -182,10 +180,14 @@ class ChatModelPickerTest {
     }
 
     private fun assertCardTargetsStaySeparate() {
-        val targets = listOf("select", "fast", "ultrafast", "reset", "effort")
+        val targets = listOf("select", "fast", "reset", "effort")
             .associateWith { control(it).fetchSemanticsNode().boundsInRoot }
         val density = screen.activity.resources.displayMetrics.density
         val minTarget = 48f * density - 1f
+        val topRow = listOf("fast", "select", "reset").map(targets::getValue).sortedBy { it.left }
+        topRow.zipWithNext { left, right ->
+            assertEquals("No reserved space between top-row targets", left.right, right.left, 1f)
+        }
         val center = targets.getValue("select")
         assertTrue("The whole center, including the space around its text, is clickable: $center",
             center.height >= 54f * density - 1f && center.width >= minTarget)
@@ -216,8 +218,13 @@ class ChatModelPickerTest {
             assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
             assertTrue("Soft keyboard and activity window retain focus", softwareKeyboardIsOpen())
         }
+        val triggerSize = control("trigger").fetchSemanticsNode().size
+        val closedLabel = control("trigger").fetchSemanticsNode().config[SemanticsProperties.Text]
+        val effortLabel = screen.activity.getString(R.string.chat_controls_select_effort)
         control("trigger").performTouchInput { click(center) }
         control("card").assertIsDisplayed()
+        control("trigger").assertTextEquals(effortLabel)
+        assertEquals(triggerSize, control("trigger").fetchSemanticsNode().size)
         assertEditing()
         control("select").performTouchInput { click(center) }
         control("list").assertIsDisplayed()
@@ -239,6 +246,8 @@ class ChatModelPickerTest {
         assertEditing()
         pressBack()
         control("card").assertDoesNotExist()
+        assertEquals(closedLabel, control("trigger").fetchSemanticsNode().config[SemanticsProperties.Text])
+        assertEquals(triggerSize, control("trigger").fetchSemanticsNode().size)
         assertEditing()
 
         control("trigger").performTouchInput { click(center) }

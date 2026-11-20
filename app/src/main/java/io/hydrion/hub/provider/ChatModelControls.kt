@@ -8,6 +8,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.RestartAlt
@@ -91,26 +92,19 @@ internal fun ChatModelControls(
     }
     val highest = levels.lastOrNull { it.effortKey() !in nonStrengths }
     val peak = level != null && level == highest
-    val accelerated = speeds.selected != null && (speeds.selected == speeds.fast || speeds.selected == speeds.ultra)
+    val accelerated = speeds.selected != null && speeds.selected == speeds.fast
     val accent = if (peak) Color(0xFFB88BFF) else Color(0xFF619EFF)
     val selectLabel = stringResource(R.string.chat_controls_select_model)
     val keepEditorFocus = Modifier.focusProperties { canFocus = false }
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val buttonWidth = minOf(48.dp, maxWidth / 4)
-            val middleWidth = minOf(maxWidth * .44f, maxWidth - buttonWidth * 3)
-            val leftWidth = maxOf(buttonWidth * 2, (maxWidth - middleWidth) / 2)
-            Row(verticalAlignment = Alignment.Top) {
-                Row(Modifier.width(leftWidth)) {
-                    SpeedButton(speeds.fast, speeds.off, speeds.selected, buttonWidth, ultra = false) {
-                        speed?.let { cap -> onChoose(cap, it) }
-                    }
-                    SpeedButton(speeds.ultra, speeds.off, speeds.selected, buttonWidth, ultra = true) {
-                        speed?.let { cap -> onChoose(cap, it) }
-                    }
+            val buttonWidth = minOf(48.dp, maxWidth / 3)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                FastButton(speeds.fast, speeds.off, speeds.selected, buttonWidth) {
+                    speed?.let { cap -> onChoose(cap, it) }
                 }
-                Column(keepEditorFocus.width(middleWidth).heightIn(min = 54.dp)
+                Column(keepEditorFocus.weight(1f).heightIn(min = 54.dp)
                     .clip(RoundedCornerShape(10.dp)).testTag("chat-model-select")
                     .clickable(role = Role.Button, onClickLabel = selectLabel, onClick = onModels)
                     .padding(horizontal = 3.dp, vertical = 3.dp),
@@ -124,15 +118,13 @@ internal fun ChatModelControls(
                             color = if (effort == null) colors.onSurface else colors.onSurfaceVariant,
                             style = if (effort == null) MaterialTheme.typography.titleSmall else MaterialTheme.typography.labelMedium,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Icon(Icons.Outlined.KeyboardArrowDown, null, Modifier.size(14.dp), tint = colors.onSurfaceVariant)
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(14.dp), tint = colors.onSurfaceVariant)
                     }
                 }
-                Box(Modifier.weight(1f), contentAlignment = Alignment.TopEnd) {
-                    Box(keepEditorFocus.width(buttonWidth).height(48.dp).testTag("chat-model-reset")
-                        .clickable(role = Role.Button, onClick = onReset), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.RestartAlt, stringResource(R.string.chat_controls_reset),
-                            Modifier.size(18.dp), tint = colors.onSurfaceVariant)
-                    }
+                Box(keepEditorFocus.width(buttonWidth).height(48.dp).testTag("chat-model-reset")
+                    .clickable(role = Role.Button, onClick = onReset), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.RestartAlt, stringResource(R.string.chat_controls_reset),
+                        Modifier.size(18.dp), tint = colors.onSurfaceVariant)
                 }
             }
         }
@@ -166,11 +158,10 @@ internal fun orderedEffortLevels(choices: List<String>, declared: List<String>):
 }
 
 @Composable
-private fun SpeedButton(tier: String?, off: String?, selected: String?, width: Dp,
-    ultra: Boolean, onChange: (String) -> Unit) {
+private fun FastButton(tier: String?, off: String?, selected: String?, width: Dp, onChange: (String) -> Unit) {
     val enabled = tier != null && off != null
     val active = tier != null && selected == tier
-    val name = stringResource(if (ultra) R.string.chat_controls_ultrafast else R.string.chat_controls_fast)
+    val name = stringResource(R.string.chat_controls_fast)
     val description = when {
         enabled -> name
         active -> stringResource(R.string.chat_controls_fixed, name)
@@ -183,15 +174,12 @@ private fun SpeedButton(tier: String?, off: String?, selected: String?, width: D
         else -> colors.onSurfaceVariant
     }
     Box(Modifier.width(width).height(48.dp).focusProperties { canFocus = false }
-        .testTag(if (ultra) "chat-model-ultrafast" else "chat-model-fast")
+        .testTag("chat-model-fast")
         .semantics { contentDescription = description }
         .toggleable(active, enabled = enabled, role = Role.Switch) { on ->
             (if (on) tier else off)?.let(onChange)
         }, contentAlignment = Alignment.Center) {
-        if (ultra) {
-            Icon(Icons.Filled.Bolt, null, Modifier.offset(x = (-3).dp, y = (-1).dp).size(18.dp), tint = tint)
-            Icon(Icons.Filled.Bolt, null, Modifier.offset(x = 3.dp, y = 1.dp).size(18.dp), tint = tint)
-        } else Icon(Icons.Filled.Bolt, null, Modifier.size(19.dp), tint = tint)
+        Icon(Icons.Filled.Bolt, null, Modifier.size(19.dp), tint = tint)
     }
 }
 
@@ -208,6 +196,7 @@ private fun EffortTrack(cap: Capability, choices: List<String>, value: String, a
             .testTag("chat-model-effort").semantics { contentDescription = label; stateDescription = fixed },
             contentAlignment = Alignment.Center) {
             EffortRail(0, 0, accent, peak, accelerated)
+            EffortThumb()
         }
         return
     }
@@ -217,13 +206,19 @@ private fun EffortTrack(cap: Capability, choices: List<String>, value: String, a
             val next = choices[number.roundToInt().coerceIn(choices.indices)]
             if (next != value) onChoose(next)
         },
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).focusProperties { canFocus = false }
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).heightIn(min = 48.dp)
+            .focusProperties { canFocus = false }
             .testTag("chat-model-effort").semantics { contentDescription = label; stateDescription = level },
         valueRange = 0f..choices.lastIndex.toFloat(), steps = choices.size - 2,
         interactionSource = remember { MutableInteractionSource() },
-        thumb = { Box(Modifier.size(12.dp).background(accent, CircleShape)) },
+        thumb = { EffortThumb() },
         track = {
             EffortRail(index, choices.lastIndex, accent, peak, accelerated)
         },
     )
+}
+
+@Composable
+private fun EffortThumb() {
+    Box(Modifier.size(12.dp).background(Color.White, CircleShape))
 }

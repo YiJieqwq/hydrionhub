@@ -1,5 +1,6 @@
 package io.hydrion.hub.provider
 
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
@@ -8,30 +9,63 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatModelPickerLayoutTest {
-    @Test fun cardEndsAtItsTriggerAndMakesRoomForTheKeyboard() {
-        val anchor = IntRect(210, 270, 344, 318)
-        val result = pickerSpace(anchor, IntSize(410, 340), 8, 244, 112, LayoutDirection.Ltr)
-        assertEquals(100, result.left)
-        assertEquals(262, result.edgeY)
-        assertEquals(254, result.maxHeight)
+    @Test fun phoneCardAlignsToTheComposerEndAndClearsItsTop() {
+        val density = Density(942f / 410f)
+        val composer = IntRect(29, 973, 913, 1192)
+        val result = density.pickerSpace(composer, IntSize(942, 1220), LayoutDirection.Ltr)
         assertTrue(result.above)
+        assertEquals(565, result.width)
+        assertEquals(composer.right, result.left + result.width)
+        assertEquals(947, result.edgeY)
+    }
+
+    @Test fun tallerDraftLiftsTheWholeCardAndLimitsLongListsAboveTheField() {
+        val density = Density(1f)
+        val viewport = IntSize(410, 340)
+        val oneLine = IntRect(12, 235, 398, 328)
+        val multiline = oneLine.copy(top = 150)
+        val short = density.pickerSpace(oneLine, viewport, LayoutDirection.Ltr)
+        val tall = density.pickerSpace(multiline, viewport, LayoutDirection.Ltr)
+        assertTrue(short.above && tall.above)
+        assertEquals(short.width, tall.width)
+        assertEquals(short.left, tall.left)
+        assertEquals(oneLine.top - multiline.top, short.edgeY - tall.edgeY)
+        assertEquals(138, tall.edgeY)
+        assertEquals(126, tall.maxHeight)
     }
 
     @Test fun narrowWindowClampsBothSidesAndBoundsTheScrollableList() {
-        val anchor = IntRect(90, 150, 165, 198)
-        val result = pickerSpace(anchor, IntSize(172, 204), 8, 244, 112, LayoutDirection.Ltr)
-        assertEquals(8, result.left)
-        assertEquals(156, result.width)
-        assertEquals(134, result.maxHeight)
-        assertTrue(result.edgeY < anchor.top)
+        val composer = IntRect(6, 150, 166, 198)
+        val result = Density(1f).pickerSpace(composer, IntSize(172, 204), LayoutDirection.Ltr)
+        assertEquals(12, result.left)
+        assertEquals(148, result.width)
+        assertEquals(126, result.maxHeight)
+        assertTrue(result.edgeY < composer.top)
     }
 
-    @Test fun prefersAvailableSpaceBelowNearTheTopAndMirrorsItsAnchorInRtl() {
-        val anchor = IntRect(31, 20, 145, 68)
-        val result = pickerSpace(anchor, IntSize(410, 260), 8, 244, 112, LayoutDirection.Rtl)
+    @Test fun rtlAlignsToTheComposerLeftAndCanUseSpaceBelowNearTheTop() {
+        val composer = IntRect(31, 20, 358, 68)
+        val result = Density(1f).pickerSpace(composer, IntSize(410, 260), LayoutDirection.Rtl)
         assertEquals(31, result.left)
         assertEquals(false, result.above)
-        assertEquals(76, result.edgeY)
-        assertEquals(176, result.maxHeight)
+        assertEquals(80, result.edgeY)
+        assertEquals(168, result.maxHeight)
+    }
+
+    @Test fun tabletCardStaysCompact() {
+        val composer = IntRect(200, 710, 1000, 805)
+        val result = Density(1f).pickerSpace(composer, IntSize(1200, 840), LayoutDirection.Ltr)
+        assertEquals(248, result.width)
+        assertEquals(composer.right, result.left + result.width)
+    }
+
+    @Test fun attachmentFillingAShortWindowLeavesAModelRowReachableAboveTheKeyboard() {
+        val composer = IntRect(12, 24, 320, 162)
+        val viewport = IntSize(332, 170)
+        val result = Density(1f).pickerSpace(composer, viewport, LayoutDirection.Ltr)
+        assertTrue(result.above)
+        assertTrue(result.maxHeight >= 88)
+        assertTrue(result.edgeY - result.maxHeight >= 0)
+        assertTrue(result.edgeY <= composer.bottom - 48)
     }
 }
