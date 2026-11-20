@@ -260,7 +260,6 @@ internal fun ChatModelPicker(
     }
 }
 
-internal const val ChatPickerTransitionMillis = 180
 internal val ChatPickerEasing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
 
 internal data class PickerSpace(val left: Int, val edgeY: Int, val width: Int, val maxHeight: Int, val above: Boolean)

@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.*
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+internal const val PickerBubbleMotionMillis = 500
+
 internal val ColorScheme.pickerBubbleHighlight: Color get() = onSurface.copy(alpha = 0.18f)
 
 private data class BubbleTargets(val label: Rect, val effort: Rect, val list: Rect, val composer: IntRect, val above: Boolean) {
@@ -77,7 +79,7 @@ internal fun PickerBubbleLayout(
         if (hideForReturn) motion.snapTo(Offset.Zero) else {
             val delta = face.weights - motion.value
             val distance = maxOf(abs(delta.x), abs(delta.y), abs(delta.x + delta.y))
-            motion.animateTo(face.weights, tween((ChatPickerTransitionMillis * distance).roundToInt(), easing = ChatPickerEasing))
+            motion.animateTo(face.weights, tween((PickerBubbleMotionMillis * distance).roundToInt(), easing = ChatPickerEasing))
         }
     }
     val atSource by remember(motion) { derivedStateOf { motion.value == Offset.Zero } }

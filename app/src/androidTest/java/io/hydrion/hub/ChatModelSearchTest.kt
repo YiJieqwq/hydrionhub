@@ -25,6 +25,7 @@ import io.hydrion.hub.provider.ModelProfile
 import io.hydrion.hub.provider.Provider
 import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.provider.ProviderStore
+import io.hydrion.hub.ui.ModelEditorMotionMillis
 import io.hydrion.hub.provider.deepSeekProvider
 import java.util.UUID
 import org.junit.Assert.assertEquals
@@ -587,7 +588,7 @@ class ChatModelSearchTest {
             val earlyBottom = try {
                 screen.mainClock.autoAdvance = false
                 row.performSemanticsAction(SemanticsActions.OnLongClick)
-                repeat(3) { screen.mainClock.advanceTimeByFrame() }
+                screen.mainClock.advanceTimeBy(ModelEditorMotionMillis / 4L)
                 // The top is clipped while the panel enters from above. Its bottom remains observable.
                 panel.fetchSemanticsNode().boundsInRoot.bottom
             } finally {
@@ -600,7 +601,7 @@ class ChatModelSearchTest {
                 try {
                     screen.mainClock.autoAdvance = false
                     screen.onNodeWithContentDescription("返回").performClick()
-                    repeat(2) { screen.mainClock.advanceTimeByFrame() }
+                    screen.mainClock.advanceTimeBy(ModelEditorMotionMillis / 5L)
                     control("list").assertDoesNotExist() // The moving chat cannot expose the picker early.
                 } finally {
                     screen.mainClock.autoAdvance = true

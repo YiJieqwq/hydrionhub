@@ -1,5 +1,7 @@
 package io.hydrion.hub.ui
 
+internal const val ModelEditorMotionMillis = 500
+
 /** Coordinates the two reveal layers with the measured state of the returning editor. */
 internal class ModelEditorReturnFrames {
     enum class Phase { Landing, Restoring, Fallback, Complete }
@@ -16,12 +18,14 @@ internal class ModelEditorReturnFrames {
     private var lastObserved = 0f
 
     fun advance(
-        deltaMillis: Float, durationMillis: Float, canLand: Boolean,
+        deltaMillis: Float, durationScale: Float, canLand: Boolean,
         composerProgress: Float, composerSettled: Boolean,
     ): Event {
         val delta = deltaMillis.coerceAtLeast(0f)
+        val durationMillis = ModelEditorMotionMillis * durationScale
         val step = if (durationMillis > 0f) delta / durationMillis else 1f
-        val grace = maxOf(1_200f, durationMillis * 2f)
+        // Keep the existing IME timeout independent of the visual travel duration.
+        val grace = maxOf(1_200f, 360f * durationScale)
         when (phase) {
             Phase.Landing -> {
                 val atLandingOnPreviousFrame = composerLandingProgress == 1f

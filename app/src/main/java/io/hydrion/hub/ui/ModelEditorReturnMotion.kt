@@ -14,7 +14,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.platform.LocalWindowInfo
 import io.hydrion.hub.provider.ChatPickerEasing
-import io.hydrion.hub.provider.ChatPickerTransitionMillis
 import kotlin.coroutines.coroutineContext
 
 @Stable
@@ -55,7 +54,7 @@ internal fun rememberModelEditorReturnMotion(
             val scale = durationScale?.scaleFactor ?: if (ValueAnimator.areAnimatorsEnabled()) 1f else 0f
             val elapsed = (now - previous) / 1_000_000f
             previous = now
-            val event = frames.advance(elapsed, ChatPickerTransitionMillis * scale, ready(), progress(), settled())
+            val event = frames.advance(elapsed, scale, ready(), progress(), settled())
             motion.composerLandingProgress = ChatPickerEasing.transform(frames.composerLandingProgress)
             motion.contentProgress = ChatPickerEasing.transform(frames.contentProgress)
             motion.holdCollapsed = frames.phase == ModelEditorReturnFrames.Phase.Landing

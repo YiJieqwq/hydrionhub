@@ -16,7 +16,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-internal const val ToolsPageTravelMillis = 220
+internal const val ToolsPageTravelMillis = 500
 
 /** One reversible timeline for the tools surface, capsule, and both travelling buttons. */
 @Stable

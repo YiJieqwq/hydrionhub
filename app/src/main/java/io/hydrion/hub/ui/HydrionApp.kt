@@ -38,7 +38,6 @@ import io.hydrion.hub.provider.ChatModelPicker
 import io.hydrion.hub.provider.ChatModelPickerBack
 import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.provider.ChatPickerEasing
-import io.hydrion.hub.provider.ChatPickerTransitionMillis
 import io.hydrion.hub.provider.ConfigureSheet
 import io.hydrion.hub.provider.chatSpeedControls
 import io.hydrion.hub.provider.chatProtocol
@@ -84,7 +83,7 @@ private fun Workspace(vm: HubViewModel) {
     val editTransition = remember { MutableTransitionState(false) }
     var editVisit by remember { mutableStateOf<ModelEditVisit?>(null) }
     val page = rememberTransition(editTransition, label = "Model configuration")
-    val pageCover = page.animateFloat({ tween(ChatPickerTransitionMillis, easing = ChatPickerEasing) },
+    val pageCover = page.animateFloat({ tween(ModelEditorMotionMillis, easing = ChatPickerEasing) },
         label = "Page travel and fade") { if (it) 1f else 0f }
     val ime = WindowInsets.ime
     val nav = WindowInsets.navigationBars

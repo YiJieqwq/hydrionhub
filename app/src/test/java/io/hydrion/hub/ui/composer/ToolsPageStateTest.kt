@@ -38,8 +38,10 @@ class ToolsPageStateTest {
         state.query = typed
         val opening = launch(frames.clock, start = CoroutineStart.UNDISPATCHED) { state.animateToTarget(true) }
         frames.tick()
-        frames.tick(80)
-        val onEnter = FastOutSlowInEasing.transform(80f / ToolsPageTravelMillis)
+        val enteredMillis = ToolsPageTravelMillis / 2
+        val reversedMillis = enteredMillis / 2
+        frames.tick(enteredMillis)
+        val onEnter = FastOutSlowInEasing.transform(enteredMillis.toFloat() / ToolsPageTravelMillis)
         assertEquals(onEnter, state.progress, .0001f)
         state.close()
         opening.cancelAndJoin()
@@ -49,8 +51,9 @@ class ToolsPageStateTest {
         val closing = launch(frames.clock, start = CoroutineStart.UNDISPATCHED) { state.animateToTarget(false) }
         frames.tick()
         assertEquals(onEnter, state.progress, .0001f)
-        frames.tick(40)
-        val onExit = FastOutSlowInEasing.transform(40f / ToolsPageTravelMillis)
+        frames.tick(reversedMillis)
+        val remainingPositionMillis = enteredMillis - reversedMillis
+        val onExit = FastOutSlowInEasing.transform(remainingPositionMillis.toFloat() / ToolsPageTravelMillis)
         assertEquals(onExit, state.progress, .0001f)
 
         state.open()
@@ -59,7 +62,7 @@ class ToolsPageStateTest {
         frames.tick()
         assertEquals(onExit, state.progress, .0001f)
         assertEquals(typed, state.query)
-        frames.tick(ToolsPageTravelMillis - 40)
+        frames.tick(ToolsPageTravelMillis - remainingPositionMillis)
         reopen.join()
         assertTrue(state.interactive)
         assertEquals(1f, state.progress, 0f)

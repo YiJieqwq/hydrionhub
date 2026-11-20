@@ -13,6 +13,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
+import io.hydrion.hub.provider.PickerBubbleMotionMillis
 import io.hydrion.hub.provider.deepSeekProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -22,6 +23,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
 import kotlin.math.abs
+import kotlin.math.roundToLong
 
 @RunWith(AndroidJUnit4::class)
 class PickerBubbleMotionTest {
@@ -30,6 +32,11 @@ class PickerBubbleMotionTest {
     private fun node(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true)
     private fun bounds(tag: String) = node(tag).fetchSemanticsNode().boundsInRoot
     private fun shell() = bounds("chat-picker-bubble")
+
+    // Retargeted tweens cover only the distance still visible on screen.
+    private fun advanceIntoLeg(remainingDistance: Float = 1f) {
+        clock.advanceTimeBy((PickerBubbleMotionMillis * remainingDistance * 0.4f).roundToLong())
+    }
 
     private fun withParkedComposer(test: () -> Unit) {
         assumeTrue("The intermediate-frame checks need animations enabled", ValueAnimator.areAnimatorsEnabled())
@@ -88,17 +95,16 @@ class PickerBubbleMotionTest {
         assertEquals(source.top, first.top, 2f)
         assertEquals(source.right, first.right, 2f)
         assertEquals(source.bottom, first.bottom, 2f)
-        clock.advanceTimeBy(96)
+        advanceIntoLeg()
         val opening = progressAlong(source, shell(), card)
         trigger.performClick()
-        clock.advanceTimeBy(64)
+        advanceIntoLeg(remainingDistance = opening)
         val closing = progressAlong(source, shell(), card)
         assertTrue("Reversed from the drawn opening frame", closing < opening)
         node("chat-model-select").assertDoesNotExist()
         trigger.performClick()
-        clock.advanceTimeBy(64)
-        val reopened = shell()
-        assertTrue(reopened == card || progressAlong(source, reopened, card) > closing)
+        advanceIntoLeg(remainingDistance = 1f - closing)
+        assertTrue(progressAlong(source, shell(), card) > closing)
         clock.autoAdvance = true
         screen.waitForIdle()
         assertEquals(card, shell())
@@ -110,7 +116,7 @@ class PickerBubbleMotionTest {
         val card = shell()
         clock.autoAdvance = false
         node("chat-model-select").performClick()
-        clock.advanceTimeBy(64)
+        advanceIntoLeg()
         val growing = shell()
         clock.autoAdvance = true
         screen.waitForIdle()
@@ -123,7 +129,7 @@ class PickerBubbleMotionTest {
 
         clock.autoAdvance = false
         node("chat-model-list-back").performClick()
-        clock.advanceTimeBy(64)
+        advanceIntoLeg()
         progressAlong(list, shell(), card)
         clock.autoAdvance = true
         screen.waitForIdle()
@@ -133,7 +139,7 @@ class PickerBubbleMotionTest {
 
         clock.autoAdvance = false
         screen.runOnUiThread { screen.activity.onBackPressedDispatcher.onBackPressed() }
-        clock.advanceTimeBy(64)
+        advanceIntoLeg()
         val exiting = progressAlong(list, shell(), source)
         node("chat-model-card").assertDoesNotExist()
         node("chat-model-list-back").assertDoesNotExist()
@@ -141,7 +147,8 @@ class PickerBubbleMotionTest {
         val root = screen.onRoot()
         val rootOrigin = root.fetchSemanticsNode().boundsInRoot.topLeft
         root.performTouchInput { click(oldBack.center - rootOrigin) }
-        clock.advanceTimeBy(32)
+        // Continue the same uninterrupted exit for another fifth of its full duration.
+        clock.advanceTimeBy(PickerBubbleMotionMillis / 5L)
         assertTrue(progressAlong(list, shell(), source) > exiting)
         clock.autoAdvance = true
         screen.waitForIdle()
