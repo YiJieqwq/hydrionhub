@@ -16,9 +16,9 @@ import androidx.compose.ui.input.key.onPreInterceptKeyBeforeSoftKeyboard
 import androidx.compose.ui.platform.LocalView
 
 @Composable
-internal fun ChatModelPickerBack(onBack: () -> Unit) {
+internal fun ChatModelPickerBack(onBack: () -> Unit, imeFirst: Boolean = false) {
     BackHandler(onBack = onBack)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) PickerGestureBack(onBack)
+    if (!imeFirst && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) PickerGestureBack(onBack)
 }
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)

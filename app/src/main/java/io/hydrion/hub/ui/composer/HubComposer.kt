@@ -317,6 +317,7 @@ internal fun HubComposer(
         DisposableEffect(chatPicker) {
             onDispose {
                 chatPicker.editorBounds = null
+                chatPicker.editorTextBounds = null
                 chatPicker.dismiss()
             }
         }
@@ -328,6 +329,24 @@ internal fun HubComposer(
     val chatToolbar = if (forceReturnFolded) 0f else maxOf(expansion, rowGate)
     val toolbar = chatToolbar * (1f - toolsProgress)
     val returning = modelEditorBridge?.returning != null
+    val overlay: Any? = if (chatPicker == null || forceReturnFolded || returning || !allowImeReturn) null
+        else chatPicker.page ?: tools?.takeIf { it.targetOpen }
+    val textLine = Modifier.testTag("composer-editable-text").dismissOnEditorDoubleTap(
+        owner = overlay,
+        onFirstDown = {
+            val liveText = vm.state.value.draft.text
+            if (fieldValue.text == liveText) fieldValue else fieldValue.copy(text = liveText, composition = null)
+        },
+        onDoubleTap = { original ->
+            if (vm.state.value.current.id == state.current.id && (chatPicker?.page != null || tools?.targetOpen == true)) {
+                if (original.text == vm.state.value.draft.text && original.text == fieldValue.text) {
+                    fieldValue = fieldValue.copy(selection = original.selection)
+                }
+                chatPicker?.dismiss()
+                tools?.close()
+            }
+        },
+    )
     val returnFrame = remember(modelEditorBridge) { mutableStateOf<ModelEditorReturnFrame?>(null) }
     if (modelEditorBridge != null) {
         ObserveModelEditorReturn(modelEditorBridge, returnFrame.value)
@@ -426,6 +445,7 @@ internal fun HubComposer(
                             readDraft = { fieldValue },
                             restoreSelection = { fieldValue = fieldValue.copy(selection = it, composition = null) },
                             interactive = allowImeReturn,
+                            textLine = textLine,
                             foldedVisual = forceReturnFolded,
                             dismissForModelEditor = ::collapse,
                             retainEditorFocus = { windowFocused && allowImeReturn && !hiding && (imeVisible || opening) },
@@ -463,7 +483,7 @@ internal fun HubComposer(
                                         val code = event.nativeKeyEvent.keyCode
                                         code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER
                                     })
-                                    .chatModelPickerPreImeBack(pickerOpen || toolEditor != null) {
+                                    .chatModelPickerPreImeBack((pickerOpen && chatPicker?.modelListNavigation == false) || toolEditor != null) {
                                         if (toolEditor != null) toolEditor.close() else chatPicker?.back()
                                     }
                                     .then(draftFocusModifier)
@@ -485,16 +505,21 @@ internal fun HubComposer(
                                         }.heightIn(min = editorMinHeight)
                                         .padding(top = lerp(5.dp, 16.dp, toolbar), bottom = 4.dp),
                                         contentAlignment = Alignment.CenterStart) {
-                                        if (shown.text.isEmpty()) {
-                                            val isChat = state.current.mode == Mode.Chat
-                                            Text(
-                                                if (toolEditor != null) toolHint else if (isChat) "Chat with AI" else "描述想生成的图片",
-                                                color = HubStyle.ComposerHint,
-                                                style = if (isChat) editorTextStyle else editorTextStyle.copy(fontSize = 17.sp),
-                                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                            )
+                                        val visibleTextLine = if (searchPicker == null && !forceReturnFolded && chatPicker != null)
+                                            textLine else Modifier
+                                        Box(Modifier.fillMaxWidth().trackPickerEditor(chatPicker, search = false, textOnly = true)
+                                            .then(visibleTextLine), contentAlignment = Alignment.CenterStart) {
+                                            if (shown.text.isEmpty()) {
+                                                val isChat = state.current.mode == Mode.Chat
+                                                Text(
+                                                    if (toolEditor != null) toolHint else if (isChat) "Chat with AI" else "描述想生成的图片",
+                                                    color = HubStyle.ComposerHint,
+                                                    style = if (isChat) editorTextStyle else editorTextStyle.copy(fontSize = 17.sp),
+                                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
+                                            editor()
                                         }
-                                        editor()
                                     }
                                 },
                             )

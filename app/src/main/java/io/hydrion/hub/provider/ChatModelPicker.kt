@@ -67,10 +67,13 @@ internal class ChatModelPickerState {
 
     var page by mutableStateOf<Page?>(null)
         private set
+    val modelListNavigation: Boolean
+        get() = page == Page.Models || page == Page.Search || page == Page.Providers
     var optionKey by mutableStateOf("")
         private set
     var composerBounds by mutableStateOf<IntRect?>(null)
     var editorBounds by mutableStateOf<IntRect?>(null)
+    var editorTextBounds by mutableStateOf<IntRect?>(null)
     var triggerBounds by mutableStateOf<IntRect?>(null)
     var searchQuery by mutableStateOf(TextFieldValue())
         private set
@@ -131,6 +134,9 @@ internal class ChatModelPickerState {
     fun providers() { show(Page.Providers) }
     fun options(cap: Capability) { optionKey = cap.key; show(Page.Options) }
     fun dismiss() { show(null) }
+    fun systemBack() {
+        if (modelListNavigation) dismiss() else back()
+    }
     fun back() {
         show(when (page) {
             Page.Providers, Page.Search -> Page.Models
@@ -177,12 +183,12 @@ internal fun ChatModelPicker(
     val entry = catalog.selectedEntry(Mode.Chat)
     val select = stringResource(R.string.chat_controls_select_model)
     val close = stringResource(R.string.chat_picker_close)
-    if (!closing && !paused) ChatModelPickerBack(picker::back)
+    if (!closing && !paused) ChatModelPickerBack(onBack = picker::systemBack, imeFirst = picker.modelListNavigation)
     val colors = MaterialTheme.colorScheme
     val dark = colors.onSurface.luminance() > colors.surface.luminance()
     var peak by remember(entry?.route) { mutableStateOf(false) }
 
-    // Controls and search both leave the composer editor reachable through the dismissal layer.
+    // Controls and search keep their original editor hit area. Other pages pass through only the text row.
     val accessibility = if (paused) Modifier.clearAndSetSemantics {} else Modifier
     Box(modifier.then(accessibility).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))) {
         var origin by remember { mutableStateOf<IntOffset?>(null) }
@@ -191,7 +197,7 @@ internal fun ChatModelPicker(
             val editThrough = page == ChatModelPickerState.Page.Controls || page == ChatModelPickerState.Page.Search
             PickerDismissLayer(
                 picker, close, Modifier.matchParentSize(),
-                fieldBounds = { if (editThrough) origin?.let { picker.editorBounds?.translate(-it) } else null },
+                fieldBounds = { origin?.let { (if (editThrough) picker.editorBounds else picker.editorTextBounds)?.translate(-it) } },
                 triggerBounds = { origin?.let { picker.triggerBounds?.translate(-it) } },
             )
         }

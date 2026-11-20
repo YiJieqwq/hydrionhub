@@ -264,6 +264,71 @@ class ChatModelSearchTest {
         }
 
     @OptIn(ExperimentalTestApi::class)
+    @Test fun editorDoubleTapClosesSearchInOneStepAndKeepsTheEditingSession() =
+        withProviders(includeAttachment = true) { vm, _, _ ->
+            val draft = "my original draft\nsecond line"
+            val selection = TextRange(2, 8)
+            editor.performTouchInput { click(center) }
+            screen.waitUntil(15_000) { imeIsVisible() }
+            editor.performTextReplacement(draft)
+            editor.performTextInputSelection(selection)
+            val original = screen.runOnIdle { vm.state.value }
+            openControls()
+            val search = enterSearch("select")
+            search.performTextReplacement("Nimbus")
+            val textLine = screen.onNodeWithTag("composer-editable-text", useUnmergedTree = true)
+            // The magnifier is part of the input decoration, outside the editable text line.
+            val fieldBox = search.fetchSemanticsNode().boundsInRoot
+            val textBox = textLine.fetchSemanticsNode().boundsInRoot
+            val iconX = if (screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL)
+                (textBox.right + fieldBox.right) / 2 else (fieldBox.left + textBox.left) / 2
+            val icon = Offset(iconX, textBox.center.y)
+            assertTrue(fieldBox.contains(icon) && !textBox.contains(icon))
+            search.performTouchInput { doubleClick(icon - fieldBox.topLeft) }
+            control("list").assertIsDisplayed()
+            assertEquals("Nimbus", search.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+            assertImeStays(true) { textLine.performTouchInput { doubleClick(center) } }
+            control("search-field").assertDoesNotExist()
+            control("list").assertDoesNotExist()
+            control("card").assertDoesNotExist()
+            editor.assertIsFocused().assertTextEquals(draft)
+            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            screen.onNodeWithText("draft-only.txt").assertIsDisplayed()
+            screen.runOnIdle {
+                assertEquals(original.draft, vm.state.value.draft)
+                assertEquals(original.current.messages, vm.state.value.current.messages)
+            }
+            openControls()
+            enterSearch("select") // A new search has no retained query.
+        }
+
+    @Test fun systemBackHidesTheKeyboardBeforeClosingActiveAndPausedModelSearch() = withProviders { vm, _, _ ->
+        screen.runOnIdle { vm.setDraft("parked draft") }
+        val parked = capsule()
+        for (pauseSearch in listOf(false, true)) {
+            openControls()
+            val field = enterSearch("select")
+            field.performTouchInput { click(center) }
+            screen.waitUntil(15_000) { imeIsVisible() }
+            field.performTextReplacement("Nimbus")
+            if (pauseSearch) control("search-close").performTouchInput { click(center) }
+            assertTrue(imeIsVisible())
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            screen.waitUntil(15_000) { !imeIsVisible() && capsule() == parked }
+            control("list").assertIsDisplayed()
+            assertImeStays(false) {
+                InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+                control("list").assertDoesNotExist()
+                control("search-field").assertDoesNotExist()
+                control("card").assertDoesNotExist()
+            }
+            editor.assertTextEquals("parked draft")
+        }
+        openControls()
+        enterSearch("select")
+    }
+
+    @OptIn(ExperimentalTestApi::class)
     @Test fun searchUsesTheBrowsedProviderAndRestoresTheDraftSelection() = withProviders(includeAttachment = true) { vm, first, second ->
         val draft = "first line\nsecond line\nthird line"
         val selection = TextRange(6, 17)
@@ -326,7 +391,7 @@ class ChatModelSearchTest {
         field.performTextInputSelection(querySelection)
         control(option(second, "other-only")).assertDoesNotExist()
         assertActive(active)
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        control("search-close").performTouchInput { click(center) }
         control("search-field").assertDoesNotExist()
         control("search").assertIsDisplayed()
         assertEditing()

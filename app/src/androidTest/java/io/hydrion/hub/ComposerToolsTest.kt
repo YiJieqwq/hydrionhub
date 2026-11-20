@@ -392,12 +392,16 @@ class ComposerToolsTest {
                     assertEquals(saved.current.messages, vm.state.value.current.messages)
                     assertEquals(model, vm.providers.catalog.value.active[Mode.Chat])
                 }
-                action("clear").performTouchInput { click(center) }
+                // A double tap on a toolbar button belongs to that button, outside the text gesture.
+                action("clear").performTouchInput { doubleClick(center) }
+                page.assertIsDisplayed()
                 field.assertIsFocused()
                 assertQuery("")
                 option("web", "模型内置搜索").assertIsDisplayed()
                 field.performTextInput("query to discard")
-                action("back").performTouchInput { click(center) }
+                screen.onNodeWithTag("composer-editable-text", useUnmergedTree = true)
+                    .performTouchInput { doubleClick(center) }
+                page.assertDoesNotExist()
                 editor.assertIsFocused().assertTextEquals(saved.draft.text)
                 assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
                 screen.onNodeWithText(attachment.name).assertIsDisplayed()

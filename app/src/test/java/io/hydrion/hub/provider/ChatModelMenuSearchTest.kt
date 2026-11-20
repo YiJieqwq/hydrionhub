@@ -4,7 +4,9 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import io.hydrion.hub.model.Mode
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatModelMenuSearchTest {
@@ -123,6 +125,40 @@ class ChatModelMenuSearchTest {
             picker.dismiss() // The controls arrow leaves the composer as the only active surface.
             assertEquals(null, picker.page)
         }
+    }
+
+    @Test fun systemBackDeliveredToAnyModelListPageDismissesThePickerAndClearsItsQuery() {
+        val picker = ChatModelPickerState()
+        val listPages = listOf(ChatModelPickerState.Page.Search, ChatModelPickerState.Page.Models,
+            ChatModelPickerState.Page.Providers)
+        for (page in listPages) {
+            picker.open()
+            picker.models("provider", startSearching = true)
+            picker.updateSearchQuery(TextFieldValue("pending"))
+            if (page == ChatModelPickerState.Page.Models) picker.back() // Explicit × pauses the search.
+            if (page == ChatModelPickerState.Page.Providers) picker.providers()
+            assertEquals(page, picker.page)
+            assertTrue(picker.modelListNavigation)
+            assertEquals("pending", picker.searchQuery.text)
+
+            picker.systemBack()
+            assertEquals(null, picker.page)
+            assertFalse(picker.modelListNavigation)
+            assertEquals(TextFieldValue(), picker.searchQuery)
+            assertEquals(null, picker.pendingSearchScroll)
+        }
+    }
+
+    @Test fun systemBackFromOptionsReturnsToControlsAndFromControlsDismisses() {
+        val picker = ChatModelPickerState()
+        picker.open()
+        picker.options(Capability("effort", "Effort", listOf("Low", "High")))
+        assertFalse(picker.modelListNavigation)
+        picker.systemBack()
+        assertEquals(ChatModelPickerState.Page.Controls, picker.page)
+        assertFalse(picker.modelListNavigation)
+        picker.systemBack()
+        assertEquals(null, picker.page)
     }
 
     @Test fun matchesNamesAndBothIdsWithoutChangingOrder() {

@@ -2,7 +2,6 @@ package io.hydrion.hub
 
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.view.KeyEvent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsActions
@@ -38,7 +37,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
@@ -68,11 +66,6 @@ class ChatModelPickerTest {
         val nav = WindowInsetsCompat.Type.navigationBars()
         view.hasWindowFocus() && insets != null && insets.isVisible(ime) &&
             insets.getInsets(ime).bottom > insets.getInsets(nav).bottom
-    }
-
-    private fun pressBack() {
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-        screen.waitForIdle()
     }
 
     @Test fun draggingPreviewsEffortUntilReleaseAndCancellationRestoresTheCommittedEffort() {
@@ -193,10 +186,10 @@ class ChatModelPickerTest {
             control("list").assertIsDisplayed()
             control("search-field").assertIsDisplayed()
             assertTrue("Browsing from a parked draft keeps the keyboard down", !softwareKeyboardIsOpen())
-            pressBack()
+            control("search-close").performTouchInput { click(center) }
             control("search-field").assertDoesNotExist()
             control("search").assertIsDisplayed()
-            pressBack()
+            control("list-back").performTouchInput { click(center) }
             val effort = control("effort").assertIsDisplayed()
             val initial = store.selection(Mode.Chat).parameters
             val range = effort.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo]
@@ -298,7 +291,7 @@ class ChatModelPickerTest {
     }
 
     @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
-    @Test fun backClosesProviderListThenModelListThenCardWithoutDisturbingEditing() {
+    @Test fun appBackFromProvidersDismissesThePickerWithoutChangingEditing() {
         editor.performTouchInput { click(center) }
         screen.waitUntil(15_000) { softwareKeyboardIsOpen() }
         val active = screen.runOnIdle {
@@ -339,16 +332,11 @@ class ChatModelPickerTest {
         control("provider-trigger").performTouchInput { click(center) }
         provider(active.providerId).assertIsSelected()
         assertEditing()
-        pressBack()
-        option(active).assertIsSelected()
-        control("search-field").assertDoesNotExist()
-        control("search").assertIsDisplayed()
-        assertEditing()
-        pressBack()
+        // Exercise the Back delivered to the app; a physical Back can be consumed by the IME first.
+        screen.runOnUiThread { screen.activity.onBackPressedDispatcher.onBackPressed() }
+        screen.onNodeWithTag("chat-provider-list").assertDoesNotExist()
         control("list").assertDoesNotExist()
-        control("card").assertIsDisplayed()
-        assertEditing()
-        pressBack()
+        control("search-field").assertDoesNotExist()
         control("card").assertDoesNotExist()
         assertEquals(closedLabel, control("trigger").fetchSemanticsNode().config[SemanticsProperties.Text])
         assertEquals(triggerSize, control("trigger").fetchSemanticsNode().size)

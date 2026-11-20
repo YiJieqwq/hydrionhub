@@ -51,12 +51,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.round
 import io.hydrion.hub.R
 import io.hydrion.hub.provider.ChatModelPickerState
-import io.hydrion.hub.provider.chatModelPickerPreImeBack
 
-internal fun Modifier.trackPickerEditor(picker: ChatModelPickerState?, search: Boolean): Modifier =
+internal fun Modifier.trackPickerEditor(picker: ChatModelPickerState?, search: Boolean, textOnly: Boolean = false): Modifier =
     if (picker == null) this else onGloballyPositioned {
         if ((picker.page == ChatModelPickerState.Page.Search) == search) {
-            picker.editorBounds = IntRect(it.positionInWindow().round(), it.size)
+            val bounds = IntRect(it.positionInWindow().round(), it.size)
+            if (textOnly) picker.editorTextBounds = bounds else picker.editorBounds = bounds
         }
     }
 
@@ -81,6 +81,7 @@ internal fun ComposerEditorSlot(
     dismissForModelEditor: () -> Unit,
     retainEditorFocus: () -> Boolean,
     onEditorFocusChanged: (Boolean) -> Unit,
+    textLine: Modifier,
     modifier: Modifier,
     draftEditor: @Composable (Modifier) -> Unit,
 ) {
@@ -138,7 +139,7 @@ internal fun ComposerEditorSlot(
             // Keep the outgoing search field until focus transfers or the hidden keyboard is released.
             val visibility = if (showSearch) Modifier else Modifier.withoutPlacement()
             Box(Modifier.matchParentSize().then(visibility).padding(start = 15.dp, end = 16.dp)) {
-                ComposerModelSearchField(picker, minHeight, textStyle,
+                ComposerModelSearchField(picker, minHeight, textStyle, if (showSearch) textLine else Modifier,
                     Modifier.focusRequester(searchFocus).onFocusChanged { searchFocused = it.isFocused }
                         .then(if (searching) activePlacement else Modifier))
             }
@@ -147,7 +148,8 @@ internal fun ComposerEditorSlot(
 }
 
 @Composable
-private fun ComposerModelSearchField(picker: ChatModelPickerState, minHeight: Dp, textStyle: TextStyle, modifier: Modifier) {
+private fun ComposerModelSearchField(picker: ChatModelPickerState, minHeight: Dp, textStyle: TextStyle,
+                                    textLine: Modifier, modifier: Modifier) {
     val colors = MaterialTheme.colorScheme
     val hint = stringResource(R.string.chat_picker_search_hint)
     var attached by remember(picker) { mutableStateOf(true) }
@@ -159,7 +161,7 @@ private fun ComposerModelSearchField(picker: ChatModelPickerState, minHeight: Dp
         onValueChange = { if (attached) picker.updateSearchQuery(it) },
         modifier = Modifier.fillMaxWidth().testTag("chat-model-search-field").trackPickerEditor(picker, search = true)
             .semantics { contentDescription = hint }
-            .chatModelPickerPreImeBack(true, picker::back).then(modifier)
+            .then(modifier)
             .onPreviewKeyEvent { event ->
                 val key = event.nativeKeyEvent
                 if (key.keyCode != KeyEvent.KEYCODE_ENTER && key.keyCode != KeyEvent.KEYCODE_NUMPAD_ENTER) false
@@ -177,7 +179,8 @@ private fun ComposerModelSearchField(picker: ChatModelPickerState, minHeight: Dp
             Row(Modifier.fillMaxWidth().heightIn(min = minHeight).padding(top = 16.dp, bottom = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
-                Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                Box(Modifier.weight(1f).trackPickerEditor(picker, search = true, textOnly = true).then(textLine),
+                    contentAlignment = Alignment.CenterStart) {
                     if (picker.searchQuery.text.isEmpty()) Text(hint, style = textStyle, color = colors.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     input()
