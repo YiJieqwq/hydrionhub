@@ -28,7 +28,6 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -78,7 +77,7 @@ private fun Workspace(vm: HubViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
     val catalog by providers.catalog.collectAsStateWithLifecycle()
     val current = state.current
-    val selection = catalog.selection(current.mode)
+    val selection = remember(catalog, current.mode) { catalog.selection(current.mode) }
     val chatPicker = remember(current.id, current.mode) { ChatModelPickerState() }
     val toolsPage = if (current.mode == Mode.Chat) rememberToolsPageState(current.id) else null
     val toolsActive = toolsPage?.active == true
@@ -196,15 +195,16 @@ private fun Workspace(vm: HubViewModel) {
                     .windowInsetsPadding(if (returnMotion.holdCollapsed) nav.only(WindowInsetsSides.Bottom) else hostImeInsets),
                 contentAlignment = Alignment.TopCenter
             ) {
+                val covered = toolsActive || modelBrowse.active
                 ChatComposerLayers(
                     modifier = Modifier.fillMaxSize(),
+                    panelActive = covered, panelSettled = toolsPage?.interactive == true || modelBrowse.interactive,
+                    freezeTimelineDock = covered && editVisit == null, dockKey = chatPicker,
                     trackPickerAnchor = { !toolsActive && editVisit == null && (chatPicker.page != null || modelBrowse.active) },
-                    picker = {
-                        if (current.mode == Mode.Chat && !toolsActive) {
-                            ChatModelPicker(providers, chatPicker, suspended = editVisit != null, hideForReturn = returning,
-                                modelBrowseProgress = { modelBrowse.progress }, modifier = Modifier.fillMaxSize())
-                        }
-                    },
+                    picker = if (current.mode == Mode.Chat && !toolsActive) {
+                        { ChatModelPicker(providers, chatPicker, suspended = editVisit != null, hideForReturn = returning,
+                            modelBrowseProgress = { modelBrowse.progress }, modifier = Modifier.fillMaxSize()) }
+                    } else null,
                     composer = {
                         val bottomBars = if (returnMotion.holdCollapsed) nav else WindowInsets.safeDrawing
                         Column(composerReveal.windowInsetsPadding(bottomBars.only(WindowInsetsSides.Bottom))) {
@@ -235,13 +235,7 @@ private fun Workspace(vm: HubViewModel) {
                             }
                         }
                     },
-                ) { composerHeight ->
-                    val covered = toolsActive || modelBrowse.active
-                    // Changing the chat's bottom padding would make a timeline at the end scroll as
-                    // the editor changes into a search field. Only the panel uses that live height.
-                    var lastChatDock by remember(current.id, current.mode) { mutableStateOf<Dp?>(null) }
-                    if (!covered && lastChatDock != composerHeight) SideEffect { lastChatDock = composerHeight }
-                    val timelineDock = if (covered && editVisit == null) lastChatDock ?: composerHeight else composerHeight
+                ) { timelineDock, panelDock, excessDockPx ->
                     Scaffold(
                         modifier = Modifier.fillMaxSize().behindToolsPage(covered),
                         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -283,13 +277,14 @@ private fun Workspace(vm: HubViewModel) {
                         }
                     }
                     if (toolsPage != null && toolsActive) {
-                        ToolsPageOverlay(toolsPage, state.draft, composerHeight, vm::setSearch, vm::setImageTool)
+                        ToolsPageOverlay(toolsPage, state.draft, panelDock, excessDockPx, vm::setSearch, vm::setImageTool)
                     }
                     modelBrowse.page?.let { browsePage ->
                         ChatSlidingPage({ modelBrowse.progress }, modelBrowse.interactive && editVisit == null,
                             "chat-model-browse-surface") {
                             ChatModelBrowsePage(providers, chatPicker, browsePage, suspended = editVisit != null,
-                                hideForReturn = returning, composerPadding = composerHeight,
+                                hideForReturn = returning, composerPadding = panelDock,
+                                modifier = Modifier.clipSlidingPageContent(excessDockPx),
                                 onEditModel = edit@{ route, browse ->
                                     val origin = vm.state.value
                                     if (editVisit != null || origin.current.id != current.id) return@edit

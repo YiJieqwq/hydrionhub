@@ -6,6 +6,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -14,11 +15,13 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -36,14 +39,41 @@ import io.hydrion.hub.ui.composer.ToolsPageState
 
 private enum class WorkspaceLayer { Composer, Pages, Picker }
 
+private typealias PageContent = @Composable (Dp, Dp, () -> Int) -> Unit
+
+// SubcomposeLayout compares slot lambdas by identity. Reuse this slot while only the
+// editor is changing height; passing a fresh wrapper would enter page composition again.
+private class WorkspacePageSlot {
+    var lastChatDockPx: Int? = null
+    var excessDockPx by mutableIntStateOf(0)
+    private val readExcess = { excessDockPx }
+    private var timelineDock = Dp.Unspecified
+    private var panelDock = Dp.Unspecified
+    private var body: PageContent? = null
+    private var slot: @Composable () -> Unit = {}
+
+    fun content(timeline: Dp, panel: Dp, pages: PageContent): @Composable () -> Unit {
+        if (timeline != timelineDock || panel != panelDock || pages !== body) {
+            timelineDock = timeline
+            panelDock = panel
+            body = pages
+            slot = { Box { pages(timeline, panel, readExcess) } }
+        }
+        return slot
+    }
+}
+
 /** Measure the one live editor first; both the pages and the selector can use this frame's geometry. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ChatComposerLayers(
-    modifier: Modifier, composer: @Composable () -> Unit, picker: @Composable () -> Unit,
+    modifier: Modifier, composer: @Composable () -> Unit, picker: (@Composable () -> Unit)?,
     trackPickerAnchor: () -> Boolean,
-    pages: @Composable (bottomBarHeight: Dp) -> Unit,
+    freezeTimelineDock: Boolean = false, panelActive: Boolean = false, panelSettled: Boolean = false,
+    dockKey: Any? = null,
+    pages: @Composable (timelineDock: Dp, panelDock: Dp, excessDockPx: () -> Int) -> Unit,
 ) {
+    val pageSlot = remember(dockKey) { WorkspacePageSlot() }
     val safe = WindowInsets.safeDrawing
     var consumed by remember { mutableStateOf(WindowInsets(0, 0, 0, 0)) }
     SubcomposeLayout(modifier.onConsumedWindowInsetsChanged { consumed = it }) { limits ->
@@ -51,23 +81,32 @@ internal fun ChatComposerLayers(
         val contentLimits = limits.copy(minWidth = width, maxWidth = width)
         val bar = subcompose(WorkspaceLayer.Composer, composer).single()
             .measure(contentLimits.copy(minWidth = 0, minHeight = 0))
-        val page = subcompose(WorkspaceLayer.Pages) { Box { pages(bar.height.toDp()) } }
+        if (!panelActive || pageSlot.lastChatDockPx == null) pageSlot.lastChatDockPx = bar.height
+        val timelineDock = if (freezeTimelineDock) pageSlot.lastChatDockPx ?: bar.height else bar.height
+        val panelDock = when {
+            !panelActive -> 0
+            panelSettled -> bar.height
+            else -> bar.searchDockHeight()
+        }
+        pageSlot.excessDockPx = if (panelActive) bar.height - panelDock else 0
+        val page = subcompose(WorkspaceLayer.Pages, pageSlot.content(timelineDock.toDp(), panelDock.toDp(), pages))
             .single().measure(contentLimits)
         val left = Alignment.CenterHorizontally.align(width, limits.maxWidth, layoutDirection)
         val barLeft = left + if (layoutDirection == LayoutDirection.Rtl) width - bar.width else 0
         val barTop = page.height - bar.height
         // The selector's own Box applies vertical safeDrawing padding. Its origin is the
         // workspace's left edge and its first unconsumed safe row, including in split screen.
-        val capsule = if (trackPickerAnchor()) bar.capsuleBounds() else null
-        val pickerOffset = IntOffset(barLeft, barTop - safe.exclude(consumed).getTop(this))
-        val bounds = capsule?.translate(pickerOffset)
-        val label = capsule?.let { bar.pickerModelLabel()?.translate(pickerOffset) }
-        val modelTravelX = if (capsule != null) bar.pickerModelTravelX() else 0
-        val overlay = subcompose(WorkspaceLayer.Picker) {
-            CompositionLocalProvider(LocalPickerComposerBounds provides bounds, LocalPickerModelLabelBounds provides label,
-                LocalPickerModelTravelX provides modelTravelX,
-                content = picker)
-        }.singleOrNull()?.measure(limits)
+        val overlay = if (picker == null) null else {
+            val capsule = if (trackPickerAnchor()) bar.capsuleBounds() else null
+            val pickerOffset = IntOffset(barLeft, barTop - safe.exclude(consumed).getTop(this))
+            val bounds = capsule?.translate(pickerOffset)
+            val label = capsule?.let { bar.pickerModelLabel()?.translate(pickerOffset) }
+            val modelTravelX = if (capsule != null) bar.pickerModelTravelX() else 0
+            subcompose(WorkspaceLayer.Picker) {
+                CompositionLocalProvider(LocalPickerComposerBounds provides bounds, LocalPickerModelLabelBounds provides label,
+                    LocalPickerModelTravelX provides modelTravelX, content = picker)
+            }.singleOrNull()?.measure(limits)
+        }
         layout(limits.maxWidth, page.height) {
             page.place(left, 0)
             bar.place(barLeft, barTop)
@@ -80,13 +119,22 @@ internal fun ChatComposerLayers(
 internal fun Modifier.behindToolsPage(covered: Boolean) = if (!covered) this else
     clearAndSetSemantics { }.focusProperties { enter = { FocusRequester.Cancel } }.focusGroup()
 
+// Read the live difference during drawing. The transition shield owns input until the
+// search dock has landed, when the full content is visible and list bounds match the original layout.
+internal fun Modifier.clipSlidingPageContent(excessDockPx: () -> Int) = drawWithContent {
+    val excess = excessDockPx()
+    if (excess > 0) {
+        clipRect(bottom = (size.height - excess).coerceAtLeast(0f)) { this@drawWithContent.drawContent() }
+    } else drawContent()
+}
+
 @Composable
 internal fun ToolsPageOverlay(
-    state: ToolsPageState, draft: Draft, composerHeight: Dp,
+    state: ToolsPageState, draft: Draft, panelDock: Dp, excessDockPx: () -> Int,
     onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
 ) {
     ChatSlidingPage({ state.progress }, state.interactive, "chat-tools-surface") {
-        Box(Modifier.fillMaxSize().padding(bottom = composerHeight)) {
+        Box(Modifier.fillMaxSize().padding(bottom = panelDock).clipSlidingPageContent(excessDockPx)) {
             ChatToolsPage(draft, state.query.text, onSearch, onImageTool)
         }
     }

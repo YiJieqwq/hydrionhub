@@ -86,7 +86,7 @@ internal fun AwaitToolsImeDismissal(imeActive: Boolean, eligible: Boolean, onFin
 }
 
 private const val Disabled = "禁用"
-private data class ToolChoice(val value: String, val label: String, val icon: ImageVector)
+private data class ToolChoice(val value: String, val label: String, val icon: () -> ImageVector)
 
 @Composable
 internal fun ChatToolsPage(
@@ -96,7 +96,7 @@ internal fun ChatToolsPage(
     val browsing = rememberScrollState()
     val filtered = rememberScrollState()
     val term = query.trim()
-    LaunchedEffect(term) { if (term.isNotEmpty()) filtered.scrollTo(0) }
+    if (term.isNotEmpty()) LaunchedEffect(term) { filtered.scrollTo(0) }
     Column(modifier.fillMaxSize().testTag("chat-tools-page")
         .verticalScroll(if (term.isEmpty()) browsing else filtered).padding(horizontal = 16.dp, vertical = 12.dp)) {
         ChatToolGroups(draft, term, onSearch, onImageTool)
@@ -106,13 +106,13 @@ internal fun ChatToolsPage(
 @Composable
 private fun ChatToolGroups(draft: Draft, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit) {
     val colors = MaterialTheme.colorScheme
-    val disabled = ToolChoice(Disabled, stringResource(R.string.chat_tools_disabled), Icons.Outlined.Block)
+    val disabled = ToolChoice(Disabled, stringResource(R.string.chat_tools_disabled)) { Icons.Outlined.Block }
     val web = listOf(
-        ToolChoice("模型内置搜索", stringResource(R.string.chat_tools_builtin_search), Icons.Outlined.Language),
-        ToolChoice("自定义搜索", stringResource(R.string.chat_tools_custom_search), Icons.AutoMirrored.Outlined.ManageSearch),
+        ToolChoice("模型内置搜索", stringResource(R.string.chat_tools_builtin_search)) { Icons.Outlined.Language },
+        ToolChoice("自定义搜索", stringResource(R.string.chat_tools_custom_search)) { Icons.AutoMirrored.Outlined.ManageSearch },
         disabled,
     )
-    val image = listOf(ToolChoice(CUSTOM_IMAGE_TOOL, stringResource(R.string.chat_tools_custom_image), Icons.Outlined.Palette), disabled)
+    val image = listOf(ToolChoice(CUSTOM_IMAGE_TOOL, stringResource(R.string.chat_tools_custom_image)) { Icons.Outlined.Palette }, disabled)
     val webTitle = stringResource(R.string.chat_tools_web)
     val imageTitle = stringResource(R.string.chat_tools_image)
     val webMatches = matchingToolChoices(query, webTitle, web) { it.label }
@@ -209,7 +209,7 @@ private fun ToolGroup(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Icon(choice.icon, null, Modifier.size(20.dp),
+                    Icon(choice.icon(), null, Modifier.size(20.dp),
                         tint = if (choice.value == Disabled) colors.onSurface.copy(alpha = .38f) else colors.onSurfaceVariant)
                     Text(choice.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     RadioButton(selected = checked, onClick = null,

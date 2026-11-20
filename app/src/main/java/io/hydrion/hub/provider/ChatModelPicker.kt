@@ -145,7 +145,7 @@ internal fun ChatModelPicker(
     val browseTravel by rememberUpdatedState(modelBrowseProgress)
     val browsePageInFront by remember { derivedStateOf { browseTravel() > 0f } }
     val catalog by store.catalog.collectAsState()
-    val entry = catalog.selectedEntry(Mode.Chat)
+    val entry = remember(catalog) { catalog.selectedEntry(Mode.Chat) }
     val select = stringResource(R.string.chat_controls_select_model)
     val close = stringResource(R.string.chat_picker_close)
     if (showing && !paused) ChatModelPickerBack(onBack = picker::systemBack, imeFirst = browsePageInFront)

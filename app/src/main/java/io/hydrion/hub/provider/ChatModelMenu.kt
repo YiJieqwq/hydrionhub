@@ -66,8 +66,9 @@ internal fun ChatModelBrowsePage(
     onEditModel: (RemoteModel, PickerBrowseSnapshot) -> Unit, modifier: Modifier = Modifier,
 ) {
     val catalog by store.catalog.collectAsState()
-    val providers = remember(catalog) { catalog.providers.filter { it.enabled && it.mode == Mode.Chat } }
-    val active = catalog.selectedEntry(Mode.Chat)
+    val providers = remember(catalog.providers) { catalog.providers.filter { it.enabled && it.mode == Mode.Chat } }
+    val entries = remember(catalog.providers) { catalog.entries(Mode.Chat) }
+    val active = remember(catalog) { catalog.selectedEntry(Mode.Chat, entries) }
     val open = picker.modelListNavigation
     val interactive = open && !suspended && !hideForReturn
     if (interactive) ChatModelPickerBack(onBack = picker::systemBack, imeFirst = true)
@@ -97,12 +98,13 @@ internal fun ChatModelBrowsePage(
             val filteredScroll = rememberLazyListState()
             if (page == ChatModelPickerState.Page.Providers) {
                 val index = providers.indexOfFirst { it.id == browsing?.id }.coerceAtLeast(0)
+                val nameCounts = remember(providers) { providers.groupingBy { it.name }.eachCount() }
                 LazyColumn(Modifier.fillMaxSize().testTag("chat-provider-list"),
                     contentPadding = PaddingValues(top = 8.dp, bottom = pageInsets),
                     state = rememberLazyListState(initialFirstVisibleItemIndex = index)) {
                     item { PickerHeading(stringResource(R.string.chat_picker_provider), headingColor) }
                     items(providers, key = { it.id }) { candidate ->
-                        val name = if (providers.count { it.name == candidate.name } > 1)
+                        val name = if (nameCounts.getValue(candidate.name) > 1)
                             "${candidate.name} · ${candidate.id}" else candidate.name
                         PickerOption(name, candidate.id == browsing?.id, Modifier.testTag("chat-model-provider:${candidate.id}")) {
                             if (interactive && picker.page == ChatModelPickerState.Page.Providers) picker.models(candidate.id)
@@ -117,17 +119,18 @@ internal fun ChatModelBrowsePage(
                     item { Text(stringResource(R.string.chat_picker_no_models), Modifier.padding(horizontal = 14.dp)) }
                 }
             } else {
-                val models = remember(catalog, browsing.id) {
-                    catalog.entries(Mode.Chat).filter { it.second.id == browsing.id }.map { it.first }
+                val models = remember(entries, browsing.id) {
+                    entries.mapNotNull { (model, provider) -> model.takeIf { provider.id == browsing.id } }
                 }
                 ProviderModelsList(browsing, models, active?.route, picker, query.trim(), pageInsets,
                     browsingScroll, filteredScroll, dark, interactive, hideForReturn, onEditModel) { next ->
                     if (interactive && picker.modelListNavigation) {
                         val latest = store.catalog.value
                         val route = (next to browsing).route
-                        val selected = latest.entries(Mode.Chat).find { it.route == route }
+                        val available = latest.entries(Mode.Chat)
+                        val selected = available.find { it.route == route }
                         if (selected != null) {
-                            if (latest.selectedEntry(Mode.Chat)?.route != route)
+                            if (latest.selectedEntry(Mode.Chat, available)?.route != route)
                                 store.configure(Mode.Chat, route, latest.parameters(selected.first, selected.second))
                             picker.open()
                         }

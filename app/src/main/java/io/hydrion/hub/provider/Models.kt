@@ -56,8 +56,9 @@ data class ModelCatalog(
 
     fun defaultModel(mode: Mode): ProviderModel? = defaultEntry(mode)?.first
 
-    fun selectedEntry(mode: Mode): Pair<ProviderModel, Provider>? {
-        val available = entries(mode)
+    fun selectedEntry(mode: Mode): Pair<ProviderModel, Provider>? = selectedEntry(mode, entries(mode))
+
+    internal fun selectedEntry(mode: Mode, available: List<Pair<ProviderModel, Provider>>): Pair<ProviderModel, Provider>? {
         val preferred = active[mode] ?: defaults[mode]
         if (mode == Mode.Image && preferred != null) return available.singleOrNull { it.route == preferred }
         return available.find { it.route == active[mode] } ?: available.find { it.route == defaults[mode] }

@@ -125,6 +125,7 @@ import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubState
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.ui.searchLineHeightLines
 import io.hydrion.hub.ui.pickerCapsuleBounds
 import io.hydrion.hub.ui.messages.BitmapPreview
 import io.hydrion.hub.ui.messages.PicturePreview
@@ -144,6 +145,8 @@ private const val ChatDraftHint = "Chat with AI"
 private val FoldedTextStart = 48.dp
 private val OpenTextStart = 15.dp
 private val OpenTextEnd = 16.dp
+private val FoldedTextTop = 5.dp
+private val FoldedEditorMinHeight = 49.25.dp
 private val OpenTextTop = 16.dp
 private val TextBottom = 4.dp
 
@@ -405,10 +408,10 @@ internal fun HubComposer(
     // the collapsed reference is measured from the physical edge, not the nav top.
     val compactGap = (35.dp - with(density) { nav.toDp() }).coerceAtLeast(8.dp)
     val bottomGap = lerp(compactGap, 12.25.dp, expansion)
-    val editorMinHeight = lerp(49.25.dp, 46.5.dp, toolbar)
+    val editorMinHeight = lerp(FoldedEditorMinHeight, 46.5.dp, toolbar)
     val controlRowHeight = 47.75.dp
     val editorTextStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
-    val textTop = lerp(5.dp, OpenTextTop, toolbar)
+    val textTop = lerp(FoldedTextTop, OpenTextTop, toolbar)
     var draftOverflowPx by remember(state.current.id, state.current.mode) { mutableIntStateOf(0) }
     val safeArea = WindowInsets.safeDrawing
     val pickerRoom = if (!pickerOpen) Modifier else Modifier.layout { measurable, limits ->
@@ -491,7 +494,7 @@ internal fun HubComposer(
                                 focused = nowFocused
                             },
                             modifier = (if (pickerOpen) Modifier.weight(1f, fill = false) else Modifier)
-                                .then(if (returning || forceReturnFolded) Modifier.revealHeight(toolbar, 49.25.dp) else Modifier),
+                                .then(if (returning || forceReturnFolded) Modifier.revealHeight(toolbar, FoldedEditorMinHeight) else Modifier),
                         ) { draftFocusModifier ->
                             val modelHint = stringResource(R.string.chat_picker_search_hint)
                             val toolHint = stringResource(R.string.tools_search_hint)
@@ -559,7 +562,13 @@ internal fun HubComposer(
                                             // Switching to a blank query must not drop the old draft's wrapped lines in one frame.
                                             if (!editingQuery) draftOverflowPx = (field.height - editorMinHeight.roundToPx()).coerceAtLeast(0)
                                             val extra = if (!editingQuery) 0 else (draftOverflowPx * (1f - pageProgress)).roundToInt()
-                                            layout(field.width, limits.constrainHeight(field.height + extra)) { field.place(0, 0) }
+                                            // Use the measured query line, without the animated draft overflow or top
+                                            // padding, to reserve its exact landing space for the scrolling page.
+                                            val lines = if (editingQuery) searchLineHeightLines(maxOf(
+                                                FoldedEditorMinHeight.roundToPx(),
+                                                field.height - textTop.roundToPx() + FoldedTextTop.roundToPx(),
+                                            )) else emptyMap()
+                                            layout(field.width, limits.constrainHeight(field.height + extra), lines) { field.place(0, 0) }
                                         }.heightIn(min = editorMinHeight)
                                         .padding(top = textTop, bottom = TextBottom),
                                         contentAlignment = Alignment.CenterStart) {
