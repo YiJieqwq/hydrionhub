@@ -2,6 +2,7 @@ package io.hydrion.hub.provider
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -161,7 +162,7 @@ internal fun ChatModelControls(
             Box(Modifier.align(Alignment.TopEnd).offset(y = buttonWidth * (buttonRows - 1)).then(keepEditorFocus).width(buttonWidth).height(48.dp).testTag("chat-model-reset")
                 .semantics { contentDescription = resetLabel }
                 .clickable(role = Role.Button, onClick = onReset), contentAlignment = Alignment.Center) {
-                EffortToolGlyph(resetGlyph, colors.onSurfaceVariant, Modifier.offset(x = 3.dp))
+                EffortToolGlyph(resetGlyph, Modifier.offset(x = 3.dp), tint = { colors.onSurfaceVariant })
             }
         }
         if (effort != null && level != null) {
@@ -208,18 +209,21 @@ private fun FastButton(tier: String?, off: String?, selected: String?, width: Dp
         else -> stringResource(R.string.chat_controls_not_connected, name)
     }
     val colors = MaterialTheme.colorScheme
-    val tint = when {
+    val targetTint = when {
         active -> activeTint.copy(alpha = if (enabled) 1f else .65f)
         !enabled -> colors.onSurface.copy(alpha = .32f)
         else -> colors.onSurfaceVariant
     }
+    val tint = animateColorAsState(targetTint, tween(250, easing = EffortTintEase), label = "fastBoltTint")
+    val fill = animateFloatAsState(if (active) 1f else 0f,
+        tween(250, easing = EffortTintEase), label = "fastBoltFill")
     Box(modifier.width(width).height(48.dp).focusProperties { canFocus = false }
         .testTag("chat-model-fast")
         .semantics { contentDescription = description }
         .toggleable(active, enabled = enabled, role = Role.Switch) { on ->
             (if (on) tier else off)?.let(onChange)
         }, contentAlignment = Alignment.Center) {
-        EffortToolGlyph(boltGlyph, tint, Modifier.offset(x = (-3).dp), filled = active)
+        EffortToolGlyph(boltGlyph, Modifier.offset(x = (-3).dp), tint = { tint.value }, fill = { fill.value })
     }
 }
 
@@ -233,11 +237,13 @@ private val boltGlyph by lazy {
 private val resetGlyph by lazy { PathParser().parsePathString("M3 11a9 9 0 1 1 2.6 7M3 4v7h7").toPath() }
 
 @Composable
-private fun EffortToolGlyph(path: Path, tint: Color, modifier: Modifier, filled: Boolean = false) {
+private fun EffortToolGlyph(path: Path, modifier: Modifier, tint: () -> Color, fill: () -> Float = { 0f }) {
     Canvas(modifier.size(16.dp)) {
         scale(size.width / 24f, size.height / 24f, Offset.Zero) {
-            if (filled) drawPath(path, tint)
-            drawPath(path, tint, style = Stroke(if (filled) 0.7f else 1.7f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            val ink = tint()
+            val amount = fill()
+            if (amount > 0f) drawPath(path, ink, alpha = amount)
+            drawPath(path, ink, style = Stroke(1.7f - amount, cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
     }
 }

@@ -32,7 +32,6 @@ class PeakStarMotionTest {
             assertEquals(atSwitch, positions(motion))
             motion.advance(pause, true, false)
             val atRelease = positions(motion)
-            assertEquals(atSwitch.map { it.second }, atRelease.map { it.second })
             motion.advance(0.0, false, false)
             assertEquals(atRelease, positions(motion))
             motion.advance(.2, false, false)
@@ -81,7 +80,6 @@ class PeakStarMotionTest {
         for (rtl in listOf(false, true)) {
             val coarse = RailStarMotion()
             val fine = RailStarMotion()
-            val start = coarse.phase(railStars.first())
             for ((leg, fill) in listOf(regular, peak, regular).withIndex()) {
                 val scale = fastStarSpeedScale(fill, regular)
                 val before = positions(coarse)
@@ -91,12 +89,51 @@ class PeakStarMotionTest {
                 repeat(21) { fine.advance(1.0 / 120, true, rtl, scale) }
                 for (star in railStars) assertEquals(fine.phase(star), coarse.phase(star), .000001f)
                 if (leg == 0) {
-                    // The starting ramp integrates half the final velocity at 180ms.
-                    val expected = .175 * .175 / (2 * .18) / railStars.first().seconds
-                    val dx = coarse.phase(railStars.first()) - start
+                    val fastTime = .175 * .175 / (2 * .18)
+                    val expected = fastTime / railStars.first().seconds
+                    val drift = RailStarMotion().apply { advance(.175 - fastTime, false, rtl) }
+                    val dx = coarse.phase(railStars.first()) - drift.phase(railStars.first())
                     assertEquals(if (rtl) expected else -expected, (dx - Math.round(dx)).toDouble(), .000001)
                 }
             }
+        }
+    }
+
+    @Test fun brakingAndReversingTakeUpAtTheCurrentScreenSpeed() {
+        for (rtl in listOf(false, true)) {
+            val coarse = RailStarMotion()
+            val fine = RailStarMotion()
+            for ((fast, seconds) in listOf(true to .24, false to .048, true to .016, false to .3)) {
+                val atSwitch = positions(coarse)
+                coarse.advance(0.0, fast, rtl)
+                assertEquals(atSwitch, positions(coarse))
+                coarse.advance(seconds, fast, rtl)
+                val steps = 48
+                repeat(steps) { fine.advance(seconds / steps, fast, rtl) }
+                railStars.forEach { star ->
+                    assertEquals(fine.phase(star), coarse.phase(star), .000001f)
+                    assertEquals(fine.heightFraction(star), coarse.heightFraction(star), .000001f)
+                }
+            }
+            val motion = RailStarMotion()
+            motion.advance(.24, true, rtl)
+            val ys = railStars.map { motion.heightFraction(it) }
+            motion.advance(.03, true, rtl)
+            assertEquals(ys, railStars.map { motion.heightFraction(it) })
+            val star = railStars.first()
+            val forwardSign = if (rtl) 1 else -1
+            fun normalisedSpeed(fast: Boolean): Double {
+                val before = motion.phase(star)
+                val dt = .001
+                motion.advance(dt, fast, rtl)
+                val dx = motion.phase(star) - before
+                return forwardSign * (dx - Math.round(dx)) * star.seconds / dt
+            }
+            assertEquals(1.0, normalisedSpeed(false), .015)
+            motion.advance(.085, false, rtl)
+            val midBrake = normalisedSpeed(false)
+            assertTrue(midBrake in .35.. .7)
+            assertEquals(midBrake, normalisedSpeed(true), .015)
         }
     }
 

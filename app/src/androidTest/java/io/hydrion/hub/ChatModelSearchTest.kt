@@ -1,5 +1,6 @@
 package io.hydrion.hub
 
+import android.animation.ValueAnimator
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewTreeObserver
@@ -25,11 +26,13 @@ import io.hydrion.hub.provider.ModelProfile
 import io.hydrion.hub.provider.Provider
 import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.provider.ProviderStore
+import io.hydrion.hub.ui.ChatPanelMotionMillis
 import io.hydrion.hub.ui.ModelEditorMotionMillis
 import io.hydrion.hub.provider.deepSeekProvider
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -158,6 +161,44 @@ class ChatModelSearchTest {
             }
         } finally {
             screen.runOnUiThread { view.viewTreeObserver.removeOnPreDrawListener(listener) }
+        }
+    }
+
+    @Test fun closedImeSearchAndListShareTheCapsuleEdgeOnIntermediateAndReversedFrames() = withProviders { vm, _, _ ->
+        assumeTrue(ValueAnimator.areAnimatorsEnabled())
+        screen.runOnIdle { vm.setDraft("") }
+        hideKeyboard()
+        val folded = capsule()
+        screen.runOnIdle { vm.setDraft("open the controls") }
+        openControls()
+        enterSearch("select")
+        screen.runOnIdle { vm.setDraft("") }
+        val parked = capsule()
+        val bubble = screen.onNodeWithTag("chat-picker-bubble", useUnmergedTree = true)
+        val gap = parked.top - bubble.fetchSemanticsNode().boundsInRoot.bottom
+        val clock = screen.mainClock
+        try {
+            clock.autoAdvance = false
+            control("search-close").performClick()
+            var previous = parked.top
+            fun sample(down: Boolean) {
+                clock.advanceTimeBy(ChatPanelMotionMillis / 8L)
+                val edge = capsule().top
+                assertTrue("Intermediate frame between parked and folded", edge > parked.top && edge < folded.top)
+                assertTrue("Expected travel in requested direction", if (down) edge > previous else edge < previous)
+                assertEquals("Menu bottom and capsule top must be from the same frame",
+                    gap, edge - bubble.fetchSemanticsNode().boundsInRoot.bottom, 1f)
+                assertTrue("Browsing and searching keep the keyboard hidden", !imeIsVisible())
+                previous = edge
+            }
+            repeat(4) { sample(down = true) }
+            control("search").performClick()
+            repeat(2) { sample(down = false) }
+            clock.autoAdvance = true
+            screen.waitForIdle()
+            assertEquals(parked, capsule())
+        } finally {
+            clock.autoAdvance = true
         }
     }
 

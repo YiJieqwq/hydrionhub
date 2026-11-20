@@ -1,6 +1,5 @@
 package io.hydrion.hub.ui.composer
 
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -41,8 +40,8 @@ class ToolsPageStateTest {
         val enteredMillis = ToolsPageTravelMillis / 2
         val reversedMillis = enteredMillis / 2
         frames.tick(enteredMillis)
-        val onEnter = FastOutSlowInEasing.transform(enteredMillis.toFloat() / ToolsPageTravelMillis)
-        assertEquals(onEnter, state.progress, .0001f)
+        val onEnter = state.progress
+        assertEquals(.5f, onEnter, .001f)
         state.close()
         opening.cancelAndJoin()
         assertTrue(state.active)
@@ -53,8 +52,8 @@ class ToolsPageStateTest {
         assertEquals(onEnter, state.progress, .0001f)
         frames.tick(reversedMillis)
         val remainingPositionMillis = enteredMillis - reversedMillis
-        val onExit = FastOutSlowInEasing.transform(remainingPositionMillis.toFloat() / ToolsPageTravelMillis)
-        assertEquals(onExit, state.progress, .0001f)
+        val onExit = state.progress
+        assertTrue("roughly a fifth of travel at a quarter of the clock", onExit in 0.18f..0.22f)
 
         state.open()
         closing.cancelAndJoin()
@@ -67,6 +66,22 @@ class ToolsPageStateTest {
         assertTrue(state.interactive)
         assertEquals(1f, state.progress, 0f)
         assertEquals(typed, state.query)
+    }
+
+    @Test fun fullTravelKeepsTheSameVisibleMilestonesInBothDirections() = runBlocking {
+        val frames = Frames()
+        val state = ToolsPageState()
+        for (open in listOf(true, false)) {
+            if (open) state.open() else state.close()
+            val travel = launch(frames.clock, start = CoroutineStart.UNDISPATCHED) { state.animateToTarget(open) }
+            frames.tick()
+            for (expected in listOf(.197f, .5f, .803f, 1f)) {
+                frames.tick(ToolsPageTravelMillis / 4)
+                val travelled = if (open) state.progress else 1f - state.progress
+                assertEquals(expected, travelled, .003f)
+            }
+            travel.join()
+        }
     }
 
     @Test fun queryClearsOnlyOnCompletedExitAndFreshOpen() = runBlocking {

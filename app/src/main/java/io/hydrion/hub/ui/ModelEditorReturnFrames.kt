@@ -1,6 +1,6 @@
 package io.hydrion.hub.ui
 
-internal const val ModelEditorMotionMillis = 500
+internal const val ModelEditorMotionMillis = ChatPanelMotionMillis
 
 /** Coordinates the two reveal layers with the measured state of the returning editor. */
 internal class ModelEditorReturnFrames {

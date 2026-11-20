@@ -42,7 +42,6 @@ import io.hydrion.hub.provider.ConfigureSheet
 import io.hydrion.hub.provider.chatSpeedControls
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.provider.ProviderSettings
-import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 import io.hydrion.hub.ui.chrome.Header
 import io.hydrion.hub.ui.chrome.contextUsage
 import io.hydrion.hub.ui.composer.HubComposer
@@ -193,7 +192,22 @@ private fun Workspace(vm: HubViewModel) {
                 contentAlignment = Alignment.TopCenter
             ) {
                 ChatComposerLayers(
-                    modifier = Modifier.widthIn(max = ChatHeaderLayout.MaxWidth).fillMaxSize(),
+                    modifier = Modifier.fillMaxSize(),
+                    trackPickerAnchor = { !toolsActive && editVisit == null && chatPicker.page != null },
+                    picker = {
+                        if (current.mode == Mode.Chat && !toolsActive) {
+                            ChatModelPicker(providers, chatPicker, suspended = editVisit != null, hideForReturn = returning,
+                                onEditModel = edit@{ route, browse ->
+                                    val origin = vm.state.value
+                                    if (editVisit != null || origin.current.id != current.id) return@edit
+                                    val visibleBottom = view.height - ime.getBottom(density)
+                                    val dockTravel = (visibleBottom - (chatPicker.composerBounds?.top ?: visibleBottom)).coerceAtLeast(0)
+                                    val editor = composerBridge.captureAndDismiss() ?: return@edit
+                                    editVisit = ModelEditVisit(route, current.id, origin.draft, browse, editor, dockTravel.toFloat())
+                                    editTransition.targetState = true
+                                }, modifier = Modifier.fillMaxSize())
+                        }
+                    },
                     composer = {
                         val bottomBars = if (returnMotion.holdCollapsed) nav else WindowInsets.safeDrawing
                         Column(composerReveal.windowInsetsPadding(bottomBars.only(WindowInsetsSides.Bottom))) {
@@ -263,18 +277,6 @@ private fun Workspace(vm: HubViewModel) {
                     if (toolsPage != null && toolsActive) {
                         ToolsPageOverlay(toolsPage, state.draft, composerHeight, vm::setSearch, vm::setImageTool)
                     }
-                }
-                if (current.mode == Mode.Chat && !toolsActive) {
-                    ChatModelPicker(providers, chatPicker, suspended = editVisit != null, hideForReturn = returning,
-                        onEditModel = edit@{ route, browse ->
-                            val origin = vm.state.value
-                            if (editVisit != null || origin.current.id != current.id) return@edit
-                            val visibleBottom = view.height - ime.getBottom(density)
-                            val dockTravel = (visibleBottom - (chatPicker.composerBounds?.top ?: visibleBottom)).coerceAtLeast(0)
-                            val editor = composerBridge.captureAndDismiss() ?: return@edit
-                            editVisit = ModelEditVisit(route, current.id, origin.draft, browse, editor, dockTravel.toFloat())
-                            editTransition.targetState = true
-                        }, modifier = Modifier.matchParentSize())
                 }
             }
         }

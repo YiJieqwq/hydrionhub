@@ -6,8 +6,6 @@ import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.LocalIndication
@@ -122,6 +120,7 @@ import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubState
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.ui.pickerCapsuleBounds
 import io.hydrion.hub.ui.messages.BitmapPreview
 import io.hydrion.hub.ui.messages.PicturePreview
 import io.hydrion.hub.ui.messages.rememberAttachmentPreview
@@ -136,7 +135,6 @@ import kotlin.math.roundToInt
 
 private enum class ToolsPanel { Closed, WaitingForIme, Open }
 
-private const val ComposerTransitionMillis = 33
 private val ComposerSecondary = Color(0xFFAFAFAF)
 private val ComposerGlyphSize = 18.dp
 private val ComposerGlyphStroke = 2.dp
@@ -329,8 +327,17 @@ internal fun HubComposer(
     }
     val hasContent = draft.text.isNotEmpty() || draft.attachments.isNotEmpty()
     val hasRowContent = hasContent || searchPicker != null
-    val rowGate by animateFloatAsState(if (!forceReturnFolded && hasRowContent) 1f else 0f,
-        if (forceReturnFolded) snap() else tween(ComposerTransitionMillis, easing = LinearEasing), label = "composerDraftRow")
+    val rowTarget = composerRowTarget(forceReturnFolded, hasContent, searchPicker != null,
+        chatPicker?.modelListNavigation == true, imeActive)
+    val rowMotion = remember { Animatable(rowTarget.fraction) }
+    var previousRow by remember { mutableStateOf(rowTarget) }
+    LaunchedEffect(rowTarget) {
+        val duration = rowTarget.travelMillisFrom(previousRow, rowMotion.value)
+        previousRow = rowTarget
+        if (duration == 0) rowMotion.snapTo(rowTarget.fraction)
+        else rowMotion.animateTo(rowTarget.fraction, tween(duration, easing = LinearEasing))
+    }
+    val rowGate = rowMotion.value
     val chatToolbar = if (forceReturnFolded) 0f else maxOf(expansion, rowGate)
     val toolbar = chatToolbar * (1f - toolsProgress)
     val returning = modelEditorBridge?.returning != null
@@ -396,6 +403,7 @@ internal fun HubComposer(
         val shape = if (toolbar == 0f) CircleShape else RoundedCornerShape(24.dp)
         Surface(
             modifier = Modifier.fillMaxWidth().testTag("composer-capsule")
+                .then(if (chatPicker != null) Modifier.pickerCapsuleBounds() else Modifier)
                 .then(if (modelEditorBridge == null) Modifier else Modifier.layout { measurable, constraints ->
                     val capsule = measurable.measure(constraints)
                     layout(capsule.width, capsule.height) {

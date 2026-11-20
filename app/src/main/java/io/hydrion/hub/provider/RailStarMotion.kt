@@ -1,6 +1,7 @@
 package io.hydrion.hub.provider
 
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.sin
 import kotlin.random.Random
@@ -33,20 +34,24 @@ internal fun starDrawY(fraction: Float, railHeight: Float, radius: Float, edgeGa
 internal class RailStarMotion {
     private var driftSeconds = 0.0
     private var travelSeconds = 0.0
-    private var fastAge = 0.0
+    private var fastFraction = 0.0
 
     fun advance(delta: Double, fast: Boolean, rtl: Boolean, speedScale: Double = 1.0) {
-        if (!fast) {
-            driftSeconds += delta
-            fastAge = 0.0
-            return
+        val target = if (fast) 1.0 else 0.0
+        val remaining = abs(target - fastFraction) * RampSeconds
+        val rampTime = minOf(delta, remaining)
+        val next = when {
+            delta >= remaining -> target
+            fast -> fastFraction + rampTime / RampSeconds
+            else -> fastFraction - rampTime / RampSeconds
         }
-        // Integrate a linear speed ramp, including a frame that crosses the end of the ramp.
-        val accelerating = minOf(delta, RampSeconds - fastAge)
-        val rampDistance = accelerating * (fastAge + accelerating / 2) / RampSeconds
-        fastAge = (fastAge + accelerating).coerceAtMost(RampSeconds)
+        // Integrate both velocities over the frame. Reversals start from the current
+        // speed and position; a frame may include the end of the ramp and steady travel.
+        val fastTime = rampTime * (fastFraction + next) / 2 + (delta - rampTime) * target
+        fastFraction = next
+        driftSeconds += delta - fastTime
         // The RTL rail mirrors its canvas. Positive local travel there still moves left on screen.
-        val travel = (rampDistance + delta - accelerating) * speedScale
+        val travel = fastTime * speedScale
         travelSeconds += if (rtl) travel else -travel
     }
 

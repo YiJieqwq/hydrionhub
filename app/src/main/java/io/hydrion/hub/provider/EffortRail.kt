@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -47,6 +48,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -90,16 +92,16 @@ private fun DrawScope.glow(brush: Brush, at: Offset, radius: Float, alpha: Float
     }
 }
 
-private fun DrawScope.drawBloom(origin: Offset, time: Float, tint: Color, softLight: Brush) {
+private fun DrawScope.drawBloom(origin: Offset, time: Float, tint: Color, softLight: Brush, strength: Float) {
     val haloTime = (time / 500f).coerceIn(0f, 1f)
-    if (haloTime < 1f) glow(softLight, origin, (6f + 34f * haloTime).dp.toPx(), .55f * (1f - haloTime))
+    if (haloTime < 1f) glow(softLight, origin, (6f + 34f * haloTime).dp.toPx(), .55f * (1f - haloTime) * strength)
     for (mote in motes) {
         val age = (time - mote.delay) / mote.life
         if (age <= 0f || age >= 1f) continue
         val travel = BurstEase.transform(age)
         val point = origin + (mote.near + (mote.far - mote.near) * travel) * density
         val opacity = if (age < .18f) age / .18f else 1f - (age - .18f) / .82f
-        val alpha = opacity * mote.alpha
+        val alpha = opacity * mote.alpha * strength
         val radius = mote.radius.dp.toPx() * (.4f + .1f * travel)
         glow(softLight, point, radius + 3.dp.toPx(), alpha * .55f)
         drawCircle(tint, radius, point, alpha = alpha)
@@ -119,6 +121,8 @@ internal fun EffortRail(
     }
     val palette = remember(stops, preview, dark) { effortPalette(stops, stops[preview], dark) }
     val peak = preview == highestIndex && highestIndex >= 0
+    val peakAmount = animateFloatAsState(if (peak) 1f else 0f, tween(250, easing = ToneEase), label = "effortPeak")
+    val peakMote = remember(stops, highestIndex, dark) { effortPalette(stops, stops.getOrNull(highestIndex), dark).mote }
     val fastBlue = remember(dark) { ordinaryFastRailColors(dark) }
     val railPalette = if (accelerated && !peak) fastBlue else palette
     val fill = animateColorAsState(railPalette.fill, tween(250, easing = ToneEase), label = "effortFill")
@@ -138,7 +142,7 @@ internal fun EffortRail(
         if (committedIndex in stops.indices && committedIndex != highestIndex) ordinaryIndex = committedIndex
     }
     val speedScale by rememberUpdatedState {
-        if (peak && stops.size > 1) {
+        if (stops.size > 1) {
             val width = widthPx.toFloat()
             val reference = railFillWidth(width, maxThumbRadius, ordinaryIndex.toFloat() / stops.lastIndex)
             fastStarSpeedScale(railFillWidth(width, maxThumbRadius, readPosition()), reference)
@@ -153,7 +157,7 @@ internal fun EffortRail(
                     var previous = withInfiniteAnimationFrameNanos { it }
                     while (true) withInfiniteAnimationFrameNanos { now ->
                         val delta = (now - previous) / 1_000_000_000.0 / factor
-                        motion.advance(delta, fast, rtl, if (fast) speedScale() else 1.0)
+                        motion.advance(delta, fast, rtl, speedScale())
                         seconds.doubleValue += delta
                         previous = now
                     }
@@ -161,14 +165,19 @@ internal fun EffortRail(
         }
     }
     val bloom = remember(stops, highestIndex) { Animatable(1f) }
+    val scope = rememberCoroutineScope()
     var previousIndex by remember(stops, highestIndex) { mutableIntStateOf(committedIndex) }
     LaunchedEffect(committedIndex, bloom) {
         val arrived = highestIndex >= 0 && committedIndex == highestIndex && previousIndex != highestIndex
         previousIndex = committedIndex
-        if (arrived && (coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f) > 0f && ValueAnimator.areAnimatorsEnabled()) {
-            bloom.snapTo(0f)
-            bloom.animateTo(1f, tween(BurstMillis, easing = LinearEasing))
-        } else bloom.snapTo(1f)
+        if (arrived && !bloom.isRunning && (coroutineContext[MotionDurationScale]?.scaleFactor ?: 1f) > 0f &&
+            ValueAnimator.areAnimatorsEnabled()) {
+            // Keep the burst clock alive across a quick exit/re-entry; the rail opacity fades it out.
+            scope.launch {
+                bloom.snapTo(0f)
+                bloom.animateTo(1f, tween(BurstMillis, easing = LinearEasing))
+            }
+        }
     }
 
     Spacer(Modifier.fillMaxWidth().height(30.dp).onSizeChanged { widthPx = it.width }.drawWithCache {
@@ -191,7 +200,7 @@ internal fun EffortRail(
             .66f to Color.White.copy(alpha = .024f), .84f to Color.Transparent,
             start = Offset(0f, -.088f * shineWidth), end = Offset(shineWidth, .088f * shineWidth),
         )
-        val softLight = Brush.radialGradient(0f to palette.mote, .66f to palette.mote.copy(alpha = 0f),
+        val softLight = Brush.radialGradient(0f to peakMote, .66f to peakMote.copy(alpha = 0f),
             center = Offset.Zero, radius = 1f)
         val shadow = Brush.radialGradient(.72f to Color.Black.copy(alpha = if (dark) .45f else .15f),
             1f to Color.Transparent, center = Offset.Zero, radius = 1f)
@@ -200,21 +209,23 @@ internal fun EffortRail(
             val fraction = position().coerceIn(0f, 1f)
             val knob = Offset(railFillWidth(size.width, maxThumbRadius, fraction), y)
             val timer = seconds.doubleValue
+            val purple = peakAmount.value
             scale(if (layoutDirection == LayoutDirection.Rtl) -1f else 1f, 1f, pivot = center) {
                 clipPath(clip) {
                     drawRect(track.value)
                     clipRect(right = knob.x) {
-                        if (peak) {
+                        if (purple < 1f) drawRect(fill.value)
+                        if (purple > 0f) {
                             // A 155%-wide gradient moves between both ends of the filled section.
                             translate(left = -.55f * knob.x * sweep(timer, 3.8)) {
                                 scale(1.55f * knob.x, 1f, pivot = Offset.Zero) {
-                                    drawRect(flow, size = Size(1f, size.height))
+                                    drawRect(flow, size = Size(1f, size.height), alpha = purple)
                                 }
                             }
                             translate(left = -40.dp.toPx() + (sweep(timer, 4.5) - .5f) * .9f * shineWidth) {
-                                drawRect(shine, size = Size(shineWidth, size.height))
+                                drawRect(shine, size = Size(shineWidth, size.height), alpha = purple)
                             }
-                        } else drawRect(fill.value)
+                        }
                     }
                     if (ticks.value > 0f) for (i in stops.indices) {
                         val tick = if (stops.size == 1) .5f else i.toFloat() / stops.lastIndex
@@ -237,9 +248,9 @@ internal fun EffortRail(
                 drawCircle(palette.thumb, thumbRadius, knob)
                 val border = .5.dp.toPx()
                 drawCircle(Color.Black.copy(alpha = .07f), (thumbRadius - border / 2).coerceAtLeast(0f), knob, style = Stroke(border))
-                if (bloom.value < 1f && stops.lastIndex > 0) {
+                if (purple > 0f && bloom.value < 1f && stops.lastIndex > 0) {
                     val origin = Offset(radius + travel * highestIndex / stops.lastIndex, y)
-                    drawBloom(origin, bloom.value * BurstMillis, palette.mote, softLight)
+                    drawBloom(origin, bloom.value * BurstMillis, peakMote, softLight, purple)
                 }
             }
         }

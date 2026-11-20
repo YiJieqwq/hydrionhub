@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.provider.EffortRail
 import io.hydrion.hub.provider.effortPalette
+import io.hydrion.hub.provider.ordinaryFastRailColors
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -85,21 +86,62 @@ class EffortRailRenderingTest {
         }
     }
 
-    @Test fun fastOnlyAddsDustInsideTheFilledSection() {
+    @Test fun ordinaryFastUsesItsBluePaletteAndOnlyAddsDustInsideTheFill() {
         selected.value = 1
         show()
-        val still = image()
         screen.runOnIdle { fast.value = true }
         val moving = image()
-        val dp = still.width / 248f
-        var changed = 0
-        for (y in 0 until still.height) for (x in 0 until still.width) {
-            if (still.getPixel(x, y) == moving.getPixel(x, y)) continue
-            assertTrue("Dust outside the fill at ($x,$y)", x <= still.width / 2 &&
-                abs(y - still.height / 2) <= 13 * dp + 1)
-            changed++
+        val dp = moving.width / 248f
+        val blue = ordinaryFastRailColors(true)
+        var dustPixels = 0
+        for (y in (moving.height / 2 - 11 * dp).roundToInt()..(moving.height / 2 + 11 * dp).roundToInt()) {
+            // Both strips are clear of the thumb, rounded ends and ticks.
+            for (x in (30 * dp).roundToInt()..(102 * dp).roundToInt()) {
+                if (Pixel.red(moving.getPixel(x, y)) > Pixel.red(blue.fill.toArgb()) + 12) dustPixels++
+            }
+            for (x in (150 * dp).roundToInt()..(215 * dp).roundToInt()) {
+                assertEquals("Unfilled groove", blue.track.toArgb(), moving.getPixel(x, y))
+            }
         }
-        assertTrue("Enabled Fast should decorate a non-peak level", changed > 0)
+        assertTrue("Enabled Fast should decorate the blue fill", dustPixels > 0)
+    }
+
+    @Test fun peakGradientCrossfadesInBothDirections() {
+        assumeTrue(ValueAnimator.areAnimatorsEnabled())
+        selected.value = 1
+        screen.mainClock.autoAdvance = false
+        try {
+            show()
+            screen.mainClock.advanceTimeByFrame()
+            val ordinary = fillRed(image())
+            screen.runOnIdle { selected.value = stops.lastIndex }
+            screen.mainClock.advanceTimeByFrame()
+            val entry = fillRed(image())
+            screen.mainClock.advanceTimeBy(112)
+            val intermediate = fillRed(image())
+            screen.mainClock.advanceTimeBy(176)
+            val peak = fillRed(image())
+            assertTrue("Entry must start near the displayed ordinary fill", abs(entry - ordinary) < abs(entry - peak))
+            assertTrue("Expected a mixed frame", abs(intermediate - ordinary) > 1 && abs(intermediate - peak) > 1)
+            screen.runOnIdle { selected.value = 1 }
+            screen.mainClock.advanceTimeByFrame()
+            val exit = fillRed(image())
+            assertTrue("Exit must keep the displayed gradient initially", abs(exit - peak) < abs(exit - ordinary))
+            screen.mainClock.advanceTimeBy(288)
+            assertEquals(ordinary, fillRed(image()))
+        } finally {
+            screen.mainClock.autoAdvance = true
+        }
+    }
+
+    // A median in the common filled section excludes isolated stars and samples the actual brush.
+    private fun fillRed(bitmap: Bitmap): Int {
+        val dp = bitmap.width / 248f
+        val samples = mutableListOf<Int>()
+        for (x in (36 * dp).roundToInt()..(62 * dp).roundToInt()) {
+            samples += Pixel.red(bitmap.getPixel(x, bitmap.height / 2))
+        }
+        return samples.sorted()[samples.size / 2]
     }
 
     @Test fun arrivalMotesAppearOnlyAfterEnteringPeak() {

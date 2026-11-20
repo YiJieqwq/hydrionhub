@@ -1,5 +1,7 @@
 package io.hydrion.hub.provider
 
+import android.animation.ValueAnimator
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.tween
@@ -12,6 +14,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
@@ -37,10 +40,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.*
+import io.hydrion.hub.ui.ChatPanelMotionMillis
+import io.hydrion.hub.ui.LocalPickerComposerBounds
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-internal const val PickerBubbleMotionMillis = 500
+internal const val PickerBubbleMotionMillis = ChatPanelMotionMillis
 
 internal val ColorScheme.pickerBubbleHighlight: Color get() = onSurface.copy(alpha = 0.18f)
 
@@ -75,6 +80,9 @@ internal fun PickerBubbleLayout(
     modifier: Modifier, paneTitle: String, content: @Composable () -> Unit,
 ) {
     val motion = remember(picker) { Animatable(Offset.Zero, Offset.VectorConverter) }
+    val durationScale = rememberCoroutineScope().coroutineContext[MotionDurationScale]
+    val border = animateColorAsState(effortBorder, tween(250, easing = ChatPickerEasing),
+        label = "Reasoning peak border")
     LaunchedEffect(face, hideForReturn) {
         if (hideForReturn) motion.snapTo(Offset.Zero) else {
             val delta = face.weights - motion.value
@@ -86,6 +94,7 @@ internal fun PickerBubbleLayout(
     if (face == PickerBubbleFace.Label && atSource) return
 
     val targets = remember(picker) { mutableStateOf(BubbleTargets(Rect.Zero, Rect.Zero, Rect.Zero, IntRect.Zero, true)) }
+    val measuredAnchor = LocalPickerComposerBounds.current
     val effortInk = rememberGraphicsLayer()
     val listInk = rememberGraphicsLayer()
     var effortSize by remember(picker) { mutableStateOf(IntSize.Zero) }
@@ -98,7 +107,13 @@ internal fun PickerBubbleLayout(
 
     Layout(modifier = modifier, content = {
         BubbleSurface(targets, { motion.value }, colors.pickerBubbleHighlight, effortColor,
-            if (face == PickerBubbleFace.List) listColor else lastListColor, effortBorder, colors.outlineVariant, hideForReturn, face != PickerBubbleFace.Label)
+            if (face == PickerBubbleFace.List) listColor else lastListColor, border, colors.outlineVariant,
+            hideForReturn, face != PickerBubbleFace.Label, velocity = {
+                if (motion.isRunning && motion.targetValue == face.weights && motion.value != face.weights) {
+                    val scale = durationScale?.scaleFactor ?: if (ValueAnimator.areAnimatorsEnabled()) 1f else 0f
+                    if (scale > 0f) motion.velocity / scale else Offset.Zero
+                } else Offset.Zero
+            })
         // An outgoing page has no layout node, focus or callbacks. Retain only its last drawing.
         Spacer(Modifier.fillMaxSize().drawBehind {
             val w = motion.value
@@ -130,9 +145,12 @@ internal fun PickerBubbleLayout(
         }
     }) { children, limits ->
         val viewport = IntSize(limits.maxWidth, limits.maxHeight)
-        val bar = picker.composerBounds
-        if (origin == null || bar == null) return@Layout layout(viewport.width, viewport.height) {}
-        val anchor = bar.translate(-origin)
+        if (origin == null) return@Layout layout(viewport.width, viewport.height) {}
+        // Model configuration moves the whole dock on a graphics layer. Its suspended
+        // selector follows window coordinates; interactive browsing uses this measure pass.
+        val anchor = measuredAnchor?.takeUnless { freezeListSize || hideForReturn }
+            ?: picker.composerBounds?.translate(-origin)
+            ?: return@Layout layout(viewport.width, viewport.height) {}
         val effort = pickerSpace(anchor, viewport, layoutDirection, reasoning = true)
         val list = pickerSpace(anchor, viewport, layoutDirection)
         val space = if (face == PickerBubbleFace.Effort) effort else list
@@ -177,9 +195,23 @@ internal fun PickerBubbleLayout(
 @Composable
 private fun BubbleSurface(
     targets: State<BubbleTargets>, weights: () -> Offset, highlight: Color, effort: Color, list: Color,
-    effortBorder: Color, listBorder: Color, hidden: Boolean, interactive: Boolean,
+    effortBorder: State<Color>, listBorder: Color, hidden: Boolean, interactive: Boolean, velocity: () -> Offset,
 ) {
-    Layout(content = {
+    val trailPath = remember { Path() }
+    Layout(modifier = Modifier.drawWithContent {
+        drawContent()
+        if (hidden) return@drawWithContent
+        val speed = velocity()
+        if (speed == Offset.Zero) return@drawWithContent
+        val w = weights()
+        val scene = targets.value
+        val rect = scene.bounds(w)
+        if (rect.isEmpty) return@drawWithContent
+        val cover = (w.x + w.y).coerceIn(0f, 1f)
+        val edge = lerp(effortBorder.value, listBorder, if (cover > 0f) (w.y / cover).coerceIn(0f, 1f) else 0f)
+        drawPickerEdgeTrail(rect, scene.label, scene.effort, scene.list, speed,
+            bubbleRadius(rect, 14.dp.toPx(), cover), edge, trailPath)
+    }, content = {
         Spacer(Modifier.testTag("chat-picker-bubble").drawBehind {
             val w = weights()
             val cover = (w.x + w.y).coerceIn(0f, 1f)
@@ -188,7 +220,7 @@ private fun BubbleSurface(
             val surface = lerp(highlight, lerp(effort, list, listPart), cover)
             drawRoundRect(surface, cornerRadius = radius)
             val stroke = (0.5f + 0.16f * listPart) * density
-            val edge = lerp(effortBorder, listBorder, listPart)
+            val edge = lerp(effortBorder.value, listBorder, listPart)
             if (cover > 0f && size.minDimension > stroke) {
                 drawRoundRect(edge.copy(alpha = edge.alpha * cover), topLeft = Offset(stroke / 2, stroke / 2),
                     size = Size(size.width - stroke, size.height - stroke),
