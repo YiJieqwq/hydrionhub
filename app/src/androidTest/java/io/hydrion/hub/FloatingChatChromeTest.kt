@@ -3,6 +3,7 @@ package io.hydrion.hub
 import android.graphics.Color
 import android.graphics.Rect
 import android.util.Log
+import android.view.View
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -203,14 +204,19 @@ class FloatingChatChromeTest {
 
     private fun sampleToolFrame(): ToolFrame {
         val shell = screen.onNodeWithTag("composer-capsule", true)
+        val bounds = shell.fetchSemanticsNode().boundsInRoot
         val image = shell.captureToImage().asAndroidBitmap()
-        // Crop around the second toolbar button, leaving out the editor, adjacent glyphs, and capsule edge.
-        val xs = (46f * density).roundToInt()..(78f * density).roundToInt()
+        // The tool has no semantics in early reveal frames. Anchor its third-slot drawing region
+        // to the persistent attachment, including the glyph radius and its full 8dp translation.
+        val add = screen.onNodeWithContentDescription("添加附件").fetchSemanticsNode().boundsInRoot
+        val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        val settledX = add.center.x - bounds.left + (if (rtl) -78f else 78f) * density
+        val xs = (settledX - 18f * density).roundToInt()..(settledX + 10f * density).roundToInt()
         val ys = image.height - (32f * density).roundToInt()..image.height - (15f * density).roundToInt()
         val ink = ys.maxOf { y -> xs.maxOf { x -> Color.red(image.getPixel(x, y)) } }
         val strokeColumns = xs.filter { x -> ys.any { y -> Color.red(image.getPixel(x, y)) >= ink - 2 } }
         val center = (strokeColumns.first() + strokeColumns.last()) / 2f
-        return ToolFrame(shell.fetchSemanticsNode().boundsInRoot, ink, center)
+        return ToolFrame(bounds, ink, center)
     }
 
     @Test fun scrollingFadesChatBehindTheControlsAndKeepsRestingMessagesClear() {

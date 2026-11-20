@@ -468,22 +468,32 @@ internal fun HubComposer(
                                 translationX = -8.dp.toPx() * (1f - toolbar)
                             }.then(if (interactive) Modifier else Modifier.clearAndSetSemantics { })
                             Row(reveal, verticalAlignment = Alignment.CenterVertically) {
-                                ComposerIconButton("打开工具箱", onClick = {
-                                    if (toolsPanel == ToolsPanel.WaitingForIme) {
-                                        cancelPendingTools()
+                                val terminalSlot = if (state.current.mode == Mode.Chat) 0 else 1
+                                repeat(2) { slot ->
+                                    // The inset belongs to the slot so the visible glyph spacing stays even.
+                                    val glyph = Modifier.offset(x = -ToolbarGlyphGapReduction * (slot + 1))
+                                    if (slot == terminalSlot) {
+                                        Box(Modifier.width(42.dp).height(48.dp).clearAndSetSemantics {
+                                            contentDescription = "工作区终端"
+                                            role = Role.Button
+                                            disabled()
+                                        }, contentAlignment = Alignment.Center) {
+                                            TerminalGlyph(glyphAccent, glyphLine, glyph)
+                                        }
                                     } else {
-                                        imeReturn.cancel()
-                                        toolsPanel = if (imeActive) ToolsPanel.WaitingForIme else ToolsPanel.Open
-                                        if (imeActive) keyboard?.hide()
+                                        ComposerIconButton("打开工具箱", onClick = {
+                                            if (toolsPanel == ToolsPanel.WaitingForIme) {
+                                                cancelPendingTools()
+                                            } else {
+                                                imeReturn.cancel()
+                                                toolsPanel = if (imeActive) ToolsPanel.WaitingForIme else ToolsPanel.Open
+                                                if (imeActive) keyboard?.hide()
+                                            }
+                                        }, enabled = interactive && toolsAvailable) {
+                                            ToolGlyph(toolTrack, if (toolsAvailable) glyphAccent else toolTrack, glyph)
+                                        }
                                     }
-                                }, enabled = interactive && toolsAvailable) {
-                                    ToolGlyph(trackColor = toolTrack, thumbColor = if (toolsAvailable) glyphAccent else toolTrack)
                                 }
-                                Box(Modifier.width(42.dp).height(48.dp).clearAndSetSemantics {
-                                    contentDescription = "工作区终端"
-                                    role = Role.Button
-                                    disabled()
-                                }, contentAlignment = Alignment.Center) { TerminalGlyph(promptColor = glyphAccent, underlineColor = glyphLine) }
                             }
                             Box(Modifier.weight(1f).then(reveal), contentAlignment = Alignment.CenterEnd) {
                                 val presses = remember { MutableInteractionSource() }
@@ -602,9 +612,8 @@ private fun PlusGlyph() {
 private fun DrawScope.narrowGlyphX(x: Float) = center.x + (x - center.x) * 0.90f
 
 @Composable
-private fun ToolGlyph(trackColor: Color, thumbColor: Color) {
-    // Bring the glyphs closer to the attachment icon inside their existing hit areas.
-    Canvas(Modifier.offset(x = -ToolbarGlyphGapReduction).size(ComposerGlyphSize)) {
+private fun ToolGlyph(trackColor: Color, thumbColor: Color, modifier: Modifier) {
+    Canvas(modifier.size(ComposerGlyphSize)) {
         val trackWidth = ComposerGlyphFineStroke.toPx()
         val thumbWidth = ComposerGlyphStroke.toPx()
         val margin = narrowGlyphX(trackWidth / 2)
@@ -621,8 +630,8 @@ private fun ToolGlyph(trackColor: Color, thumbColor: Color) {
 }
 
 @Composable
-private fun TerminalGlyph(promptColor: Color, underlineColor: Color) {
-    Canvas(Modifier.offset(x = -ToolbarGlyphGapReduction * 2).size(ComposerGlyphSize)) {
+private fun TerminalGlyph(promptColor: Color, underlineColor: Color, modifier: Modifier) {
+    Canvas(modifier.size(ComposerGlyphSize)) {
         fun point(x: Float, y: Float) = Offset(narrowGlyphX(x.dp.toPx()), y.dp.toPx())
         val stroke = ComposerGlyphStroke.toPx()
         drawLine(promptColor, point(1f, 4f), point(6f, 9f), stroke, StrokeCap.Round)
