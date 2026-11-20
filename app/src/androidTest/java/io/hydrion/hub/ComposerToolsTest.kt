@@ -1,5 +1,6 @@
 package io.hydrion.hub
 
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.view.KeyEvent
 import androidx.activity.compose.setContent
@@ -8,8 +9,10 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.captureToImage
@@ -25,6 +28,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.ui.composer.AwaitToolsImeDismissal
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -41,8 +45,13 @@ class ComposerToolsTest {
         screen.waitUntil(10_000) { screen.onNodeWithContentDescription("打开工具箱").isDisplayed() }
         if (checkColors) {
             screen.onNodeWithContentDescription("添加附件").assertGlyphGray("添加附件", 255)
-            screen.onNodeWithContentDescription("打开工具箱").assertGlyphGray("打开工具箱", 175)
-            screen.onNodeWithContentDescription("工作区终端").assertGlyphGray("工作区终端", 175)
+            screen.onNodeWithContentDescription("打开工具箱").assertToolInk(enabled = true)
+            screen.onNodeWithContentDescription("工作区终端").assertIsNotEnabled().assertHasNoClickAction()
+                .captureToImage().asAndroidBitmap().apply {
+                    assertStroke("terminal upper chevron", 255, -6f, 3.5f, 6.5f)
+                    assertStroke("terminal lower chevron", 255, -6f, 3.5f, 11.5f)
+                    assertStroke("terminal underline", 175, -6f, 13f, 14f)
+                }
         }
         screen.onNodeWithContentDescription("打开工具箱").assertIsEnabled().performTouchInput { click(center) }
         screen.waitUntil(10_000) { screen.onNodeWithText("Tools").isDisplayed() }
@@ -171,4 +180,28 @@ internal fun SemanticsNodeInteraction.assertGlyphGray(label: String, expectedGra
     }
     assertTrue("$label has $solidPixels solid stroke pixels, brightest channel $brightest; expected $expectedGray",
         solidPixels >= 2 && abs(brightest - expectedGray) <= 2)
+}
+
+internal fun SemanticsNodeInteraction.assertToolInk(enabled: Boolean) {
+    val bitmap = captureToImage().asAndroidBitmap()
+    for ((y, thumb) in listOf(3.5f to 11.5f, 9f to 5.5f, 14.5f to 10.5f)) {
+        bitmap.assertStroke("tool track at $y, left", 175, -3f, 2f, y)
+        bitmap.assertStroke("tool track at $y, right", 175, -3f, 15.5f, y)
+        val thumbGray = if (enabled) 255 else 175
+        bitmap.assertStroke("tool thumb above $y", thumbGray, -3f, thumb, y - 1.6f)
+        bitmap.assertStroke("tool thumb below $y", thumbGray, -3f, thumb, y + 1.6f)
+    }
+}
+
+// Sample small regions of the glyph in its own 42dp control. The window contains the
+// opaque stroke core even when a rounded or diagonal edge lands between device pixels.
+private fun Bitmap.assertStroke(label: String, gray: Int, shift: Float, glyphX: Float, glyphY: Float) {
+    val scale = width / 42f
+    val x = width / 2f + (shift + glyphX - 9f) * scale
+    val y = height / 2f + (glyphY - 9f) * scale
+    val xs = (x - scale).roundToInt()..(x + scale).roundToInt()
+    val ys = (y - scale).roundToInt()..(y + scale).roundToInt()
+    val pixels = ys.flatMap { row -> xs.map { col -> getPixel(col, row) } }
+    val peaks = listOf(pixels.maxOf(Color::red), pixels.maxOf(Color::green), pixels.maxOf(Color::blue))
+    assertTrue("$label has RGB peaks $peaks; expected $gray", peaks.all { abs(it - gray) <= 2 })
 }

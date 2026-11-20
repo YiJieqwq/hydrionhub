@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextLayoutResult
@@ -189,7 +190,9 @@ class FloatingChatChromeTest {
             requireNotNull(middle)
             assertTrue("The moving tool stroke must fade in: $frames", middle.ink in 50 until end.ink - 2)
             assertTrue("The tool must translate within the changing capsule: $frames", middle.glyphX + density < end.glyphX)
-            assertTrue("The finished tool is #AFAFAF", abs(end.ink - 175) <= 2)
+            val tool = screen.onNodeWithContentDescription("打开工具箱").fetchSemanticsNode()
+            val peak = if (SemanticsProperties.Disabled in tool.config) 175 else 255
+            assertTrue("Final tool ink is $peak after its reveal", abs(end.ink - peak) <= 2)
         } finally {
             clock.autoAdvance = true
             screen.runOnIdle { vm.setDraft("") }

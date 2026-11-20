@@ -69,6 +69,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -119,6 +120,8 @@ private enum class ToolsPanel { Closed, WaitingForIme, Open }
 
 private const val ComposerTransitionMillis = 33
 private val ComposerSecondary = Color(0xFFAFAFAF)
+private val ComposerGlyphSize = 18.dp
+private val ComposerGlyphStroke = 2.dp
 private val ToolbarGlyphGapReduction = 3.dp
 
 internal data class ComposerMotionInput(
@@ -170,6 +173,9 @@ internal fun HubComposer(
     chatPicker: ChatModelPickerState? = null,
 ) {
     val colors = MaterialTheme.colorScheme
+    val darkComposer = colors.onSurface.luminance() > colors.surfaceContainerHigh.luminance()
+    val glyphAccent = if (darkComposer) Color.White else colors.onSurface
+    val glyphSecondary = if (darkComposer) ComposerSecondary else colors.onSurfaceVariant
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
@@ -392,13 +398,13 @@ internal fun HubComposer(
                                         if (imeActive) keyboard?.hide()
                                     }
                                 }, enabled = interactive && toolsAvailable) {
-                                    ToolGlyph()
+                                    ToolGlyph(trackColor = glyphSecondary, thumbColor = if (toolsAvailable) glyphAccent else glyphSecondary)
                                 }
                                 Box(Modifier.width(42.dp).height(48.dp).clearAndSetSemantics {
                                     contentDescription = "工作区终端"
                                     role = Role.Button
                                     disabled()
-                                }, contentAlignment = Alignment.Center) { TerminalGlyph() }
+                                }, contentAlignment = Alignment.Center) { TerminalGlyph(promptColor = glyphAccent, underlineColor = glyphSecondary) }
                             }
                             Box(Modifier.weight(1f).then(reveal), contentAlignment = Alignment.CenterEnd) {
                                 val trigger = if (chatPicker == null) Modifier else {
@@ -484,8 +490,8 @@ private fun ComposerIconButton(label: String, onClick: () -> Unit, enabled: Bool
 
 @Composable
 private fun PlusGlyph() {
-    Canvas(Modifier.size(18.dp)) {
-        val stroke = 2.dp.toPx()
+    Canvas(Modifier.size(ComposerGlyphSize)) {
+        val stroke = ComposerGlyphStroke.toPx()
         val r = size.minDimension / 2 - stroke / 2
         drawLine(Color.White, Offset(center.x - r, center.y), Offset(center.x + r, center.y), stroke, StrokeCap.Round)
         drawLine(Color.White, Offset(center.x, center.y - r), Offset(center.x, center.y + r), stroke, StrokeCap.Round)
@@ -493,32 +499,31 @@ private fun PlusGlyph() {
 }
 
 @Composable
-private fun ToolGlyph() {
+private fun ToolGlyph(trackColor: Color, thumbColor: Color) {
     // Bring the glyphs closer to the attachment icon inside their existing hit areas.
-    Canvas(Modifier.offset(x = -ToolbarGlyphGapReduction).size(17.dp)) {
-        val stroke = 1.6.dp.toPx()
+    Canvas(Modifier.offset(x = -ToolbarGlyphGapReduction).size(ComposerGlyphSize)) {
+        val stroke = ComposerGlyphStroke.toPx()
         val margin = stroke / 2
         fun slider(row: Float, thumb: Float) {
             val y = row.dp.toPx()
             val x = thumb.dp.toPx()
-            drawLine(ComposerSecondary, Offset(margin, y), Offset(size.width - margin, y), stroke, StrokeCap.Round)
-            drawLine(ComposerSecondary, Offset(x, y - 1.8.dp.toPx()), Offset(x, y + 1.8.dp.toPx()), stroke, StrokeCap.Round)
+            drawLine(trackColor, Offset(margin, y), Offset(size.width - margin, y), stroke, StrokeCap.Round)
+            drawLine(thumbColor, Offset(x, y - 1.8.dp.toPx()), Offset(x, y + 1.8.dp.toPx()), stroke, StrokeCap.Round)
         }
-        slider(3f, 11f)
-        slider(8.5f, 5f)
-        slider(14f, 10f)
+        slider(3.5f, 11.5f)
+        slider(9f, 5.5f)
+        slider(14.5f, 10.5f)
     }
 }
 
 @Composable
-private fun TerminalGlyph() {
-    Canvas(Modifier.offset(x = -ToolbarGlyphGapReduction * 2).size(17.dp)) {
+private fun TerminalGlyph(promptColor: Color, underlineColor: Color) {
+    Canvas(Modifier.offset(x = -ToolbarGlyphGapReduction * 2).size(ComposerGlyphSize)) {
         fun point(x: Float, y: Float) = Offset(x.dp.toPx(), y.dp.toPx())
-        val stroke = 1.8.dp.toPx()
-        val ink = ComposerSecondary
-        drawLine(ink, point(1f, 3.5f), point(6f, 8.5f), stroke, StrokeCap.Round)
-        drawLine(ink, point(6f, 8.5f), point(1f, 13.5f), stroke, StrokeCap.Round)
-        drawLine(ink, point(8f, 13.5f), point(16f, 13.5f), stroke, StrokeCap.Round)
+        val stroke = ComposerGlyphStroke.toPx()
+        drawLine(promptColor, point(1f, 4f), point(6f, 9f), stroke, StrokeCap.Round)
+        drawLine(promptColor, point(6f, 9f), point(1f, 14f), stroke, StrokeCap.Round)
+        drawLine(underlineColor, point(9f, 14f), point(17f, 14f), stroke, StrokeCap.Round)
     }
 }
 
