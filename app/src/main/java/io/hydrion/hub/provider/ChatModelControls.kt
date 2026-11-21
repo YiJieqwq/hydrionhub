@@ -77,6 +77,8 @@ internal fun ChatModelControls(
     model: ProviderModel,
     values: Map<String, String>,
     speeds: ChatSpeedControls,
+    preview: String?,
+    onPreview: (String?) -> Unit,
     onModels: () -> Unit,
     onChoose: (Capability, String) -> Unit,
     onOptions: (Capability) -> Unit,
@@ -91,8 +93,7 @@ internal fun ChatModelControls(
     val levels = remember(effort, model.profile.levels) {
         effort?.let { orderedEffortLevels(it.choices, model.profile.levels) }.orEmpty()
     }
-    var preview by remember(model, levels, level) { mutableStateOf<String?>(null) }
-    val shown = preview ?: level
+    val shown = preview?.takeIf { adjustable && it in levels } ?: level
     val dark = colors.surface.luminance() < .5f
     val palette = remember(levels, shown, dark) { effortPalette(levels, shown, dark) }
     val accelerated = speeds.selected != null && speeds.selected == speeds.fast
@@ -148,7 +149,7 @@ internal fun ChatModelControls(
         }
         if (effort != null && level != null) {
             EffortTrack(effort, levels, level, peakEffortIndex(levels), accelerated,
-                onPreview = { preview = it }, onChoose = { onChoose(effort, it) })
+                onPreview = onPreview, onChoose = { onChoose(effort, it) })
         } else FixedEffortTrack()
         Spacer(Modifier.height(2.dp))
         for (cap in caps) {

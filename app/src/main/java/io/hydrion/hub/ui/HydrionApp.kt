@@ -41,6 +41,7 @@ import io.hydrion.hub.provider.ChatModelPickerBack
 import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.provider.ChatPickerEasing
 import io.hydrion.hub.provider.ConfigureSheet
+import io.hydrion.hub.provider.route
 import io.hydrion.hub.provider.chatTriggerLabel
 import io.hydrion.hub.provider.chatSpeedControls
 import io.hydrion.hub.provider.chatProtocol
@@ -225,7 +226,7 @@ private fun Workspace(vm: HubViewModel) {
                                 errors[current.id]?.let { detail -> ComposerError(detail) { vm.clearError(current.id) } }
                                 // Keep the editor at the same composition position in both modes.
                                 val chipLabel = catalog.chatTriggerLabel(
-                                    selectedEntry.takeIf { current.mode == Mode.Chat }, selection.label,
+                                    selectedEntry.takeIf { current.mode == Mode.Chat }, selection.label, chatPicker.previewFor(selectedEntry?.route),
                                 )
                                 HubComposer(vm, state, chipLabel, selection.available,
                                     fast = remember(selectedEntry, selection.parameters) {

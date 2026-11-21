@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import io.hydrion.hub.R
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.model.RemoteModel
 import kotlin.math.roundToInt
 
 internal class ChatModelPickerState {
@@ -45,6 +46,18 @@ internal class ChatModelPickerState {
 
     var page by mutableStateOf<Page?>(null)
         private set
+    private var effortPreview by mutableStateOf<Pair<RemoteModel, String>?>(null)
+
+    fun previewFor(route: RemoteModel?): String? = effortPreview?.takeIf { it.first == route }?.second
+
+    fun previewEffort(route: RemoteModel, choice: String?) {
+        if (choice == null) {
+            if (effortPreview?.first == route) effortPreview = null
+        } else if (page == Page.Controls) {
+            effortPreview = route to choice
+        }
+    }
+
     val modelListNavigation: Boolean
         get() = page == Page.Models || page == Page.Search
     var optionKey by mutableStateOf("")
@@ -66,6 +79,7 @@ internal class ChatModelPickerState {
         private set
 
     fun restoreBrowsing(snapshot: PickerBrowseSnapshot) {
+        effortPreview = null
         page = snapshot.page
         searchQuery = snapshot.query.copy(composition = null)
         pendingSearchScroll = null
@@ -79,6 +93,7 @@ internal class ChatModelPickerState {
     }
 
     private fun show(next: Page?) {
+        effortPreview = null
         pendingBrowseRestore = null
         if (next == null || next == Page.Controls || next == Page.Options) {
             searchQuery = TextFieldValue()
@@ -183,10 +198,11 @@ internal fun ChatModelPicker(
                             }
                         }
                     }
-                    else -> key(entry.route) {
+                    else -> key(picker, entry.route) {
                         Column(Modifier.verticalScroll(rememberScrollState()).testTag("chat-model-card")) {
                             val speeds = remember(model, provider, values) { model.chatSpeedControls(provider, values) }
-                            ChatModelControls(model, values, speeds = speeds, onModels = picker::models,
+                            ChatModelControls(model, values, speeds = speeds, preview = picker.previewFor(entry.route),
+                                onPreview = { picker.previewEffort(entry.route, it) }, onModels = picker::models,
                                 onChoose = { capability, choice ->
                                     // Back or a profile change can arrive while the rail still owns a pointer.
                                     if (picker.page == ChatModelPickerState.Page.Controls &&

@@ -35,17 +35,18 @@ internal data class ChatTriggerLabel(
 
 internal data class SelectedChatEffort(val capability: Capability, val value: String, val peak: Boolean)
 
-internal fun ModelCatalog.selectedChatEffort(entry: Pair<ProviderModel, Provider>?): SelectedChatEffort? {
+internal fun ModelCatalog.selectedChatEffort(entry: Pair<ProviderModel, Provider>?, preview: String? = null): SelectedChatEffort? {
     val (model, provider) = entry ?: return null
     val cap = model.configureCapabilities().firstOrNull { it.key == "effort" } ?: return null
-    val value = parameters(model, provider)[cap.key] ?: return null
+    val value = preview?.takeIf { model.hasAdjustableEffort(cap) && it in cap.choices }
+        ?: parameters(model, provider)[cap.key] ?: return null
     val levels = orderedEffortLevels(cap.choices, model.profile.levels)
     return SelectedChatEffort(cap, value, levels.getOrNull(peakEffortIndex(levels)) == value)
 }
 
 @Composable
-internal fun ModelCatalog.chatTriggerLabel(entry: Pair<ProviderModel, Provider>?, name: String): ChatTriggerLabel {
-    val chosen = remember(this, entry) { selectedChatEffort(entry) }
+internal fun ModelCatalog.chatTriggerLabel(entry: Pair<ProviderModel, Provider>?, name: String, preview: String?): ChatTriggerLabel {
+    val chosen = remember(this, entry, preview) { selectedChatEffort(entry, preview) }
     if (chosen == null || entry == null) return ChatTriggerLabel(name)
     val currentLabel = chatOptionLabel(chosen.capability, chosen.value)
     val labels = if (entry.first.hasAdjustableEffort(chosen.capability)) {

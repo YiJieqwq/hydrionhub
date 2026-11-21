@@ -32,6 +32,47 @@ class ChatTriggerLabelTest {
         assertTrue(high.selectedChatEffort(high.selectedEntry(Mode.Chat))!!.peak)
     }
 
+    @Test fun heldPreviewFollowsTheRouteAndClearsOnCancelOrLeavingControls() {
+        val catalog = catalog(model(listOf("Low", "Medium", "High")))
+        val entry = requireNotNull(catalog.selectedEntry(Mode.Chat))
+        val picker = ChatModelPickerState()
+        fun shown() = requireNotNull(catalog.selectedChatEffort(entry, picker.previewFor(entry.route)))
+
+        picker.open()
+        for (choice in listOf("High", "Medium", "High")) {
+            picker.previewEffort(entry.route, choice)
+            assertEquals(choice, shown().value)
+            assertEquals(choice == "High", shown().peak)
+            assertEquals("Low", catalog.selection(Mode.Chat).parameters["effort"])
+        }
+        val other = RemoteModel("other-provider", entry.first.id)
+        assertNull(picker.previewFor(other))
+        assertNull(ChatModelPickerState().previewFor(entry.route))
+        picker.previewEffort(entry.route, null)
+        assertEquals("Low", shown().value)
+
+        picker.previewEffort(other, "Medium")
+        picker.previewEffort(entry.route, null) // a late cancellation from the old rail
+        assertEquals("Medium", picker.previewFor(other))
+        picker.models()
+        assertNull(picker.previewFor(other))
+        picker.open()
+        picker.previewEffort(entry.route, "High")
+        picker.dismiss()
+        picker.previewEffort(entry.route, "High")
+        picker.open()
+        assertEquals("Low", shown().value)
+        assertFalse(shown().peak)
+    }
+
+    @Test fun staleOrUnavailablePreviewsCannotOverrideTheModelCapabilities() {
+        for (choices in listOf(emptyList(), listOf("Low"), listOf("Low", "Medium"))) {
+            val catalog = catalog(model(choices))
+            val entry = catalog.selectedEntry(Mode.Chat)
+            assertEquals(catalog.selectedChatEffort(entry), catalog.selectedChatEffort(entry, "High"))
+        }
+    }
+
     @Test fun effortSpaceUsesTheWidestRenderedChoiceForThisModel() {
         val advances = mapOf("iiiiii" to 15, "高" to 20, "Wide" to 32)
         for (selected in advances.keys) {

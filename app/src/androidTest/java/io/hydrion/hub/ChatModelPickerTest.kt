@@ -17,6 +17,8 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isEnabled
@@ -48,7 +50,6 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.hasTestTag
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -93,8 +94,26 @@ class ChatModelPickerTest {
             val density = screen.activity.resources.displayMetrics.density
             assertTrue("The rail needs a 48dp touch height", track.fetchSemanticsNode().boundsInRoot.height >= 48f * density - 1f)
             val title = screen.onNodeWithTag("chat-model-effort-title", useUnmergedTree = true)
+            val trigger = control("trigger")
+            val triggerBounds = trigger.fetchSemanticsNode().boundsInRoot
+            val mic = screen.onNodeWithTag("chat-composer-dictate", useUnmergedTree = true)
+            val micBounds = mic.fetchSemanticsNode().boundsInRoot
             fun assertEffort(titleRes: Int, committed: String) {
-                title.assertTextEquals(screen.activity.getString(titleRes))
+                val label = screen.activity.getString(titleRes)
+                title.assertTextEquals(label)
+                assertEquals(label, track.fetchSemanticsNode().config[SemanticsProperties.StateDescription])
+                assertEquals("Hydrion $label", trigger.fetchSemanticsNode().config[SemanticsProperties.StateDescription])
+                val suffix = screen.onNode(hasText(label) and hasAnyAncestor(hasTestTag("chat-model-source-label")),
+                    useUnmergedTree = true).assertIsDisplayed()
+                val ink = suffix.captureToImage().asAndroidBitmap()
+                val peakInk = (0 until ink.height).any { y -> (0 until ink.width).any { x ->
+                    val pixel = ink.getPixel(x, y)
+                    Color.blue(pixel) > 170 && Color.blue(pixel) - Color.red(pixel) > 50 &&
+                        Color.red(pixel) - Color.green(pixel) > 30
+                } }
+                assertEquals(titleRes == R.string.chat_controls_high, peakInk)
+                assertEquals(triggerBounds, trigger.fetchSemanticsNode().boundsInRoot)
+                assertEquals(micBounds, mic.fetchSemanticsNode().boundsInRoot)
                 screen.runOnIdle { assertEquals(committed, store.selection(Mode.Chat).parameters["effort"]) }
             }
 

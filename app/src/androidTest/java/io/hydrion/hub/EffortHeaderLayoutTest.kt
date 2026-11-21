@@ -57,7 +57,7 @@ class EffortHeaderLayoutTest {
                 CompositionLocalProvider(LocalLayoutDirection provides direction.value) {
                     MaterialTheme(colorScheme = darkColorScheme()) {
                         Box(Modifier.width(width.value).background(Color.Black).testTag("test-header")) {
-                            ChatModelControls(model.copy(name = modelName.value), emptyMap(), speed.value, { selected++ },
+                            ChatModelControls(model.copy(name = modelName.value), emptyMap(), speed.value, null, {}, { selected++ },
                                 { _, _ -> fastTapped++ }, {}, {})
                         }
                     }
