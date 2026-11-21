@@ -10,7 +10,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private const val DEEPSEEK_CATALOG_FORMAT = 4
-private const val CATALOG_FORMAT = 5
+private const val CATALOG_FORMAT = 6
 
 class ProviderStore(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("model_catalog_v1", Context.MODE_PRIVATE)
@@ -18,14 +18,21 @@ class ProviderStore(context: Context) {
     private var stored = loadCatalog()
     private var conversationRoutes: Map<Mode, RemoteModel>? = null
     internal var onModelPicked: ((Mode, RemoteModel) -> Unit)? = null
-    private val state = MutableStateFlow(stored)
+    private val state = MutableStateFlow(stored.forConversation(null))
 
     internal fun newThreadRoutes(): Map<Mode, RemoteModel> = stored.initialRoutes()
     internal fun legacyRoutes(): Map<Mode, RemoteModel> = stored.initialRoutes() + stored.active
 
     internal fun showRoutes(routes: Map<Mode, RemoteModel>?) {
         conversationRoutes = routes
-        state.value = routes?.let { stored.copy(active = it) } ?: stored
+        state.value = stored.forConversation(routes)
+    }
+
+    internal fun setPerChatModel(enabled: Boolean) = update(stored.copy(perChatModel = enabled))
+
+    internal fun moveChatProvider(id: String, direction: Int) {
+        val next = stored.movedChatProvider(id, direction)
+        if (next !== stored) update(next)
     }
 
     fun setDefault(mode: Mode, route: RemoteModel): Boolean {
@@ -79,9 +86,11 @@ class ProviderStore(context: Context) {
     fun configure(mode: Mode, route: RemoteModel, parameters: Map<String, String>) {
         val old = stored
         val entry = old.entries(mode).singleOrNull { it.route == route } ?: return
-        update(old.copy(active = old.active + (mode to route),
+        val shared = mode == Mode.Chat && !old.perChatModel
+        update(old.copy(active = if (shared) old.active else old.active + (mode to route),
+            defaults = if (shared) old.defaults + (mode to route) else old.defaults,
             overrides = old.overrides + (route to old.parameters(entry.first, parameters))))
-        onModelPicked?.invoke(mode, route)
+        if (!shared) onModelPicked?.invoke(mode, route)
     }
 
     fun save(provider: Provider, sessionKey: String, defaultModelId: String?) {
@@ -124,6 +133,7 @@ private fun JSONObject.toRoute() = RemoteModel(getString("providerId"), getStrin
 
 internal fun encodeCatalog(catalog: ModelCatalog): JSONObject = JSONObject().apply {
     put("formatVersion", CATALOG_FORMAT)
+    put("perChatModel", catalog.perChatModel)
     put("providers", JSONArray(catalog.providers.map { provider ->
         JSONObject().apply {
             put("id", provider.id)
@@ -193,6 +203,6 @@ private fun decodeCatalog(json: JSONObject): ModelCatalog {
         }.toMap()
         else -> emptyMap()
     }
-    val catalog = ModelCatalog(providers, routes("defaults"), routes("active"), overrides).normalized()
+    val catalog = ModelCatalog(providers, routes("defaults"), routes("active"), overrides, json.optBoolean("perChatModel", true)).normalized()
     return if (json.optInt("formatVersion") < DEEPSEEK_CATALOG_FORMAT) catalog.withDeepSeekPreset() else catalog
 }

@@ -87,7 +87,8 @@ internal fun providerLabel(provider: Provider): String = when {
 
 @Composable
 internal fun ModelProviderPage(mode: Mode, catalog: ModelCatalog, onBack: () -> Unit,
-    onAdd: () -> Unit, onOpen: (Provider) -> Unit) {
+    onAdd: () -> Unit, onMove: (String, Int) -> Unit, onOpen: (Provider) -> Unit) {
+    var ordering by rememberSaveable(mode) { mutableStateOf(false) }
     var query by rememberSaveable(mode) { mutableStateOf("") }
     val all = catalog.providers.filter { it.mode == mode }
     val allLabels = all.map { providerLabel(it) }
@@ -96,7 +97,11 @@ internal fun ModelProviderPage(mode: Mode, catalog: ModelCatalog, onBack: () -> 
             provider.models.any { it.name.contains(query.trim(), true) || it.id.contains(query.trim(), true) }
     }
     ModelSettingsFrame(stringResource(if (mode == Mode.Chat) R.string.model_settings_chat_providers else R.string.model_settings_image_providers),
-        onBack, action = { IconButton(onAdd) { Icon(Icons.Outlined.Add, stringResource(R.string.model_settings_add_provider), Modifier.size(22.dp)) } }) {
+        onBack, action = {
+            if (mode == Mode.Chat && all.size > 1 && query.isBlank()) IconButton({ ordering = !ordering }) {
+                Icon(if (ordering) Icons.Outlined.Check else Icons.Outlined.Sort, stringResource(R.string.chat_provider_order))
+            }
+            IconButton(onAdd) { Icon(Icons.Outlined.Add, stringResource(R.string.model_settings_add_provider), Modifier.size(22.dp)) } }) {
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
             singleLine = true, shape = RoundedCornerShape(12.dp), leadingIcon = { Icon(Icons.Outlined.Search, null) },
             placeholder = { Text(stringResource(R.string.model_settings_filter)) })
@@ -118,6 +123,14 @@ internal fun ModelProviderPage(mode: Mode, catalog: ModelCatalog, onBack: () -> 
                                     dark -> Color(0xffffb74d)
                                     else -> Color(0xff875000)
                                 })
+                        }
+                        if (ordering && query.isBlank()) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            IconButton({ onMove(provider.id, -1) }, enabled = index > 0) {
+                                Icon(Icons.Outlined.KeyboardArrowUp, stringResource(R.string.chat_provider_up))
+                            }
+                            IconButton({ onMove(provider.id, 1) }, enabled = index < rows.lastIndex) {
+                                Icon(Icons.Outlined.KeyboardArrowDown, stringResource(R.string.chat_provider_down))
+                            }
                         }
                         if (index < rows.lastIndex) HorizontalDivider(thickness = .6.dp, color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .4f))
                     }
@@ -168,6 +181,18 @@ internal fun DefaultModelsPage(store: ProviderStore, catalog: ModelCatalog, onBa
                             Text(entry?.let { it.first.name + " · " + providerLabel(it.second) } ?: stringResource(fallback),
                                 Modifier.weight(1f), fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             if (rows.isNotEmpty()) Icon(painterResource(R.drawable.lucide_chevron_right), null, Modifier.size(16.dp))
+                        }
+                    }
+                }
+                if (mode == Mode.Chat) {
+                    Spacer(Modifier.height(12.dp))
+                    ModelSettingsCard(16.dp) {
+                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text(stringResource(R.string.chat_model_per_conversation))
+                                Text(stringResource(R.string.chat_model_per_conversation_hint), style = MaterialTheme.typography.bodySmall)
+                            }
+                            Switch(catalog.perChatModel, store::setPerChatModel)
                         }
                     }
                 }

@@ -53,7 +53,7 @@ fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
             currentMode != null -> ModelProviderPage(currentMode, catalog, goBack, onAdd = {
                 navigation.open(Provider(UUID.randomUUID().toString(), currentMode, "",
                     if (currentMode == Mode.Chat) "OpenAI Compatible" else "OpenAI Images", "", emptyList()), store)
-            }, onOpen = { navigation.open(it, store) })
+            }, onMove = store::moveChatProvider, onOpen = { navigation.open(it, store) })
             detail == SettingsEntry.Defaults -> DefaultModelsPage(store, catalog, goBack)
             detail == SettingsEntry.Search -> SearchProvidersPage(viewModel<io.hydrion.hub.model.HubViewModel>().webSearch, goBack)
             detail == SettingsEntry.Assistants -> io.hydrion.hub.ui.settings.AssistantSettings(viewModel(), goBack)

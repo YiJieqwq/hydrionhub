@@ -1,0 +1,7 @@
+<resources>
+    <string name="chat_model_per_conversation">Remember a model per conversation</string>
+    <string name="chat_model_per_conversation_hint">Turn off to use the global chat default. Choosing a model then updates the global default. Turning this on restores saved conversation choices.</string>
+    <string name="chat_provider_order">Reorder chat providers</string>
+    <string name="chat_provider_up">Move provider up</string>
+    <string name="chat_provider_down">Move provider down</string>
+</resources>

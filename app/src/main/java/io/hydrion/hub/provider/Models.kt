@@ -40,8 +40,25 @@ data class ModelCatalog(
     val providers: List<Provider>,
     val defaults: Map<Mode, RemoteModel> = emptyMap(),
     val active: Map<Mode, RemoteModel> = emptyMap(),
-    val overrides: Map<RemoteModel, Map<String, String>> = emptyMap()
+    val overrides: Map<RemoteModel, Map<String, String>> = emptyMap(),
+    val perChatModel: Boolean = true,
 ) {
+    /** Disabling per-chat selection hides the saved pin without modifying the conversation. */
+    internal fun forConversation(routes: Map<Mode, RemoteModel>?): ModelCatalog {
+        val selected = routes ?: active
+        return copy(active = if (perChatModel) selected else selected - Mode.Chat)
+    }
+
+    internal fun movedChatProvider(id: String, direction: Int): ModelCatalog {
+        if (direction != 1 && direction != -1) return this
+        val slots = providers.indices.filter { providers[it].mode == Mode.Chat }
+        val index = slots.indexOfFirst { providers[it].id == id }
+        if (index < 0 || index + direction !in slots.indices) return this
+        val moved = providers.toMutableList()
+        java.util.Collections.swap(moved, slots[index], slots[index + direction])
+        return copy(providers = moved)
+    }
+
     fun entries(mode: Mode): List<Pair<ProviderModel, Provider>> =
         providers.filter { it.enabled && it.mode == mode }.flatMap { provider ->
             provider.models.filter { it.enabled && it.selectableMode(provider) == mode }.map { it to provider }
