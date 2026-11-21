@@ -17,4 +17,6 @@
     <string name="dictation_bar_listening">正在听写</string>
     <string name="dictation_bar_finishing">识别中…</string>
     <string name="dictation_bar_ready">已识别语音，请选择操作。</string>
+    <string name="dictation_rms_arm">诊断下一次听写波形</string>
+    <string name="dictation_rms_disarm">取消下一次听写诊断</string>
 </resources>

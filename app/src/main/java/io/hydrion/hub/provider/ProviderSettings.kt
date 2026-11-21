@@ -17,6 +17,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import io.hydrion.hub.ui.settings.MessageStyleSettings
 import io.hydrion.hub.ui.settings.SettingsEntry
 import io.hydrion.hub.ui.settings.SettingsHome
+import io.hydrion.hub.ui.composer.DictationRmsDiagnostic
+import androidx.compose.ui.res.stringResource
+import io.hydrion.hub.R
 import io.hydrion.hub.ui.theme.capsuleEdge
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,8 +96,18 @@ fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
         val about = detail == SettingsEntry.About
         AlertDialog(onDismissRequest = { detail = null },
             title = { Text(if (about) "关于 HydrionHub" else "数据管理") },
-            text = { Text(if (about) "HydrionHub · 氢离子\n原生 Kotlin 与 Jetpack Compose 多模型客户端。"
-                else "会话历史、供应商配置和消息样式保存在本机。可在侧栏管理会话，在供应商页面管理模型。") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (about) "HydrionHub · 氢离子\n原生 Kotlin 与 Jetpack Compose 多模型客户端。"
+                        else "会话历史、供应商配置和消息样式保存在本机。可在侧栏管理会话，在供应商页面管理模型。")
+                    if (about) {
+                        OutlinedButton(onClick = { DictationRmsDiagnostic.armed = !DictationRmsDiagnostic.armed }) {
+                            Text(stringResource(if (DictationRmsDiagnostic.armed) R.string.dictation_rms_disarm
+                                else R.string.dictation_rms_arm))
+                        }
+                    }
+                }
+            },
             confirmButton = { TextButton(onClick = { detail = null }) { Text("完成") } })
     }
 }

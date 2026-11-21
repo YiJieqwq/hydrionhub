@@ -17,4 +17,6 @@
     <string name="dictation_bar_listening">Dictation in progress</string>
     <string name="dictation_bar_finishing">Recognizing…</string>
     <string name="dictation_bar_ready">Speech recognized. Choose an action.</string>
+    <string name="dictation_rms_arm">Log waveform summary for next dictation</string>
+    <string name="dictation_rms_disarm">Cancel next dictation diagnostic</string>
 </resources>

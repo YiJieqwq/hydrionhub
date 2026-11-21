@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.speech.SpeechRecognizer
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -60,6 +61,7 @@ private class ChatDictation(
         private set
     private var session by mutableStateOf<DictationSession?>(null)
     private var speech: DictationSpeech? = null
+    private var rmsSummary: RmsSummary? = null
     private var ended = false
     private var disposed = false
     private val handler = Handler(Looper.getMainLooper())
@@ -147,8 +149,10 @@ private class ChatDictation(
         }
         val target = DictationSession(conversationId, current)
         session = target
+        val summary = DictationRmsDiagnostic.take()
+        rmsSummary = summary
         try {
-            speech = serviceFactory.create(context, pending.service, callbacks(target))
+            speech = serviceFactory.create(context, pending.service, callbacks(target, summary))
             // Services can fail to bind without firing any callback.
             armTimeout(target, 10_000)
             speech?.start()
@@ -159,7 +163,7 @@ private class ChatDictation(
         }
     }
 
-    private fun callbacks(target: DictationSession) = object : DictationSpeechListener {
+    private fun callbacks(target: DictationSession, summary: RmsSummary?) = object : DictationSpeechListener {
         private var listening = false
         private fun live() = session === target && !target.hasFinal
 
@@ -171,9 +175,14 @@ private class ChatDictation(
         }
 
         override fun rms(db: Float) {
-            if (!live() || waiting || ended) return
+            if (!live() || waiting || ended) {
+                summary?.record(db, null)
+                return
+            }
             if (!listening) ready()
-            level = if (db.isFinite()) (db / 10f).coerceIn(0f, 1f) else 0f
+            val normalized = if (db.isFinite()) (db / 10f).coerceIn(0f, 1f) else 0f
+            level = normalized
+            summary?.record(db, normalized)
         }
 
         override fun end() {
@@ -276,10 +285,14 @@ private class ChatDictation(
     }
 
     private fun releaseSpeech(cancel: Boolean) {
-        val engine = speech ?: return
+        val engine = speech
         speech = null
-        if (cancel) try { engine.cancel() } catch (_: RuntimeException) { /* Service may have died. */ }
-        try { engine.destroy() } catch (_: RuntimeException) { /* Already disconnected. */ }
+        if (engine != null) {
+            if (cancel) try { engine.cancel() } catch (_: RuntimeException) { /* Service may have died. */ }
+            try { engine.destroy() } catch (_: RuntimeException) { /* Already disconnected. */ }
+        }
+        rmsSummary?.finish()?.let { Log.i("HydrionRms", it) }
+        rmsSummary = null
     }
 
     private fun armTimeout(target: DictationSession, millis: Long) {
