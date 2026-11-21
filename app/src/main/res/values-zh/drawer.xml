@@ -1,7 +1,7 @@
 <resources>
-    <string name="drawer_search">搜索会话</string>
+    <string name="drawer_search">搜索会话标题</string>
     <string name="drawer_clear_search">清除搜索</string>
-    <string name="drawer_history">按日期浏览历史</string>
+    <string name="drawer_history">历史记录</string>
     <string name="drawer_new">新建会话</string>
     <string name="drawer_settings">设置</string>
     <string name="drawer_you">你</string>
@@ -21,4 +21,10 @@
     <string name="drawer_collapsed">已折叠</string>
     <string name="drawer_dismiss">关闭侧栏</string>
     <string name="drawer_chat">聊天</string>
+    <string name="drawer_global_search">全局搜索</string>
+    <string name="drawer_switch_global">切换到全局搜索</string>
+    <string name="drawer_switch_topics">切换到话题标题搜索</string>
+    <string name="drawer_global_submit_hint">输入关键词，按搜索查看标题和正文匹配的会话。</string>
+    <string name="drawer_assistants">助手</string>
+    <string name="drawer_no_assistants">暂无其他可切换的助手。</string>
 </resources>

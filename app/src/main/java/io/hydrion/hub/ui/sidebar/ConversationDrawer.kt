@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -25,6 +27,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -35,6 +38,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -57,13 +61,17 @@ internal data class HistorySection(val date: LocalDate?, val rows: List<Conversa
     val key = date?.toString() ?: "pinned"
 }
 
-internal fun historySections(history: List<Conversation>, query: String): List<HistorySection> {
+internal fun historySections(history: List<Conversation>, query: String, global: Boolean = false): List<HistorySection> {
     val term = query.trim()
+    val tokens = if (global) term.split(Regex("\\s+")) else emptyList()
     val zone = ZoneId.systemDefault()
     val (pinned, dated) = history.filter { item ->
-        term.isEmpty() || item.title.contains(term, ignoreCase = true) || item.messages.any {
-            it.text.contains(term, ignoreCase = true) || it.prompt.contains(term, ignoreCase = true)
-        }
+        term.isEmpty() || item.title.contains(term, ignoreCase = true) || (global && tokens.all { word ->
+            item.title.contains(word, ignoreCase = true) || item.messages.any { message ->
+                message.text.contains(word, ignoreCase = true) ||
+                    (message.imageKeys.isNotEmpty() && message.prompt.contains(word, ignoreCase = true))
+            }
+        })
     }.sortedByDescending { it.updatedAt }.partition { it.pinned }
     return buildList {
         if (pinned.isNotEmpty()) add(HistorySection(null, pinned))
@@ -73,7 +81,7 @@ internal fun historySections(history: List<Conversation>, query: String): List<H
 }
 
 @Composable
-private fun sectionLabel(date: LocalDate?): String {
+internal fun sectionLabel(date: LocalDate?): String {
     val today = LocalDate.now()
     return when (date) {
         null -> stringResource(R.string.drawer_pinned)
@@ -93,21 +101,29 @@ internal fun ConversationDrawer(
     onRename: (String) -> Unit, onPin: (String) -> Unit, onDelete: (String) -> Unit
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    val sections = remember(history, query) { historySections(history, query) }
-    var collapsed by rememberSaveable(query) { mutableStateOf(arrayListOf<String>()) }
-    val scroll = rememberLazyListState()
-    var historyMenu by remember { mutableStateOf(false) }
-    var jumpTo by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(jumpTo) {
-        val key = jumpTo ?: return@LaunchedEffect
-        val index = sections.indexOfFirst { it.key == key }
-        if (index >= 0) {
-            val header = sections.take(index).sumOf { 1 + if (it.key in collapsed) 0 else it.rows.size }
-            scroll.scrollToItem(header)
-        }
-        jumpTo = null
+    var global by rememberSaveable { mutableStateOf(false) }
+    var submitted by rememberSaveable { mutableStateOf<String?>(null) }
+    var showHistory by rememberSaveable { mutableStateOf(false) }
+    var showAssistants by rememberSaveable { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
+    val filter = if (global) submitted else query
+    val sections = remember(history, filter, global) {
+        if (filter == null) emptyList() else historySections(history, filter, global)
     }
-
+    var collapsed by rememberSaveable(filter, global) { mutableStateOf(arrayListOf<String>()) }
+    val scroll = rememberLazyListState()
+    LaunchedEffect(filter, global) { scroll.scrollToItem(0) }
+    val assistantState = stringResource(if (showAssistants) R.string.drawer_expanded else R.string.drawer_collapsed)
+    val toggleScope = {
+        global = !global
+        query = ""
+        submitted = null
+    }
+    if (showHistory) {
+        DrawerHistoryPage(history, currentId, onBack = { showHistory = false },
+            onOpen = { showHistory = false; onOpen(it) }, onRename = { showHistory = false; onRename(it) },
+            onPin = onPin, onDelete = { showHistory = false; onDelete(it) })
+    }
     val colors = MaterialTheme.colorScheme
     ModalDrawerSheet(
         modifier = Modifier.width(width).testTag("drawer-sheet"), drawerShape = RectangleShape,
@@ -116,27 +132,27 @@ internal fun ConversationDrawer(
         Column(Modifier.fillMaxSize().imePadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                DrawerSearch(query, { query = it }, Modifier.weight(1f))
-                Box {
-                    IconButton({ historyMenu = true }, enabled = sections.isNotEmpty()) {
-                        Icon(Icons.Outlined.History, stringResource(R.string.drawer_history), Modifier.size(21.dp))
-                    }
-                    DropdownMenu(historyMenu, { historyMenu = false }) {
-                        sections.forEach { group ->
-                            DropdownMenuItem(text = { Text(sectionLabel(group.date)) }, onClick = {
-                                historyMenu = false
-                                collapsed = ArrayList(collapsed - group.key)
-                                jumpTo = group.key
-                            })
-                        }
-                    }
+                DrawerSearch(query, onQuery = { query = it; submitted = null }, modifier = Modifier.weight(1f),
+                    global = global, onToggleScope = toggleScope, onSubmit = {
+                        submitted = query.trim().takeIf { it.isNotEmpty() }
+                        focus.clearFocus()
+                    })
+                IconButton({ focus.clearFocus(); showHistory = true }) {
+                    Icon(Icons.Outlined.History, stringResource(R.string.drawer_history), Modifier.size(21.dp))
                 }
             }
             Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                IonMark(32.dp)
-                Text("HydrionHub", Modifier.weight(1f).padding(start = 16.dp), fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                    .clickable(role = Role.Button) { showAssistants = !showAssistants }
+                    .semantics { stateDescription = assistantState }.heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    IonMark(32.dp)
+                    Text("HydrionHub", Modifier.padding(start = 16.dp).weight(1f, fill = false),
+                        fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Icon(if (showAssistants) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                        stringResource(R.string.drawer_assistants), Modifier.size(18.dp))
+                }
                 IconButton(onNew, Modifier.testTag("drawer-new")) {
                     Icon(Icons.Outlined.Edit, stringResource(R.string.drawer_new), Modifier.size(20.dp))
                 }
@@ -144,8 +160,17 @@ internal fun ConversationDrawer(
 
             LazyColumn(Modifier.fillMaxWidth().weight(1f), state = scroll,
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 12.dp)) {
+                if (showAssistants) item(key = "assistants-empty") {
+                    Text(stringResource(R.string.drawer_no_assistants), Modifier.padding(14.dp),
+                        fontSize = 14.sp, color = colors.onSurfaceVariant)
+                }
                 if (sections.isEmpty()) item {
-                    Text(stringResource(if (query.isBlank()) R.string.drawer_empty else R.string.drawer_no_matches),
+                    val empty = when {
+                        filter == null -> R.string.drawer_global_submit_hint
+                        filter.isBlank() -> R.string.drawer_empty
+                        else -> R.string.drawer_no_matches
+                    }
+                    Text(stringResource(empty),
                         Modifier.padding(14.dp), fontSize = 14.sp, color = colors.onSurfaceVariant)
                 }
                 sections.forEach { group ->
@@ -192,17 +217,26 @@ private fun DrawerFooter(onNew: () -> Unit, onSettings: () -> Unit) {
 }
 
 @Composable
-private fun DrawerSearch(query: String, onQuery: (String) -> Unit, modifier: Modifier) {
+internal fun DrawerSearch(query: String, onQuery: (String) -> Unit, modifier: Modifier,
+    global: Boolean = false, onToggleScope: (() -> Unit)? = null, onSubmit: () -> Unit = {}) {
     val colors = MaterialTheme.colorScheme
-    val hint = stringResource(R.string.drawer_search)
+    val hint = stringResource(if (global) R.string.drawer_global_search else R.string.drawer_search)
     BasicTextField(value = query, onValueChange = onQuery, singleLine = true,
-        modifier = modifier.clip(RoundedCornerShape(16.dp)).background(colors.surfaceContainerHigh)
+        modifier = modifier.drawerSearchSwipe(onToggleScope, query.isBlank()).clip(RoundedCornerShape(16.dp)).background(colors.surfaceContainerHigh)
             .heightIn(min = 44.dp).semantics { contentDescription = hint },
         textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
+        keyboardOptions = KeyboardOptions(imeAction = if (global) ImeAction.Search else ImeAction.Default),
+        keyboardActions = if (global) KeyboardActions(onSearch = { onSubmit() }) else KeyboardActions.Default,
         cursorBrush = SolidColor(colors.primary),
         decorationBox = { field ->
-            Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onToggleScope != null) {
+                    IconButton(onToggleScope, Modifier.size(44.dp)) {
+                        Icon(if (global) Icons.Outlined.Storage else Icons.Outlined.ChatBubbleOutline,
+                            stringResource(if (global) R.string.drawer_switch_topics else R.string.drawer_switch_global),
+                            Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+                    }
+                } else Icon(Icons.Outlined.Search, null, Modifier.padding(start = 12.dp).size(18.dp), tint = colors.onSurfaceVariant)
                 Box(Modifier.weight(1f).padding(horizontal = 8.dp), contentAlignment = Alignment.CenterStart) {
                     if (query.isEmpty()) Text(hint, Modifier.align(Alignment.Center), color = colors.onSurfaceVariant,
                         fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -231,7 +265,7 @@ private fun SectionHeading(label: String, open: Boolean, toggle: () -> Unit) {
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun DrawerConversation(
+internal fun DrawerConversation(
     item: Conversation, current: Boolean, onOpen: (String) -> Unit,
     onRename: (String) -> Unit, onPin: (String) -> Unit, onDelete: (String) -> Unit
 ) {

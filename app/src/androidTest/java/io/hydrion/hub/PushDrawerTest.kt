@@ -24,6 +24,24 @@ class PushDrawerTest {
 
     private fun node(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode()
 
+    @Test fun swipingTheEmptyFieldSwitchesScopeWithoutClosingTheDrawerAndHistoryReturnsToIt() {
+        fun field(res: Int) = screen.onNode(hasContentDescription(screen.activity.getString(res)) and hasSetTextAction())
+        screen.onNodeWithContentDescription("打开侧栏").performClick()
+        val topics = field(R.string.drawer_search)
+        val global = field(R.string.drawer_global_search)
+        topics.performTouchInput { swipeLeft() }
+        global.assertIsDisplayed().performTouchInput { swipeRight() }
+        topics.assertIsDisplayed().performClick().performTextReplacement("query")
+        topics.performTouchInput { swipeLeft() }
+        topics.assertTextContains("query")
+        screen.onNodeWithContentDescription(screen.activity.getString(R.string.drawer_history)).performClick()
+        screen.onNodeWithTag("drawer-history-page").assertIsDisplayed()
+        screen.onNode(hasContentDescription(screen.activity.getString(R.string.settings_back)) and hasAnyAncestor(isDialog())).performClick()
+        topics.assertIsDisplayed().assertTextContains("query")
+        screen.onNodeWithContentDescription(screen.activity.getString(R.string.drawer_assistants)).performClick()
+        screen.onNodeWithText(screen.activity.getString(R.string.drawer_no_assistants)).assertIsDisplayed()
+    }
+
     @Test fun dragMovesTheFullWidthChatAndOnlyTheExposedStripDismissesTheDrawer() {
         val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
         val draft = "尚未发送的草稿"
