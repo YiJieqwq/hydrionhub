@@ -79,6 +79,7 @@ fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
                     }
                 }
             }
+            detail == SettingsEntry.Data -> io.hydrion.hub.ui.settings.StorageSettings(onBack = goBack)
             detail == SettingsEntry.Style -> MessageStyleSettings(onBack = goBack)
             else -> SettingsHome(
                 search = search, onSearch = { search = it }, onBack = goBack,
@@ -92,19 +93,15 @@ fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
             )
         }
     }
-    if (detail == SettingsEntry.Data || detail == SettingsEntry.About) {
-        val about = detail == SettingsEntry.About
+    if (detail == SettingsEntry.About) {
         AlertDialog(onDismissRequest = { detail = null },
-            title = { Text(if (about) "关于 HydrionHub" else "数据管理") },
+            title = { Text("关于 HydrionHub") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (about) "HydrionHub · 氢离子\n原生 Kotlin 与 Jetpack Compose 多模型客户端。"
-                        else "会话历史、供应商配置和消息样式保存在本机。可在侧栏管理会话，在供应商页面管理模型。")
-                    if (about) {
-                        OutlinedButton(onClick = { DictationRmsDiagnostic.armed = !DictationRmsDiagnostic.armed }) {
+                    Text("HydrionHub · 氢离子\n原生 Kotlin 与 Jetpack Compose 多模型客户端。")
+                    OutlinedButton(onClick = { DictationRmsDiagnostic.armed = !DictationRmsDiagnostic.armed }) {
                             Text(stringResource(if (DictationRmsDiagnostic.armed) R.string.dictation_rms_disarm
                                 else R.string.dictation_rms_arm))
-                        }
                     }
                 }
             },

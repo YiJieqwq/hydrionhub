@@ -1,0 +1,10 @@
+<resources>
+    <string name="storage_history">已保存的会话与草稿</string>
+    <string name="storage_images">生成的图片</string>
+    <string name="storage_restored">恢复的附件原件</string>
+    <string name="storage_settings">本地设置</string>
+    <string name="storage_copies">剪贴板图片副本</string>
+    <string name="storage_external">从其他应用选取的文件由来源应用保存，未计入本机占用。</string>
+    <string name="storage_clear">清理超过 24 小时的副本（%1$s）</string>
+    <string name="storage_read_failed">无法读取或更新本机存储。</string>
+</resources>

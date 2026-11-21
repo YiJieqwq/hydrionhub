@@ -1,0 +1,10 @@
+<resources>
+    <string name="storage_history">Saved chats and drafts</string>
+    <string name="storage_images">Generated images</string>
+    <string name="storage_restored">Imported attachment originals</string>
+    <string name="storage_settings">Local settings</string>
+    <string name="storage_copies">Clipboard image copies</string>
+    <string name="storage_external">Files selected from other apps are stored by those apps. Their sizes are excluded here.</string>
+    <string name="storage_clear">Clear copies older than 24 hours (%1$s)</string>
+    <string name="storage_read_failed">Could not read or update local storage.</string>
+</resources>
