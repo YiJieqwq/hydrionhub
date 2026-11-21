@@ -154,7 +154,7 @@ internal fun BitmapPreview(preview: PicturePreview, description: String, modifie
     }
 }
 
-private fun decodeAttachment(context: Context, uri: Uri, maxEdge: Int): Bitmap {
+internal fun decodeAttachment(context: Context, uri: Uri, maxEdge: Int): Bitmap {
     require(uri.scheme == "content") { "图片地址无效" }
     val resolver = context.contentResolver
     if (Build.VERSION.SDK_INT >= 28) {

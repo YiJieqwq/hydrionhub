@@ -62,6 +62,7 @@ private val settingsGroups = listOf(
 internal fun SettingsHome(
     search: String, onSearch: (String) -> Unit,
     onOpen: (SettingsEntry) -> Unit, onBack: () -> Unit,
+    signedInAccounts: List<SignedInAccountUsage> = emptyList(),
 ) {
     var searching by rememberSaveable { mutableStateOf(search.isNotBlank()) }
     val focus = LocalFocusManager.current
@@ -102,6 +103,7 @@ internal fun SettingsHome(
         Box(Modifier.fillMaxWidth().weight(1f)) {
             Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (!active) SettingsProfile(signedInAccounts)
                 groups.forEach { (title, entries) ->
                     SettingsGroup(stringResource(title), entries, open)
                 }

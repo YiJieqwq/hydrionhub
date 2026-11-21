@@ -1,0 +1,16 @@
+<resources>
+    <string name="settings_edit_profile">编辑本地资料</string>
+    <string name="settings_avatar">头像</string>
+    <string name="settings_choose_photo">选择图片</string>
+    <string name="settings_remove_photo">移除头像</string>
+    <string name="settings_username">用户名</string>
+    <string name="settings_profile_error">无法更新资料，请重新选择本地图片后再试。</string>
+    <string name="settings_save">保存</string>
+    <string name="settings_cancel">取消</string>
+    <string name="settings_usage_empty">暂无用量数据</string>
+    <string name="settings_usage_five">5 小时</string>
+    <string name="settings_usage_week">本周</string>
+    <string name="settings_usage_minutes">%1$d 分钟</string>
+    <string name="settings_usage">用量</string>
+    <string name="settings_usage_reset">重置时间 %1$s</string>
+</resources>

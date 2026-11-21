@@ -1,0 +1,16 @@
+<resources>
+    <string name="settings_edit_profile">Edit local profile</string>
+    <string name="settings_avatar">Avatar</string>
+    <string name="settings_choose_photo">Choose photo</string>
+    <string name="settings_remove_photo">Remove photo</string>
+    <string name="settings_username">Display name</string>
+    <string name="settings_profile_error">Could not update the profile. Try choosing a local image again.</string>
+    <string name="settings_save">Save</string>
+    <string name="settings_cancel">Cancel</string>
+    <string name="settings_usage_empty">No usage data available</string>
+    <string name="settings_usage_five">5-hour usage</string>
+    <string name="settings_usage_week">Weekly usage</string>
+    <string name="settings_usage_minutes">%1$d-minute usage</string>
+    <string name="settings_usage">Usage</string>
+    <string name="settings_usage_reset">Resets on %1$s</string>
+</resources>
