@@ -38,6 +38,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.Draft
 import io.hydrion.hub.model.HubViewModel
+import io.hydrion.hub.provider.chatProtocol
+import io.hydrion.hub.provider.route
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.ui.ToolsPageOverlay
 import io.hydrion.hub.ui.composer.AwaitToolsImeDismissal
@@ -135,6 +137,84 @@ class ComposerToolsTest {
             terminalImage.assertStroke("terminal upper chevron", Color.WHITE, shift, 3.5f, 6.5f)
             terminalImage.assertStroke("terminal lower chevron", Color.WHITE, shift, 3.5f, 11.5f)
             terminalImage.assertStroke("terminal underline", Color.WHITE, shift, 13f, 14f)
+        }
+    }
+
+    @Test fun effortCardOutsideTapUsesTheRealWorkspaceTargetOnce() {
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        val oldDraft = screen.runOnIdle { vm.state.value.draft.text }
+        val catalog = vm.providers.catalog.value
+        val oldModel = catalog.active[Mode.Chat]
+        val toolModel = catalog.entries(Mode.Chat).first { it.second.chatProtocol() == null }
+        val root = screen.onRoot()
+        val card = screen.onNodeWithTag("chat-model-card")
+        val trigger = screen.onNodeWithTag("chat-model-trigger")
+        fun tap(target: SemanticsNodeInteraction) {
+            val point = target.fetchSemanticsNode().boundsInRoot.center - root.fetchSemanticsNode().boundsInRoot.topLeft
+            root.performTouchInput { click(point) }
+        }
+        fun open() {
+            tap(trigger)
+            card.assertIsDisplayed()
+        }
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val files = IntentFilter(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            addDataType("*/*")
+        }
+        val monitor = instrumentation.addMonitor(files, Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null), true)
+        try {
+            screen.runOnIdle { vm.providers.configure(Mode.Chat, toolModel.route, catalog.parameters(toolModel.first, toolModel.second)) }
+            tap(editor)
+            screen.waitUntil(15_000) { imeVisible() }
+            editor.performTextReplacement("keep this draft")
+            open()
+            val clock = screen.mainClock
+            withStableIme(true) {
+                try {
+                    clock.autoAdvance = false
+                    tap(tools)
+                    clock.advanceTimeBy(80)
+                    screen.onNodeWithTag("chat-tools-surface", useUnmergedTree = true).assertExists()
+                    screen.onNodeWithTag("chat-picker-bubble", useUnmergedTree = true).assertExists()
+                } finally { clock.autoAdvance = true }
+                field.assertIsDisplayed()
+                tap(action("back"))
+            }
+            editor.assertTextEquals("keep this draft")
+            open()
+            val shell = screen.onNodeWithTag("chat-picker-bubble", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            val dock = screen.onNodeWithTag("composer-capsule", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            val gap = androidx.compose.ui.geometry.Offset(shell.center.x, (shell.bottom + dock.top) / 2)
+            val rootOrigin = root.fetchSemanticsNode().boundsInRoot.topLeft
+            root.performTouchInput { click(gap - rootOrigin) }
+            card.assertDoesNotExist()
+            field.assertDoesNotExist()
+            repeat(2) { n ->
+                open()
+                tap(screen.onNodeWithTag("chat-composer-attach"))
+                card.assertDoesNotExist()
+                screen.runOnIdle { assertEquals(n + 1, monitor.hits) }
+            }
+            editor.performTextReplacement("")
+            open()
+            val history = screen.runOnIdle { vm.state.value.current.messages }
+            val send = screen.onNodeWithTag("chat-composer-send")
+            send.assertIsNotEnabled()
+            tap(send)
+            card.assertDoesNotExist()
+            screen.runOnIdle { assertEquals(history, vm.state.value.current.messages) }
+            open()
+            // At the drawer button's visual center the real header, not an overlay action, must run.
+            tap(screen.onNodeWithContentDescription("打开侧栏"))
+            screen.onNodeWithTag("drawer-settings").assertIsDisplayed()
+            card.assertDoesNotExist()
+        } finally {
+            instrumentation.removeMonitor(monitor)
+            screen.runOnIdle {
+                vm.setDraft(oldDraft)
+                if (oldModel != null) vm.providers.configure(Mode.Chat, oldModel, catalog.overrides[oldModel].orEmpty())
+            }
         }
     }
 

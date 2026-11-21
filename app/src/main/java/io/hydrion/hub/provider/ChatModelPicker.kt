@@ -46,6 +46,8 @@ internal class ChatModelPickerState {
 
     var page by mutableStateOf<Page?>(null)
         private set
+    val effortTouches = EffortCardTouches()
+    var drawingBubble by mutableStateOf(false)
     private var effortPreview by mutableStateOf<Pair<RemoteModel, String>?>(null)
 
     fun previewFor(route: RemoteModel?): String? = effortPreview?.takeIf { it.first == route }?.second
@@ -163,11 +165,10 @@ internal fun ChatModelPicker(
     Box(modifier.then(accessibility).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))) {
         // Measure inside the safe insets even while the picker is idle, before its first frame.
         Spacer(Modifier.matchParentSize().onGloballyPositioned { origin = it.positionInWindow().round() })
-        if (showing && !paused && !browsePageInFront) {
-            val editThrough = page == ChatModelPickerState.Page.Controls
+        if (page == ChatModelPickerState.Page.Options && !paused && !browsePageInFront) {
             PickerDismissLayer(
                 picker, close, Modifier.matchParentSize(),
-                fieldBounds = { origin?.let { (if (editThrough) picker.editorBounds else picker.editorTextBounds)?.translate(-it) } },
+                fieldBounds = { origin?.let { picker.editorTextBounds?.translate(-it) } },
                 triggerBounds = { origin?.let { picker.triggerBounds?.translate(-it) } },
             )
         }

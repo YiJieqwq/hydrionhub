@@ -186,8 +186,10 @@ private fun Workspace(vm: HubViewModel) {
             val imeInsets = WindowInsets.ime
             val hostImeInsets = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R)
                 WindowInsets(bottom = imeInsets.getBottom(LocalDensity.current)) else imeInsets
+            val workspaceInput = if (chatPicker.page == ChatModelPickerState.Page.Controls)
+                chatPicker.effortTouches.workspace(Modifier, chatPicker) else Modifier
             Box(
-                Modifier.fillMaxSize()
+                Modifier.fillMaxSize().then(workspaceInput)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
                     .windowInsetsPadding(hostImeInsets),
                 contentAlignment = Alignment.TopCenter
@@ -197,8 +199,8 @@ private fun Workspace(vm: HubViewModel) {
                     modifier = Modifier.fillMaxSize(),
                     panelActive = covered, panelSettled = toolsPage?.interactive == true || modelBrowse.interactive,
                     freezeTimelineDock = covered && editVisit == null, dockKey = chatPicker,
-                    trackPickerAnchor = { !toolsActive && editVisit == null && (chatPicker.page != null || modelBrowse.active) },
-                    picker = if (current.mode == Mode.Chat && !toolsActive) {
+                    trackPickerAnchor = { editVisit == null && (chatPicker.page != null || modelBrowse.active || chatPicker.drawingBubble) },
+                    picker = if (current.mode == Mode.Chat) {
                         { ChatModelPicker(providers, chatPicker, suspended = editVisit != null, hideForReturn = returning,
                             modelBrowseProgress = { modelBrowse.progress }, modifier = Modifier.fillMaxSize()) }
                     } else null,

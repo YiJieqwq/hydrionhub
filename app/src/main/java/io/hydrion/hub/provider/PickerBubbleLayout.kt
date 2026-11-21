@@ -107,6 +107,10 @@ internal fun PickerBubbleLayout(
     }
     val atSource by remember(motion, leg) { derivedStateOf { weights() == Offset.Zero } }
     if (face == PickerBubbleFace.Label && atSource) return
+    DisposableEffect(picker) {
+        picker.drawingBubble = true
+        onDispose { picker.drawingBubble = false }
+    }
 
     val targets = remember(picker) { mutableStateOf(BubbleTargets(Rect.Zero, Rect.Zero, Rect.Zero, IntRect.Zero, true)) }
     val measuredAnchor = LocalPickerComposerBounds.current
@@ -123,7 +127,7 @@ internal fun PickerBubbleLayout(
     if (face == PickerBubbleFace.List) SideEffect { lastListColor = listColor }
 
     Layout(modifier = modifier, content = {
-        BubbleSurface(targets, weights, shellAlpha, colors.pickerBubbleHighlight, effortColor,
+        BubbleSurface(picker.effortTouches, targets, weights, shellAlpha, colors.pickerBubbleHighlight, effortColor,
             if (face == PickerBubbleFace.List) listColor else lastListColor, effortBorder, colors.outlineVariant,
             hideForReturn, if (shared) PickerBubbleFace.Label else face, velocity = {
                 if (!shared && motion.isRunning && motion.targetValue == face.weights && motion.value != face.weights) {
@@ -154,7 +158,8 @@ internal fun PickerBubbleLayout(
         })
         if (face != PickerBubbleFace.Label) {
             val pageSemantics = if (shared) Modifier.clearAndSetSemantics {} else Modifier.semantics { this.paneTitle = paneTitle }
-            Box(pageSemantics.drawWithContent {
+            val pageHit = if (face == PickerBubbleFace.Effort) picker.effortTouches.card(pageSemantics) else pageSemantics
+            Box(pageHit.drawWithContent {
                 currentInk.alpha = 1f
                 currentInk.record { this@drawWithContent.drawContent() }
                 drawLayer(currentInk)
@@ -217,7 +222,7 @@ internal fun PickerBubbleLayout(
 // at its final width, so neither the LazyColumn nor the surrounding chat reflows during a morph.
 @Composable
 private fun BubbleSurface(
-    targets: State<BubbleTargets>, weights: () -> Offset, shellAlpha: () -> Float, highlight: Color, effort: Color, list: Color,
+    touches: EffortCardTouches, targets: State<BubbleTargets>, weights: () -> Offset, shellAlpha: () -> Float, highlight: Color, effort: Color, list: Color,
     effortBorder: Color, listBorder: Color, hidden: Boolean, face: PickerBubbleFace, velocity: () -> Offset,
 ) {
     val trailPath = remember { Path() }
@@ -252,7 +257,7 @@ private fun BubbleSurface(
             }
         })
         if (face != PickerBubbleFace.Label) CompositionLocalProvider(LocalViewConfiguration provides exactPickerHitBounds()) {
-            Spacer(Modifier.pointerInput(Unit) {})
+            Spacer(if (face == PickerBubbleFace.Effort) touches.card(Modifier) else Modifier.pointerInput(Unit) {})
         }
     }) { children, limits ->
         val w = weights()
