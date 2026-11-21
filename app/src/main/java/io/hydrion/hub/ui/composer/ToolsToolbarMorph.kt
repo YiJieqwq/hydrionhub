@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -43,6 +44,8 @@ import io.hydrion.hub.ui.theme.composerActionInk
 import kotlin.math.roundToInt
 
 internal val ToolbarActionSlot = 42.dp
+// Compose extends a 42dp action to its 48dp touch target on both sides.
+internal val ToolbarTouchOutset = (48.dp - ToolbarActionSlot) / 2
 internal val SendFaceInset = 1.75.dp
 
 @Composable
@@ -53,6 +56,7 @@ internal fun ToolsToolbarMorph(
     hasClearableTools: Boolean,
     generating: Boolean,
     canSend: Boolean,
+    sendFaceInset: Dp,
     onAttach: () -> Unit,
     onSend: () -> Unit,
     onClear: () -> Unit,
@@ -130,7 +134,7 @@ internal fun ToolsToolbarMorph(
                 val fill = if (generating) Color.White else colors.composerActionFill(canSend)
                 val startInk = if (generating) Color.Black else colors.composerActionInk(canSend)
                 val ink = if (p == 0f) startInk else lerp(startInk, newInk, p)
-                val inset = if (generating) 0.dp else -SendFaceInset * (1f - p)
+                val inset = if (generating) 0.dp else -sendFaceInset * (1f - p)
                 Box(Modifier.size(HubStyle.ComposerActionDiameter).offset(x = inset)
                     .testTag("chat-composer-action-face")
                     .background(fill.copy(alpha = fill.alpha * (1f - p)), CircleShape),

@@ -88,9 +88,9 @@ class ComposerModelGapTest {
         assertEquals("Solid fill must span the send circle", 32f * density, paintedDisk.count().toFloat(), 2f)
 
         val trailingClearance = if (rtl) disk.left else bitmap.width - disk.right
-        assertEquals("Send face stays at its original trailing inset", 9.75f * density, trailingClearance, tolerance)
+        assertEquals("Send face stays at its original trailing inset", 10f * density, trailingClearance, tolerance)
         val microphoneToSend = (disk.center.x - mic.center.x) * (if (rtl) -1f else 1f)
-        assertEquals("The mic sits immediately before the unchanged send face", 48.25f * density, microphoneToSend, 2f)
+        assertEquals("The mic sits immediately before the unchanged send face", 48f * density, microphoneToSend, 2f)
         assertEquals("Microphone and send share the toolbar center line", disk.center.y, mic.center.y, tolerance)
         return face.fetchSemanticsNode().boundsInRoot
     }

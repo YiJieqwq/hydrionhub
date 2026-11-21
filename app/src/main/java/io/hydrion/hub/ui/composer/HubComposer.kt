@@ -434,12 +434,15 @@ internal fun HubComposer(
             }
         }
     }
-    val sideInset = lerp(35.dp, 12.25.dp, expansion)
+    // An empty folded chat uses the same physical bottom and side margin. Keep the parked draft's dock.
+    val restingInset = if (chat) lerp(34.dp, 35.dp, maxOf(rowGate, pageProgress)) else 35.dp
+    val sideInset = lerp(restingInset, if (chat) 12.dp else 12.25.dp, expansion)
     // The host has already consumed max(IME, navigation bars). On gesture navigation
     // the collapsed reference is measured from the physical edge, not the nav top.
-    val compactGap = (35.dp - with(density) { nav.toDp() }).coerceAtLeast(8.dp)
+    val compactGap = (restingInset - with(density) { nav.toDp() }).coerceAtLeast(8.dp)
     val bottomGap = lerp(compactGap, 12.25.dp, expansion)
-    val editorMinHeight = lerp(FoldedEditorMinHeight, 46.5.dp, toolbar)
+    val foldedHeight = if (chat) lerp(48.dp, FoldedEditorMinHeight, pageProgress) else FoldedEditorMinHeight
+    val editorMinHeight = lerp(foldedHeight, 46.5.dp, toolbar)
     val controlRowHeight = 47.75.dp
     val editorTextStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp)
     val textTop = lerp(FoldedTextTop, OpenTextTop, toolbar)
@@ -532,7 +535,7 @@ internal fun HubComposer(
                                 focused = nowFocused
                             },
                             modifier = (if (pickerOpen) Modifier.weight(1f, fill = false) else Modifier)
-                                .then(if (returning || forceReturnFolded) Modifier.revealHeight(toolbar, FoldedEditorMinHeight) else Modifier),
+                                .then(if (returning || forceReturnFolded) Modifier.revealHeight(toolbar, foldedHeight) else Modifier),
                         ) { draftFocusModifier ->
                             val modelHint = stringResource(R.string.chat_picker_search_hint)
                             val toolHint = stringResource(R.string.tools_search_hint)
@@ -653,12 +656,14 @@ internal fun HubComposer(
                     } else ToolsToolbarMorph(
                         progress = pageProgress, toolsOpen = browsing || tools?.targetOpen == true, modelSearch = modelSearch != null,
                         hasClearableTools = (modelSearch?.searchQuery ?: toolEditor?.query)?.text?.isNotEmpty() == true,
-                        generating = active, canSend = canSend,
+                        generating = active, canSend = canSend, sendFaceInset = if (chat) 0.dp else SendFaceInset,
                         onAttach = { if (acceptsDraftInput()) pick() }, onSend = onAction,
                         onClear = { if (modelSearch != null) modelSearch.clearSearchQuery() else toolEditor?.clearQuery() },
                         onBack = { if (modelSearch?.modelListNavigation == true) modelSearch.open() else toolEditor?.close() },
                         modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                            .height(lerp(editorMinHeight, controlRowHeight, toolbar)).padding(horizontal = 3.dp),
+                            .height(lerp(editorMinHeight, controlRowHeight, toolbar))
+                            .padding(start = ToolbarTouchOutset, end = ToolbarTouchOutset +
+                                if (chat) 2.dp * (1f - pageProgress) else 0.dp),
                     ) { leading, trailing ->
                         if ((chatToolbar > 0f || modelSearch != null && hadModelRow) && (pageProgress < 1f || modelSearch != null)) {
                             val interactive = chatToolbar >= 0.6f && !editingQuery
@@ -791,7 +796,7 @@ internal fun HubComposer(
                                                 }
                                             },
                                             enabled = interactive && allowImeReturn && !returning,
-                                            modifier = Modifier.padding(end = 5.dp).testTag("chat-composer-dictate"),
+                                            modifier = Modifier.padding(end = ToolbarTouchOutset).testTag("chat-composer-dictate"),
                                             slotWidth = 48.dp,
                                         ) {
                                             Icon(painterResource(R.drawable.ic_chat_microphone), contentDescription = null,

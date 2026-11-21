@@ -58,10 +58,9 @@ class ComposerDraftTest {
                 if (minOf(r, g, b) > 240) arrow.union(x, y, x + 1, y + 1)
             }
             val density = screen.activity.resources.displayMetrics.density
-            val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
             assertEquals(32f * density, disk.width().toFloat(), 2f)
             assertEquals(32f * density, disk.height().toFloat(), 2f)
-            assertEquals(image.width / 2f + (if (rtl) 1.75f else -1.75f) * density, disk.exactCenterX(), 1.5f)
+            assertEquals(image.width / 2f, disk.exactCenterX(), 1.5f)
             assertEquals(image.height / 2f, disk.exactCenterY(), 1.5f)
             assertEquals(13.34f * density, arrow.width().toFloat(), 2f)
             assertEquals(15.34f * density, arrow.height().toFloat(), 2f)
