@@ -7,12 +7,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.constrainWidth
 
@@ -68,7 +70,9 @@ internal fun ChatTriggerText(label: ChatTriggerLabel, dark: Boolean, style: Text
             textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
         label.effort?.let { effort ->
             val ink = if (label.peak) PeakEffortLabelColor else if (dark) Color(0xFFAFAFAF) else colors.onSurfaceVariant
-            Text(effort, style = style, color = ink, textAlign = TextAlign.End,
+            // Keep unused width beyond the suffix, including Latin labels in an RTL toolbar.
+            val nearName = if (LocalLayoutDirection.current == LayoutDirection.Ltr) TextAlign.Left else TextAlign.Right
+            Text(effort, style = style, color = ink, textAlign = nearName,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }) { children, limits ->

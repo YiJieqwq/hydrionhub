@@ -5,6 +5,18 @@ import android.graphics.Color
 import android.view.ContextThemeWrapper
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import io.hydrion.hub.provider.ChatTriggerLabel
+import io.hydrion.hub.provider.ChatTriggerText
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -80,6 +92,45 @@ class ComposerEffortGeometryTest {
         }
         for (choices in listOf(listOf("Low", "Medium", "High"), listOf("A", "Wide stage", "iii"))) {
             checkAdjustable(choices)
+        }
+    }
+
+    @Test fun effortInkStartsBesideTheNameEvenWhenTheSelectedLabelIsShorter() {
+        val direction = mutableStateOf(LayoutDirection.Ltr)
+        val width = mutableStateOf(160.dp)
+        val selected = mutableStateOf<String?>("Medium")
+        val choices = listOf("Medium", "High")
+        screen.activityRule.scenario.onActivity { activity ->
+            activity.setContent {
+                CompositionLocalProvider(LocalLayoutDirection provides direction.value) {
+                    Box(Modifier.width(width.value)) {
+                        ChatTriggerText(ChatTriggerLabel("Hydrion", selected.value, effortLabels = choices),
+                            dark = true, style = TextStyle(fontSize = 14.sp), gapPx = 6, modifier = Modifier)
+                    }
+                }
+            }
+        }
+        for (dir in listOf(LayoutDirection.Ltr, LayoutDirection.Rtl)) {
+            for (available in listOf(160.dp, 72.dp)) {
+                screen.runOnIdle { direction.value = dir; width.value = available; selected.value = "Medium" }
+                val name = screen.onNodeWithText("Hydrion", useUnmergedTree = true)
+                val initial = name.fetchSemanticsNode().boundsInRoot
+                for (effort in choices) {
+                    screen.runOnIdle { selected.value = effort }
+                    val label = screen.onNodeWithText(effort, useUnmergedTree = true)
+                    val slot = label.fetchSemanticsNode().boundsInRoot
+                    assertEquals(initial, name.fetchSemanticsNode().boundsInRoot)
+                    val lines = mutableListOf<TextLayoutResult>()
+                    label.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(lines) }
+                    val text = lines.single()
+                    val gap = if (dir == LayoutDirection.Ltr) slot.left + text.getLineLeft(0) - initial.right
+                        else initial.left - (slot.left + text.getLineRight(0))
+                    assertEquals("Visible gap for $effort in $dir at $available", 6f, gap, 1f)
+                }
+                screen.runOnIdle { selected.value = null }
+                name.assertExists()
+                screen.onNodeWithText("High").assertDoesNotExist()
+            }
         }
     }
 
