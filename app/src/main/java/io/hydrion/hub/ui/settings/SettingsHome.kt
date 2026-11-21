@@ -23,10 +23,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import io.hydrion.hub.R
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -35,31 +37,32 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.border
 import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.capsuleEdge
 
-internal enum class SettingsEntry(val title: String, val terms: String) {
-    About("关于 HydrionHub", "关于 应用 版本 about version 氢离子"),
-    Language("聊天模型", "语言模型供应商 聊天模型供应商 对话 配置 chat provider reasoning 设置"),
-    Image("图像生成模型", "图片模型供应商 图像生成模型供应商 生图 绘图 image provider 设置"),
-    Style("消息样式", "外观与主题 字色 气泡 样式 配色 消息 颜色 appearance style theme"),
-    Data("数据管理", "存储 本机 历史 数据 storage history")
+internal enum class SettingsEntry(val label: Int, val terms: String) {
+    About(R.string.settings_about, "关于 应用 版本 about version hydrionhub 氢离子"),
+    Language(R.string.settings_chat, "语言模型供应商 聊天模型供应商 对话 配置 chat models provider reasoning 设置"),
+    Image(R.string.settings_image, "图片模型供应商 图像生成模型供应商 生图 绘图 image generation models provider 设置"),
+    Style(R.string.settings_style, "消息样式 外观与主题 字色 气泡 样式 配色 消息 颜色 message appearance style theme"),
+    Data(R.string.settings_data, "数据管理 存储 本机 历史 数据 data management storage history")
 }
 
 private val settingsGroups = listOf(
-    "模型" to listOf(SettingsEntry.Language, SettingsEntry.Image),
-    "应用" to listOf(SettingsEntry.Style, SettingsEntry.Data, SettingsEntry.About)
+    R.string.settings_models to listOf(SettingsEntry.Language, SettingsEntry.Image),
+    R.string.settings_app to listOf(SettingsEntry.Style, SettingsEntry.Data, SettingsEntry.About)
 )
 
 @Composable
 internal fun SettingsHome(
-    languageCount: Int, imageCount: Int, search: String, onSearch: (String) -> Unit,
-    onOpen: (SettingsEntry) -> Unit, onBack: () -> Unit
+    search: String, onSearch: (String) -> Unit,
+    onOpen: (SettingsEntry) -> Unit, onBack: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val version = remember(context) { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
     var searching by rememberSaveable { mutableStateOf(search.isNotBlank()) }
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -85,7 +88,7 @@ internal fun SettingsHome(
             val matches = entries.filter { entry ->
                 // About is always accessible in the top bar. Include it among explicitly matched results.
                 (entry != SettingsEntry.About || words.isNotEmpty()) &&
-                    words.all { (entry.title + " " + entry.terms).contains(it, ignoreCase = true) }
+                    words.all { entry.terms.contains(it, ignoreCase = true) }
             }
             if (matches.isEmpty()) null else section to matches
         }
@@ -96,16 +99,22 @@ internal fun SettingsHome(
         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
         .navigationBarsPadding().imePadding()) {
         SettingsHeader(onBack = { if (active) leaveSearch() else onBack() }, onInfo = { open(SettingsEntry.About) })
-        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(15.dp)) {
-            groups.forEach { (title, entries) ->
-                SettingsGroup(title, entries, languageCount, imageCount, version, open)
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                groups.forEach { (title, entries) ->
+                    SettingsGroup(stringResource(title), entries, open)
+                }
+                if (groups.isEmpty()) {
+                    Text(stringResource(R.string.settings_no_matches), Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Spacer(Modifier.height(16.dp))
             }
-            if (groups.isEmpty()) {
-                Text("没有匹配的设置", Modifier.fillMaxWidth().padding(vertical = 20.dp),
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (scroll.canScrollForward) {
+                Spacer(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(16.dp).background(
+                    Brush.verticalGradient(listOf(Color.Transparent, HubStyle.Background))))
             }
-            Spacer(Modifier.height(6.dp))
         }
         SearchDock(search, active, onSearch, onFocus = { searching = true },
             onSubmit = hideKeyboard, onClose = leaveSearch, modifier = Modifier.fillMaxWidth())
@@ -116,17 +125,13 @@ private val SettingsButtonSize = 48.dp
 
 @Composable
 private fun SettingsHeader(onBack: () -> Unit, onInfo: () -> Unit) {
-    val hitSlop = (SettingsButtonSize - ChatHeaderLayout.ActionSize) / 2
-    Box(Modifier.fillMaxWidth().heightIn(min = 62.dp)) {
-        Text("设置", Modifier.align(Alignment.Center).padding(horizontal = 14.dp, vertical = 5.dp),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold, color = Color.White)
-        Row(Modifier.align(Alignment.TopCenter).widthIn(max = ChatHeaderLayout.MaxWidth).fillMaxWidth()
-            .padding(start = ChatHeaderLayout.SidePadding - hitSlop, top = ChatHeaderLayout.TopPadding - hitSlop,
-                end = ChatHeaderLayout.SidePadding - hitSlop),
+    Box(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp).heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
+        Text(stringResource(R.string.settings_title), Modifier.padding(horizontal = 68.dp, vertical = 4.dp),
+            fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+        Row(Modifier.widthIn(max = ChatHeaderLayout.MaxWidth).fillMaxWidth().padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween) {
-            HeaderButton(Icons.AutoMirrored.Outlined.ArrowBack, "返回", onBack, "settings-back-circle")
-            HeaderButton(Icons.Outlined.Info, "关于应用", onInfo, "settings-info-circle")
+            HeaderButton(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.settings_back), onBack, "settings-back-circle")
+            HeaderButton(Icons.Outlined.Info, stringResource(R.string.settings_info), onInfo, "settings-info-circle")
         }
     }
 }
@@ -134,10 +139,9 @@ private fun SettingsHeader(onBack: () -> Unit, onInfo: () -> Unit) {
 @Composable
 private fun HeaderButton(icon: ImageVector, description: String, onClick: () -> Unit, circleTag: String) {
     IconButton(onClick = onClick, modifier = Modifier.size(SettingsButtonSize)) {
-        Box(Modifier.size(ChatHeaderLayout.ActionSize).testTag(circleTag).capsuleEdge().clip(CircleShape)
-            .background(HubStyle.Raised),
-            contentAlignment = Alignment.Center) {
-            Icon(icon, description, Modifier.size(22.dp), tint = Color.White)
+        Box(Modifier.size(44.dp).testTag(circleTag).clip(CircleShape).background(HubStyle.Raised)
+            .border(Dp.Hairline, HubStyle.Border, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(icon, description, Modifier.size(20.dp), tint = Color.White)
         }
     }
 }
@@ -152,34 +156,31 @@ private fun RoundButton(icon: ImageVector, description: String, onClick: () -> U
 
 @Composable
 private fun SettingsGroup(
-    title: String, entries: List<SettingsEntry>, languageCount: Int, imageCount: Int, version: String,
-    onOpen: (SettingsEntry) -> Unit
+    title: String, entries: List<SettingsEntry>, onOpen: (SettingsEntry) -> Unit
 ) {
-    val shape = RoundedCornerShape(22.dp)
-    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Text(title, Modifier.padding(start = 5.dp, top = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
-        Column(Modifier.fillMaxWidth().capsuleEdge(shape).clip(shape).background(HubStyle.Raised)) {
+    val shape = RoundedCornerShape(27.dp)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, Modifier.padding(start = 12.dp, top = 6.dp), fontSize = 13.sp, lineHeight = 18.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
+        Column(Modifier.fillMaxWidth().clip(shape).background(HubStyle.Surface)) {
             entries.forEachIndexed { index, entry ->
-                val (icon, detail) = when (entry) {
-                    SettingsEntry.Language -> Icons.Outlined.ChatBubbleOutline to "${languageCount} 个供应商"
-                    SettingsEntry.Image -> Icons.Outlined.Image to "${imageCount} 个供应商"
-                    SettingsEntry.Style -> Icons.Outlined.Palette to "主题、字色与消息气泡"
-                    SettingsEntry.Data -> Icons.Outlined.Storage to "本机会话与配置"
-                    SettingsEntry.About -> Icons.Outlined.Info to if (version.isEmpty()) "应用信息" else "版本 $version"
+                val icon = when (entry) {
+                    SettingsEntry.Language -> Icons.Outlined.ChatBubbleOutline
+                    SettingsEntry.Image -> Icons.Outlined.Image
+                    SettingsEntry.Style -> Icons.Outlined.Palette
+                    SettingsEntry.Data -> Icons.Outlined.Storage
+                    SettingsEntry.About -> Icons.Outlined.Info
                 }
                 Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(entry) }
-                    .heightIn(min = 66.dp).padding(horizontal = 15.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-                    Icon(icon, null, Modifier.size(22.dp), tint = Color.White)
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                        Text(entry.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = Color.White)
-                        Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(20.dp), tint = Color(0xFFAAAAAA))
+                    .heightIn(min = 54.dp).padding(start = 18.dp, end = 16.dp, top = 7.dp, bottom = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Icon(icon, null, Modifier.size(20.dp), tint = Color.White)
+                    Text(stringResource(entry.label), Modifier.weight(1f), fontSize = 16.sp, lineHeight = 22.sp,
+                        color = Color.White)
+                    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (index != entries.lastIndex) HorizontalDivider(Modifier.padding(start = 50.dp, end = 14.dp),
-                    thickness = .6.dp, color = Color(0xFF474747))
+                if (index != entries.lastIndex) HorizontalDivider(thickness = Dp.Hairline, color = HubStyle.Border)
             }
         }
     }
@@ -190,26 +191,27 @@ private fun SearchDock(
     search: String, active: Boolean, onSearch: (String) -> Unit, onFocus: () -> Unit,
     onSubmit: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier
 ) {
-    Row(modifier.padding(start = 15.dp, end = 15.dp, top = 7.dp, bottom = 10.dp),
+    val hint = stringResource(R.string.settings_search)
+    Row(modifier.padding(start = 34.dp, end = 34.dp, top = 4.dp, bottom = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         BasicTextField(value = search, onValueChange = onSearch, singleLine = true,
             modifier = Modifier.weight(1f).capsuleEdge().clip(CircleShape).background(HubStyle.Raised)
-                .onFocusChanged { if (it.isFocused) onFocus() }.semantics { contentDescription = "搜索设置" },
+                .onFocusChanged { if (it.isFocused) onFocus() }.semantics { contentDescription = hint },
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
             cursorBrush = SolidColor(Color.White), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { onSubmit() }), decorationBox = { inner ->
-                Row(Modifier.fillMaxWidth().heightIn(min = 50.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Search, null, Modifier.size(21.dp), tint = Color.White)
                     Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                        if (search.isEmpty()) Text("搜索设置", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        if (search.isEmpty()) Text(hint, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyLarge)
                         inner()
                     }
                 }
             })
         AnimatedVisibility(visible = active) {
-            RoundButton(Icons.Outlined.Close, "退出搜索", onClose)
+            RoundButton(Icons.Outlined.Close, stringResource(R.string.settings_end_search), onClose)
         }
     }
 }

@@ -32,7 +32,7 @@ class ModelEditorFlowTest {
     @Test fun editsThreePagesThenCommitsModelAndProviderSeparately() {
         ui.onNodeWithContentDescription("打开侧栏").performClick()
         ui.onNodeWithTag("drawer-settings").performClick()
-        ui.onNodeWithText("聊天模型").performClick()
+        ui.onNodeWithText(ui.activity.getString(io.hydrion.hub.R.string.settings_chat)).performClick()
         ui.onNodeWithContentDescription("添加供应商").performClick()
         ui.onNodeWithContentDescription("供应商名称").performTextReplacement(providerName)
         tab("模型").performClick()

@@ -78,8 +78,6 @@ fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
             }
             detail == SettingsEntry.Style -> MessageStyleSettings(onBack = goBack)
             else -> SettingsHome(
-                languageCount = catalog.providers.count { it.mode == Mode.Chat },
-                imageCount = catalog.providers.count { it.mode == Mode.Image },
                 search = search, onSearch = { search = it }, onBack = goBack,
                 onOpen = { entry ->
                     when (entry) {

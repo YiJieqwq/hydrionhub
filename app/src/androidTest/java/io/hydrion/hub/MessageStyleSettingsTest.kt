@@ -24,7 +24,7 @@ class MessageStyleSettingsTest {
         try {
             screen.onNodeWithContentDescription("打开侧栏").performClick()
             screen.onNodeWithTag("drawer-settings").performClick()
-            control("消息样式").performScrollTo().performClick()
+            control(screen.activity.getString(io.hydrion.hub.R.string.settings_style)).performScrollTo().performClick()
             control("重置").performClick()
             control("纯色").assertIsSelected()
             control("默认").performScrollTo().performClick().assertIsSelected()
@@ -47,7 +47,7 @@ class MessageStyleSettingsTest {
             color.performImeAction()
             screen.onNodeWithContentDescription("返回").performClick()
 
-            control("消息样式").performScrollTo().performClick()
+            control(screen.activity.getString(io.hydrion.hub.R.string.settings_style)).performScrollTo().performClick()
             control("磨砂玻璃").assertIsSelected()
             control("显示助手正文气泡").assertIsOn()
             control("助手").performScrollTo().assertIsSelected()

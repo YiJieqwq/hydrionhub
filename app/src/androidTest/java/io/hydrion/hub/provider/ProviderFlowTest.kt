@@ -29,7 +29,7 @@ class ProviderFlowTest {
     @Test fun saveAcrossTabsAndDiscardSubsequentEdits() {
         screen.onNodeWithContentDescription("打开侧栏").performClick()
         screen.onNodeWithTag("drawer-settings").performClick()
-        screen.onNodeWithText("聊天模型").performClick()
+        screen.onNodeWithText(screen.activity.getString(io.hydrion.hub.R.string.settings_chat)).performClick()
         screen.onNodeWithText("聊天模型供应商").assertIsDisplayed()
         screen.onNodeWithContentDescription("添加供应商").performClick()
         screen.onNodeWithContentDescription("供应商名称").performTextReplacement(providerName)

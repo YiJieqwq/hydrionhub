@@ -1,0 +1,15 @@
+<resources>
+    <string name="settings_title">Settings</string>
+    <string name="settings_back">Back</string>
+    <string name="settings_info">About the app</string>
+    <string name="settings_models">Models</string>
+    <string name="settings_app">App</string>
+    <string name="settings_chat">Chat models</string>
+    <string name="settings_image">Image generation models</string>
+    <string name="settings_style">Message appearance</string>
+    <string name="settings_data">Data management</string>
+    <string name="settings_about">About HydrionHub</string>
+    <string name="settings_search">Search settings</string>
+    <string name="settings_end_search">Close search</string>
+    <string name="settings_no_matches">No matching settings</string>
+</resources>

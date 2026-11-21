@@ -92,7 +92,7 @@ class MessageAppearanceRenderTest {
         apply(style)
         screen.onNodeWithContentDescription("打开侧栏").performClick()
         screen.onNodeWithTag("drawer-settings").performClick()
-        screen.onNodeWithText("消息样式").performScrollTo().performClick()
+        screen.onNodeWithText(screen.activity.getString(io.hydrion.hub.R.string.settings_style)).performScrollTo().performClick()
         assertInk(pixels("message-user-bubble"), user.background, user.border, user.text)
         assertInk(pixels("message-thought"), assistant.background, assistant.border, assistant.text)
         assertInk(pixels("message-assistant-body"), assistant.background, assistant.border, assistant.text)
