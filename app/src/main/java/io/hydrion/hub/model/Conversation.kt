@@ -77,6 +77,13 @@ data class Message(
     val reportedUsage: TokenUsage? get() = usage ?: totalTokens?.let { TokenUsage(totalTokens = it) }
 }
 
+data class LocalAssistant(val id: String, val name: String) {
+    companion object {
+        val Default = LocalAssistant("default", "HydrionHub")
+        fun validName(name: String) = name.isNotBlank() && name.length <= 64 && name.none(Char::isISOControl)
+    }
+}
+
 data class Conversation(
     val id: String = newId(),
     val title: String = "新会话",
@@ -84,13 +91,15 @@ data class Conversation(
     val pinned: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
     val messages: List<Message> = emptyList(),
-    val environmentId: String? = null
+    val environmentId: String? = null,
+    val assistantId: String = LocalAssistant.Default.id
 )
 
 data class HubState(
     val current: Conversation = Conversation(),
     val history: List<Conversation> = emptyList(),
-    val draft: Draft = Draft()
+    val draft: Draft = Draft(),
+    val assistants: List<LocalAssistant> = listOf(LocalAssistant.Default)
 ) {
     // History membership survives deleting the last message and makes the mode lock durable.
     val modeLocked: Boolean get() = history.any { it.id == current.id }
@@ -101,4 +110,10 @@ internal data class SavedWorkspace(
     val history: List<Conversation> = emptyList(),
     val drafts: Map<String, Draft> = emptyMap(),
     val unsent: Conversation? = null,
-)
+    val assistants: List<LocalAssistant> = listOf(LocalAssistant.Default),
+    val selectedAssistant: String = LocalAssistant.Default.id,
+    val otherUnsent: List<Conversation> = emptyList(),
+    val lastThreads: Map<String, String> = emptyMap(),
+) {
+    val pending: List<Conversation> get() = listOfNotNull(unsent) + otherUnsent
+}

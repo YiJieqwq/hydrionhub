@@ -28,6 +28,15 @@ class DrawerHistoryTest {
         assertEquals(emptyList<HistorySection>(), historySections(history, "absent"))
     }
 
+    @Test fun assistantTopicsAreScopedWhileGlobalSearchAndHistoryIncludeAllOwners() {
+        val first = Conversation(id = "one", title = "work", assistantId = "a")
+        val second = first.copy(id = "two", assistantId = "b")
+        val rows = listOf(first, second)
+        assertEquals(listOf(first), historySections(rows, "", assistantId = "a").single().rows)
+        assertEquals(rows, historySections(rows, "work", global = true, assistantId = "a").single().rows)
+        assertEquals(rows, historySections(rows, "").single().rows)
+    }
+
     @Test fun emptySearchClaimsEitherHorizontalDirectionAndTogglesOnlyOncePerDrag() {
         for (sign in listOf(-1f, 1f)) {
             fun SearchDrag.move(distance: Int, blank: Boolean = true) =

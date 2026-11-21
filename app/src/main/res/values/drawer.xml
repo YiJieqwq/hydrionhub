@@ -26,5 +26,8 @@
     <string name="drawer_switch_topics">Search conversation titles</string>
     <string name="drawer_global_submit_hint">Enter keywords and submit to search titles and messages.</string>
     <string name="drawer_assistants">Assistants</string>
-    <string name="drawer_no_assistants">No other assistants are configured.</string>
+    <string name="assistant_add">Add assistant</string>
+    <string name="assistant_rename">Rename assistant</string>
+    <string name="assistant_name">Assistant name</string>
+    <string name="assistant_edit">Edit %1$s</string>
 </resources>

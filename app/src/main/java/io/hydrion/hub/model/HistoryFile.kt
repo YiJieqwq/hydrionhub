@@ -37,6 +37,10 @@ internal class HistoryFile(context: Context) {
 internal fun decodeWorkspace(json: JSONObject): SavedWorkspace {
     val history = json.optJSONArray("history").objects().map(::readConversation)
     val drafts = json.optJSONObject("drafts") ?: JSONObject()
+    val assistants = json.optJSONArray("assistants").objects().map {
+        LocalAssistant(it.getString("id"), it.getString("name"))
+    }.ifEmpty { listOf(LocalAssistant.Default) }
+    val lastThreads = json.optJSONObject("lastThreads") ?: JSONObject()
     val defaults = Draft()
     return SavedWorkspace(history, drafts.keys().asSequence().associateWith { id ->
         val draft = drafts.getJSONObject(id)
@@ -44,7 +48,10 @@ internal fun decodeWorkspace(json: JSONObject): SavedWorkspace {
         Draft(draft.optString("text"), readAttachments(draft.optJSONArray("attachments")),
             draft.optString("search", defaults.search),
             if (imageTool == "模型内置图片生成") CUSTOM_IMAGE_TOOL else imageTool)
-    }, json.optJSONObject("unsent")?.let(::readConversation))
+    }, json.optJSONObject("unsent")?.let(::readConversation), assistants,
+        json.optString("selectedAssistant", LocalAssistant.Default.id),
+        json.optJSONArray("otherUnsent").objects().map(::readConversation),
+        lastThreads.keys().asSequence().associateWith(lastThreads::getString))
 }
 
 internal fun encodeWorkspace(saved: SavedWorkspace): JSONObject {
@@ -55,17 +62,20 @@ internal fun encodeWorkspace(saved: SavedWorkspace): JSONObject {
             .put("search", draft.search).put("imageTool", draft.imageTool))
     }
     return JSONObject().put("history", history).put("drafts", drafts).put("unsent", saved.unsent?.let(::writeConversation))
+        .put("assistants", JSONArray(saved.assistants.map { JSONObject().put("id", it.id).put("name", it.name) }))
+        .put("selectedAssistant", saved.selectedAssistant).put("lastThreads", JSONObject(saved.lastThreads))
+        .put("otherUnsent", JSONArray(saved.otherUnsent.map(::writeConversation)))
 }
 
 private fun readConversation(item: JSONObject) = Conversation(
     id = item.getString("id"), title = item.getString("title"),
     mode = Mode.valueOf(item.getString("mode")), pinned = item.optBoolean("pinned"),
     updatedAt = item.getLong("updatedAt"), messages = item.optJSONArray("messages").objects().map(::readMessage),
-    environmentId = item.optional("environmentId"))
+    environmentId = item.optional("environmentId"), assistantId = item.optString("assistantId", LocalAssistant.Default.id))
 
 private fun writeConversation(c: Conversation) = JSONObject().put("id", c.id).put("title", c.title)
     .put("mode", c.mode.name).put("pinned", c.pinned).put("updatedAt", c.updatedAt)
-    .put("messages", JSONArray(c.messages.map(::writeMessage))).put("environmentId", c.environmentId)
+    .put("messages", JSONArray(c.messages.map(::writeMessage))).put("environmentId", c.environmentId).put("assistantId", c.assistantId)
 
 private fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else
     (0 until length()).map { getJSONObject(it) }

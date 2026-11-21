@@ -90,7 +90,7 @@ class ChatArchiveTest {
                         var bytes = source.getInputStream(entry).readBytes()
                         if (variation == 1 && entry.name.startsWith("blobs/")) bytes[0] = (bytes[0].toInt() xor 1).toByte()
                         if (variation == 3 && entry.name == "manifest.json") bytes = org.json.JSONObject(String(bytes))
-                            .put("version", 2).toString().toByteArray()
+                            .put("version", 999).toString().toByteArray()
                         if (variation == 5 && entry.name == "workspace.json") bytes = "{}".toByteArray()
                         out.write(bytes); out.closeEntry()
                     }

@@ -153,7 +153,6 @@ class SettingsSearchTest {
         val previews = listOf(
             "登录账户" to R.string.settings_signed_in_accounts,
             "signed-in accounts" to R.string.settings_signed_in_accounts,
-            "assistant" to R.string.settings_assistants,
             "默认模型" to R.string.settings_defaults,
             "web search" to R.string.settings_web_search,
             "记忆" to R.string.settings_memory,
@@ -166,6 +165,8 @@ class SettingsSearchTest {
             screen.onNodeWithText(screen.activity.getString(id)).assertIsDisplayed()
                 .assertIsNotEnabled().assertHasNoClickAction()
         }
+        search().performTextReplacement("assistant")
+        screen.onNodeWithText(screen.activity.getString(R.string.settings_assistants)).assertHasClickAction()
         search().performTextReplacement("消息样式")
         screen.onNodeWithText(screen.activity.getString(R.string.settings_style)).assertHasClickAction()
     }

@@ -26,5 +26,8 @@
     <string name="drawer_switch_topics">切换到话题标题搜索</string>
     <string name="drawer_global_submit_hint">输入关键词，按搜索查看标题和正文匹配的会话。</string>
     <string name="drawer_assistants">助手</string>
-    <string name="drawer_no_assistants">暂无其他可切换的助手。</string>
+    <string name="assistant_add">添加助手</string>
+    <string name="assistant_rename">重命名助手</string>
+    <string name="assistant_name">助手名称</string>
+    <string name="assistant_edit">编辑%1$s</string>
 </resources>

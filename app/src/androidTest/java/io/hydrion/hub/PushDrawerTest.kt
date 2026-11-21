@@ -1,5 +1,11 @@
 package io.hydrion.hub
 
+import androidx.activity.compose.setContent
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.*
+import io.hydrion.hub.model.LocalAssistant
+import io.hydrion.hub.model.Conversation
+import io.hydrion.hub.ui.sidebar.ConversationDrawer
 import android.view.View
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -39,7 +45,35 @@ class PushDrawerTest {
         screen.onNode(hasContentDescription(screen.activity.getString(R.string.settings_back)) and hasAnyAncestor(isDialog())).performClick()
         topics.assertIsDisplayed().assertTextContains("query")
         screen.onNodeWithContentDescription(screen.activity.getString(R.string.drawer_assistants)).performClick()
-        screen.onNodeWithText(screen.activity.getString(R.string.drawer_no_assistants)).assertIsDisplayed()
+        screen.onNodeWithTag("assistant-row-default").assertIsDisplayed()
+    }
+
+    @Test fun selectingAnInlineAssistantCollapsesThePickerAndScopesTheTopics() {
+        val alt = LocalAssistant("writing", "Writing")
+        val chats = listOf(Conversation(title = "First topic"), Conversation(title = "Second topic", assistantId = alt.id))
+        screen.runOnUiThread { screen.activity.setContent {
+            var current by remember { mutableStateOf(LocalAssistant.Default.id) }
+            MaterialTheme {
+                ConversationDrawer(300.dp, MaterialTheme.colorScheme.surface, chats, "",
+                    assistants = listOf(LocalAssistant.Default, alt), assistantId = current,
+                    onSelectAssistant = { current = it }, onRenameAssistant = { _, _ -> false }, assistantsReady = true,
+                    onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = {}, onDelete = {})
+            }
+        } }
+        val disclosure = screen.onNodeWithContentDescription(screen.activity.getString(R.string.drawer_assistants))
+        screen.onNodeWithText("First topic").assertIsDisplayed()
+        screen.onNodeWithText("Second topic").assertDoesNotExist()
+        disclosure.performClick()
+        screen.onNodeWithTag("assistant-row-default").assertIsSelected()
+        screen.onNodeWithTag("assistant-row-writing").performClick()
+        screen.onNodeWithTag("assistant-row-writing").assertDoesNotExist()
+        screen.onNodeWithText("Writing").assertIsDisplayed()
+        screen.onNodeWithText("Second topic").assertIsDisplayed()
+        screen.onNodeWithText("First topic").assertDoesNotExist()
+        disclosure.performClick()
+        screen.onNodeWithTag("assistant-row-writing").assertIsSelected()
+        screen.onNodeWithTag("drawer-settings").assertIsDisplayed()
+        screen.onNodeWithTag("drawer-new-chat").assertIsDisplayed()
     }
 
     @Test fun dragMovesTheFullWidthChatAndOnlyTheExposedStripDismissesTheDrawer() {

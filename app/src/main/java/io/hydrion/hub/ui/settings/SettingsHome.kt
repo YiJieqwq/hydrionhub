@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.sp
 import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 import io.hydrion.hub.ui.theme.HubStyle
 
-internal enum class SettingsEntry { About, Language, Image, Style, Data, Backup }
+internal enum class SettingsEntry { About, Language, Image, Style, Data, Backup, Assistants }
 
 private data class SettingsRow(
     val label: Int,
@@ -62,7 +62,7 @@ private val settingsGroups = listOf(
             "登录账户管理 已登录账号 manage signed-in accounts signed in login"),
         SettingsRow(R.string.settings_style, R.drawable.lucide_sun_moon,
             "消息样式 外观与主题 字色 气泡 样式 配色 消息 颜色 message appearance style theme", SettingsEntry.Style),
-        SettingsRow(R.string.settings_assistants, R.drawable.lucide_bot, "助手管理 assistants assistant management"),
+        SettingsRow(R.string.settings_assistants, R.drawable.lucide_bot, "助手管理 assistants assistant management", SettingsEntry.Assistants),
     ),
     R.string.settings_models to listOf(
         SettingsRow(R.string.settings_chat, R.drawable.lucide_boxes,

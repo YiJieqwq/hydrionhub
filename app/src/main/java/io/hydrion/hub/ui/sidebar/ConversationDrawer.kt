@@ -1,5 +1,8 @@
 package io.hydrion.hub.ui.sidebar
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,7 +53,8 @@ import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.ui.profile.LocalProfileStore
 import io.hydrion.hub.ui.profile.ProfileAvatar
-import io.hydrion.hub.ui.theme.IonMark
+import io.hydrion.hub.model.LocalAssistant
+import androidx.compose.ui.res.painterResource
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -61,11 +65,13 @@ internal data class HistorySection(val date: LocalDate?, val rows: List<Conversa
     val key = date?.toString() ?: "pinned"
 }
 
-internal fun historySections(history: List<Conversation>, query: String, global: Boolean = false): List<HistorySection> {
+internal fun historySections(history: List<Conversation>, query: String, global: Boolean = false,
+    assistantId: String? = null): List<HistorySection> {
     val term = query.trim()
     val tokens = if (global) term.split(Regex("\\s+")) else emptyList()
     val zone = ZoneId.systemDefault()
     val (pinned, dated) = history.filter { item ->
+        if (!global && assistantId != null && item.assistantId != assistantId) return@filter false
         term.isEmpty() || item.title.contains(term, ignoreCase = true) || (global && tokens.all { word ->
             item.title.contains(word, ignoreCase = true) || item.messages.any { message ->
                 message.text.contains(word, ignoreCase = true) ||
@@ -94,9 +100,12 @@ internal fun sectionLabel(date: LocalDate?): String {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun ConversationDrawer(
     width: Dp, containerColor: Color, history: List<Conversation>, currentId: String,
+    assistants: List<LocalAssistant>, assistantId: String, onSelectAssistant: (String) -> Unit,
+    onRenameAssistant: (String, String) -> Boolean, assistantsReady: Boolean,
     onNew: () -> Unit, onOpen: (String) -> Unit, onSettings: () -> Unit,
     onRename: (String) -> Unit, onPin: (String) -> Unit, onDelete: (String) -> Unit
 ) {
@@ -105,14 +114,23 @@ internal fun ConversationDrawer(
     var submitted by rememberSaveable { mutableStateOf<String?>(null) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var showAssistants by rememberSaveable { mutableStateOf(false) }
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    assistants.find { it.id == editingId }?.let { editing ->
+        AssistantNameDialog(editing, { editingId = null }) { onRenameAssistant(editing.id, it) }
+    }
+    val currentAssistant = assistants.first { it.id == assistantId }
     val focus = LocalFocusManager.current
     val filter = if (global) submitted else query
-    val sections = remember(history, filter, global) {
-        if (filter == null) emptyList() else historySections(history, filter, global)
+    val sections = remember(history, filter, global, assistantId) {
+        if (filter == null) emptyList() else historySections(history, filter, global, assistantId)
     }
     var collapsed by rememberSaveable(filter, global) { mutableStateOf(arrayListOf<String>()) }
     val scroll = rememberLazyListState()
-    LaunchedEffect(filter, global) { scroll.scrollToItem(0) }
+    LaunchedEffect(filter, global, assistantId) { scroll.scrollToItem(0) }
+    LaunchedEffect(showAssistants) { if (showAssistants) scroll.animateScrollToItem(0) }
+    val easeOut = CubicBezierEasing(0.215f, 0.61f, 0.355f, 1f)
+    val rotation by animateFloatAsState(if (showAssistants) 180f else 0f, tween(350, easing = easeOut),
+        label = "Assistant disclosure")
     val assistantState = stringResource(if (showAssistants) R.string.drawer_expanded else R.string.drawer_collapsed)
     val toggleScope = {
         global = !global
@@ -143,15 +161,17 @@ internal fun ConversationDrawer(
             }
             Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
-                    .clickable(role = Role.Button) { showAssistants = !showAssistants }
-                    .semantics { stateDescription = assistantState }.heightIn(min = 48.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    IonMark(32.dp)
-                    Text("HydrionHub", Modifier.padding(start = 16.dp).weight(1f, fill = false),
-                        fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Icon(if (showAssistants) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
-                        stringResource(R.string.drawer_assistants), Modifier.size(18.dp))
+                Row(Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
+                    .combinedClickable(enabled = assistantsReady, role = Role.Button,
+                        onLongClick = { editingId = assistantId }, onClick = { showAssistants = !showAssistants })
+                    .semantics { stateDescription = assistantState }.heightIn(min = 48.dp)
+                    .padding(start = 4.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AssistantAvatar(currentAssistant)
+                    Text(currentAssistant.name, Modifier.padding(start = 16.dp).weight(1f),
+                        fontSize = 15.sp, fontWeight = FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.width(8.dp))
+                    Icon(painterResource(R.drawable.lucide_chevron_right), stringResource(R.string.drawer_assistants),
+                        Modifier.size(18.dp).rotate(if (LocalLayoutDirection.current == LayoutDirection.Ltr) 90f + rotation else -90f + rotation), tint = colors.onSurface.copy(alpha = 0.7f))
                 }
                 IconButton(onNew, Modifier.testTag("drawer-new")) {
                     Icon(Icons.Outlined.Edit, stringResource(R.string.drawer_new), Modifier.size(20.dp))
@@ -160,9 +180,24 @@ internal fun ConversationDrawer(
 
             LazyColumn(Modifier.fillMaxWidth().weight(1f), state = scroll,
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 12.dp)) {
-                if (showAssistants) item(key = "assistants-empty") {
-                    Text(stringResource(R.string.drawer_no_assistants), Modifier.padding(14.dp),
-                        fontSize = 14.sp, color = colors.onSurfaceVariant)
+                item(key = "assistants") {
+                    val sizeSpec = tween<androidx.compose.ui.unit.IntSize>(260,
+                        easing = CubicBezierEasing(0.645f, 0.045f, 0.355f, 1f))
+                    androidx.compose.animation.AnimatedVisibility(showAssistants,
+                        enter = expandVertically(sizeSpec, expandFrom = Alignment.Top) + fadeIn(tween(220, easing = easeOut)),
+                        exit = shrinkVertically(sizeSpec, shrinkTowards = Alignment.Top) + fadeOut(tween(220,
+                            easing = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f)))) {
+                        Column(Modifier.padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            assistants.forEach { assistant ->
+                                key(assistant.id) {
+                                    AssistantRow(assistant, assistant.id == assistantId, showAssistants && assistantsReady,
+                                        onSelect = { showAssistants = false; onSelectAssistant(assistant.id) },
+                                        onEdit = { editingId = assistant.id })
+                                }
+                            }
+                        }
+                    }
                 }
                 if (sections.isEmpty()) item {
                     val empty = when {

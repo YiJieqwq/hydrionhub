@@ -22,12 +22,16 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
+internal enum class WorkspaceLoad { Reading, Ready, Unavailable }
+
 class HubViewModel(app: Application) : AndroidViewModel(app) {
     private val historyFile = HistoryFile(app)
     private val writes = Channel<Pair<Long, SavedWorkspace>>(Channel.CONFLATED)
     private val historyLock = Mutex()
     @Volatile private var storageEpoch = 0L
-    private var loaded = false
+    private val load = MutableStateFlow(WorkspaceLoad.Reading)
+    internal val workspaceLoad = load.asStateFlow()
+    private val loaded get() = load.value == WorkspaceLoad.Ready
     private val initialMediaScan = CompletableDeferred<Unit>()
     private var changedDuringLoad = false
     internal val providers = ProviderStore(app)
@@ -43,6 +47,9 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         persist = { snapshot -> if (loaded) writes.trySend(storageEpoch to snapshot) else changedDuringLoad = true },
         onGenerationError = ::reportError)
     val state = session.state
+    internal fun addAssistant(name: String) = loaded && session.addAssistant(name)
+    internal fun renameAssistant(id: String, name: String) = loaded && session.renameAssistant(id, name)
+    internal fun selectAssistant(id: String) { if (loaded) session.selectAssistant(id) }
     private val mutableNotice = MutableStateFlow<String?>(null)
     val notice = mutableNotice.asStateFlow()
 
@@ -61,7 +68,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val saved = withContext(Dispatchers.IO) { historyFile.load() }
                 session.restore(saved)
-                loaded = true
+                load.value = WorkspaceLoad.Ready
                 if (changedDuringLoad) writes.trySend(storageEpoch to session.snapshot())
                 val retained = saved.imageReferences() + session.snapshot().imageReferences() +
                     state.value.draft.attachments.mapNotNull { it.imageKey }
@@ -75,6 +82,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
+                load.value = WorkspaceLoad.Unavailable
                 mutableNotice.value = "本地历史加载失败，本次会话仅在内存中保留。"
             } finally { initialMediaScan.complete(Unit) }
         }

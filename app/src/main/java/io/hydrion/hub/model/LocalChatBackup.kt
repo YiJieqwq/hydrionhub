@@ -17,11 +17,19 @@ import kotlinx.coroutines.withContext
 
 internal fun mergeBackup(current: SavedWorkspace, incoming: SavedWorkspace): SavedWorkspace {
     require(current.history.none { c -> c.messages.any { it.status.isActive } })
-    val existing = current.history.map { it.id }.toSet() + listOfNotNull(current.unsent?.id)
-    require(incoming.history.none { it.id in existing } && incoming.unsent?.id !in existing)
-    require(incoming.unsent == null || current.unsent == null)
+    val existing = (current.history + current.pending).mapTo(mutableSetOf()) { it.id }
+    require((incoming.history + incoming.pending).none { it.id in existing })
+    val pending = current.pending + incoming.pending
+    require(pending.distinctBy { it.assistantId }.size == pending.size)
+    val fresh = current.history.isEmpty() && current.pending.isEmpty() && current.assistants == listOf(LocalAssistant.Default)
+    val selected = if (fresh) incoming.selectedAssistant else current.selectedAssistant
+    val assistants = if (fresh) incoming.assistants else (current.assistants + incoming.assistants).distinctBy { it.id }
+    // Browsing a local assistant must keep its current thread/draft even when importing other threads.
+    val localOwners = (current.history + current.pending).map { it.assistantId }.toSet() + current.selectedAssistant
+    val resume = if (fresh) incoming.lastThreads else incoming.lastThreads.filterKeys { it !in localOwners } + current.lastThreads
     return SavedWorkspace((current.history + incoming.history).sortedByDescending { it.updatedAt },
-        current.drafts + incoming.drafts, current.unsent ?: incoming.unsent)
+        current.drafts + incoming.drafts, pending.find { it.assistantId == selected }, assistants, selected,
+        pending.filter { it.assistantId != selected }.sortedBy { it.assistantId }, resume)
 }
 
 internal fun sameBackupBytes(a: File, b: File): Boolean {

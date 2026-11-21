@@ -67,20 +67,30 @@ private fun SavedWorkspace.transform(attachment: (Attachment) -> Attachment, ima
         },
     )
     fun conversation(c: Conversation) = Conversation(id = c.id, title = c.title, mode = c.mode,
-        pinned = c.pinned, updatedAt = c.updatedAt, messages = c.messages.map(::message))
+        pinned = c.pinned, updatedAt = c.updatedAt, messages = c.messages.map(::message), assistantId = c.assistantId)
     return SavedWorkspace(history.map(::conversation), drafts.mapValues { (_, d) ->
         Draft(d.text, d.attachments.map(::portableAttachment), d.search, d.imageTool)
-    }, unsent?.let(::conversation))
+    }, unsent?.let(::conversation), assistants.map { LocalAssistant(it.id, it.name) }, selectedAssistant,
+        otherUnsent.map(::conversation), lastThreads.toMap())
 }
 
 private fun stableId(value: String) = value.isNotBlank() && value.length <= 256 &&
     value.none { it.isISOControl() || it == '/' || it == '\\' }
 
 private fun SavedWorkspace.checkIds() {
-    val conversations = history + listOfNotNull(unsent)
+    val owners = assistants.map { it.id }.toSet()
+    require(owners.size == assistants.size && LocalAssistant.Default.id in owners && selectedAssistant in owners)
+    require(assistants.all { stableId(it.id) && LocalAssistant.validName(it.name) })
+    val conversations = history + pending
+    require(conversations.all { it.assistantId in owners })
+    require(pending.map { it.assistantId }.distinct().size == pending.size)
+    require(unsent == null || unsent.assistantId == selectedAssistant)
+    require(otherUnsent.none { it.assistantId == selectedAssistant })
+    val historyOwners = history.associate { it.id to it.assistantId }
+    require(lastThreads.all { (assistant, thread) -> historyOwners[thread] == assistant })
     val ids = conversations.map { it.id }
     require(ids.all(::stableId) && ids.distinct().size == ids.size && ids.containsAll(drafts.keys))
-    require(unsent == null || (unsent.messages.isEmpty() && unsent.id in drafts))
+    require(pending.all { it.messages.isEmpty() && it.id in drafts })
     fun checkAttachments(items: List<Attachment>) {
         require(items.distinctBy { it.id }.size == items.size)
         require(items.none { it.id.isBlank() || (it.imageKey == null && it.uri == null) })
@@ -169,7 +179,8 @@ internal object ChatArchive {
         }, { it })
         val state = encodeWorkspace(clean).toString().toByteArray()
         require(state.size <= MaxMetadata)
-        val manifest = JSONObject().put("format", "hydrion.chat").put("version", 1)
+        val version = if (clean.assistants == listOf(LocalAssistant.Default)) 1 else 2
+        val manifest = JSONObject().put("format", "hydrion.chat").put("version", version)
             .put("workspaceSha256", digest(state)).put("generated", JSONObject(generated))
         val zip = File(work, "chats.zip")
         ZipOutputStream(zip.outputStream().buffered()).use { output ->
@@ -198,7 +209,7 @@ internal object ChatArchive {
                 }.also { require(it.size.toLong() == entry.size) }
             }
             val manifest = parseObject(read("manifest.json"))
-            require(manifest.getString("format") == "hydrion.chat" && manifest.get("version") == 1)
+            require(manifest.getString("format") == "hydrion.chat" && manifest.get("version") in listOf(1, 2))
             val state = read("workspace.json")
             require(digest(state) == manifest.getString("workspaceSha256"))
             val json = parseObject(state)
@@ -206,6 +217,7 @@ internal object ChatArchive {
             json.getJSONObject("drafts")
             val workspace = decodeWorkspace(json)
             workspace.checkIds()
+            require(manifest.getInt("version") == 2 || workspace.assistants == listOf(LocalAssistant.Default))
             val imageMap = manifest.getJSONObject("generated")
             val generated = imageMap.keys().asSequence().associateWith { id ->
                 GeneratedImageStore.dimensions(id)

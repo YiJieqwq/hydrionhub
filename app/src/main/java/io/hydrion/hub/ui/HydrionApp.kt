@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.hydrion.hub.model.Conversation
+import io.hydrion.hub.model.WorkspaceLoad
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.provider.ChatModelPicker
@@ -74,6 +75,9 @@ fun HydrionApp() {
 private fun Workspace(vm: HubViewModel) {
     val providers = vm.providers
     val state by vm.state.collectAsStateWithLifecycle()
+    val load by vm.workspaceLoad.collectAsStateWithLifecycle()
+    // Do not expose a temporary default chat while the previous assistant is being restored.
+    if (load == WorkspaceLoad.Reading) return
     val catalog by providers.catalog.collectAsStateWithLifecycle()
     val current = state.current
     val selection = remember(catalog, current.mode) { catalog.selection(current.mode) }
@@ -182,7 +186,9 @@ private fun Workspace(vm: HubViewModel) {
                     containerColor = if (current.mode == Mode.Chat) MaterialTheme.colorScheme.background
                         else MaterialTheme.colorScheme.surfaceContainerLow,
                     history = if (visible) state.history else emptyList(),
-                    currentId = current.id, onNew = { leaveDrawer(vm::newConversation) },
+                    assistants = state.assistants, assistantId = current.assistantId, assistantsReady = load == WorkspaceLoad.Ready,
+                    onSelectAssistant = { id -> leaveDrawer { vm.selectAssistant(id) } },
+                    onRenameAssistant = vm::renameAssistant, currentId = current.id, onNew = { leaveDrawer(vm::newConversation) },
                     onOpen = { id -> leaveDrawer { vm.openConversation(id) } },
                     onSettings = { closeDrawer(); settings = true },
                     onRename = { renameId = it }, onPin = vm::togglePin, onDelete = { deleteId = it }

@@ -131,7 +131,8 @@ internal fun BackupSettings(vm: HubViewModel, onBack: () -> Unit) {
         inspected?.let { candidate ->
             Text(stringResource(R.string.backup_summary, candidate.workspace.history.size, candidate.workspace.drafts.size,
                 candidate.blobs.size))
-            Button(enabled = !busy && (candidate.workspace.history.isNotEmpty() || candidate.workspace.unsent != null), onClick = { task {
+            Button(enabled = !busy && (candidate.workspace.history.isNotEmpty() || candidate.workspace.pending.isNotEmpty() ||
+                candidate.workspace.assistants.size > 1), onClick = { task {
                 vm.applyBackup(candidate)
                 clear()
                 info = R.string.backup_restored
