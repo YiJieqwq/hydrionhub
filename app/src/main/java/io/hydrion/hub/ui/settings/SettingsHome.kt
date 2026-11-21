@@ -3,6 +3,7 @@ package io.hydrion.hub.ui.settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -41,10 +42,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.border
 import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 import io.hydrion.hub.ui.theme.HubStyle
-import io.hydrion.hub.ui.theme.capsuleEdge
 
 internal enum class SettingsEntry { About, Language, Image, Style, Data }
 
@@ -126,26 +125,34 @@ internal fun SettingsHome(
         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
         .navigationBarsPadding().imePadding()) {
         SettingsHeader(onBack = { if (active) leaveSearch() else onBack() }, onInfo = { open(SettingsEntry.About) })
-        Box(Modifier.fillMaxWidth().weight(1f)) {
-            Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (!active) SettingsProfile(signedInAccounts)
-                groups.forEach { (title, entries) ->
-                    SettingsGroup(stringResource(title), entries, open)
+        Scaffold(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = Color.Transparent,
+            bottomBar = {
+                SearchDock(search, active, onSearch, onFocus = { searching = true },
+                    onSubmit = hideKeyboard, onClose = leaveSearch, modifier = Modifier.fillMaxWidth())
+            },
+        ) { dockPadding ->
+            Box(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(dockPadding).padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (!active) SettingsProfile(signedInAccounts)
+                    groups.forEach { (title, entries) ->
+                        SettingsGroup(stringResource(title), entries, open)
+                    }
+                    if (groups.isEmpty()) {
+                        Text(stringResource(R.string.settings_no_matches), Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.height(16.dp))
                 }
-                if (groups.isEmpty()) {
-                    Text(stringResource(R.string.settings_no_matches), Modifier.fillMaxWidth().padding(vertical = 20.dp),
-                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (scroll.canScrollForward) {
+                    Spacer(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(16.dp).background(
+                        Brush.verticalGradient(listOf(Color.Transparent, HubStyle.Background))))
                 }
-                Spacer(Modifier.height(16.dp))
-            }
-            if (scroll.canScrollForward) {
-                Spacer(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(16.dp).background(
-                    Brush.verticalGradient(listOf(Color.Transparent, HubStyle.Background))))
             }
         }
-        SearchDock(search, active, onSearch, onFocus = { searching = true },
-            onSubmit = hideKeyboard, onClose = leaveSearch, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -168,16 +175,18 @@ private fun SettingsHeader(onBack: () -> Unit, onInfo: () -> Unit) {
 private fun HeaderButton(icon: ImageVector, description: String, onClick: () -> Unit, circleTag: String) {
     IconButton(onClick = onClick, modifier = Modifier.size(SettingsButtonSize)) {
         Box(Modifier.size(44.dp).testTag(circleTag).clip(CircleShape).background(HubStyle.Raised)
-            .border(Dp.Hairline, HubStyle.Border, CircleShape), contentAlignment = Alignment.Center) {
+            .border(HubStyle.SettingsOutline, CircleShape), contentAlignment = Alignment.Center) {
             Icon(icon, description, Modifier.size(20.dp), tint = Color.White)
         }
     }
 }
 
+private fun Modifier.searchCapsule() =
+    border(HubStyle.SettingsOutline, CircleShape).clip(CircleShape).background(HubStyle.Raised)
+
 @Composable
 private fun RoundButton(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    IconButton(onClick = onClick, modifier = modifier.size(48.dp).capsuleEdge()
-        .clip(CircleShape).background(HubStyle.Raised)) {
+    IconButton(onClick = onClick, modifier = modifier.size(48.dp).searchCapsule()) {
         Icon(icon, description, Modifier.size(22.dp), tint = Color.White)
     }
 }
@@ -190,7 +199,7 @@ private fun SettingsGroup(
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, Modifier.padding(start = 12.dp, top = 6.dp), fontSize = 13.sp, lineHeight = 18.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
-        Column(Modifier.fillMaxWidth().clip(shape).background(HubStyle.Surface)) {
+        Column(Modifier.fillMaxWidth().border(HubStyle.SettingsOutline, shape).clip(shape).background(HubStyle.Surface)) {
             entries.forEachIndexed { index, entry ->
                 val destination = entry.destination
                 val interaction = if (destination == null) {
@@ -222,10 +231,10 @@ private fun SearchDock(
     onSubmit: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier
 ) {
     val hint = stringResource(R.string.settings_search)
-    Row(modifier.padding(start = 34.dp, end = 34.dp, top = 4.dp, bottom = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         BasicTextField(value = search, onValueChange = onSearch, singleLine = true,
-            modifier = Modifier.weight(1f).capsuleEdge().clip(CircleShape).background(HubStyle.Raised)
+            modifier = Modifier.weight(1f).searchCapsule()
                 .onFocusChanged { if (it.isFocused) onFocus() }.semantics { contentDescription = hint },
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
             cursorBrush = SolidColor(Color.White), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),

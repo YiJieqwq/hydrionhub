@@ -1,5 +1,6 @@
 package io.hydrion.hub
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -59,6 +60,33 @@ class SettingsSearchTest {
         fun circle(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true)
             .assertWidthIsEqualTo(44.dp).assertHeightIsEqualTo(44.dp).fetchSemanticsNode().boundsInWindow
         assertEquals(circle("settings-back-circle").center.y, circle("settings-info-circle").center.y, 1f)
+    }
+
+    @Test fun focusedSearchFloatsOverTheListWithAnOpenScrollableGap() {
+        openSettings()
+        search().performClick().assertIsFocused()
+        val list = scrollingList()
+        val clear = screen.onNode(hasContentDescription(screen.activity.getString(R.string.settings_end_search)) and hasClickAction())
+        clear.assertWidthIsEqualTo(48.dp).assertHeightIsEqualTo(48.dp)
+        val field = search().fetchSemanticsNode().boundsInRoot
+        val close = clear.fetchSemanticsNode().boundsInRoot
+        val view = list.fetchSemanticsNode().boundsInRoot
+        val space = 12f * screen.activity.resources.displayMetrics.density
+        val (left, right) = listOf(field, close).sortedBy { it.left }
+        assertEquals(space, left.left - view.left, 1f)
+        assertEquals(space, view.right - right.right, 1f)
+        assertEquals(space, right.left - left.right, 1f)
+        assertTrue("List viewport extends underneath both capsules", view.bottom >= maxOf(field.bottom, close.bottom))
+
+        val range = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+        val before = range.value()
+        val start = Offset((left.right + right.left) / 2 - view.left, field.center.y - view.top)
+        list.performTouchInput { swipe(start, Offset(start.x, start.y / 2)) }
+        screen.waitForIdle()
+        assertTrue("Swiping between the capsules scrolls the underlying list", range.value() > before)
+        list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, range.maxValue()) }
+        val last = screen.onNode(row(screen.activity.getString(R.string.settings_data))).fetchSemanticsNode().boundsInRoot
+        assertTrue(last.height > 0f && last.bottom <= search().fetchSemanticsNode().boundsInRoot.top)
     }
 
     @Test fun filtersChineseAndEnglishAndExitsWithClearOrBack() {

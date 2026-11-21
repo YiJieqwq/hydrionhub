@@ -2,6 +2,7 @@ package io.hydrion.hub.ui.sidebar
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.ui.profile.LocalProfileStore
 import io.hydrion.hub.ui.profile.ProfileAvatar
@@ -181,7 +183,7 @@ private fun DrawerFooter(onNew: () -> Unit, onSettings: () -> Unit) {
             Text(stringResource(R.string.drawer_chat), color = colors.onPrimary, fontSize = 15.sp,
                 fontWeight = FontWeight.Medium, maxLines = 1)
         }
-        Box(Modifier.size(48.dp).clip(CircleShape).background(colors.surfaceContainerHigh)
+        Box(Modifier.size(48.dp).border(HubStyle.SettingsOutline, CircleShape).clip(CircleShape).background(colors.surfaceContainerHigh)
             .testTag("drawer-settings").clickable(role = Role.Button, onClick = onSettings)
             .semantics { contentDescription = settings }, contentAlignment = Alignment.Center) {
             ProfileAvatar(profile, Modifier.size(32.dp))

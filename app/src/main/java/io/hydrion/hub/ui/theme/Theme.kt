@@ -1,5 +1,6 @@
 package io.hydrion.hub.ui.theme
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import io.hydrion.hub.R
@@ -22,6 +23,7 @@ object HubStyle {
     val Blue = Color(0xFF3566F0)
     val ComposerHint = Color(0xFFAFAFAF)
     val ComposerBorder = Color(0xFF4F4F4F)
+    val SettingsOutline = BorderStroke(1.dp, ComposerBorder)
     val PageMargin = 16.dp
     val ControlIcon = 20.dp
     val ComposerActionDiameter = 32.dp
