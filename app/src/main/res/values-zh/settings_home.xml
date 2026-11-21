@@ -2,14 +2,23 @@
     <string name="settings_title">设置</string>
     <string name="settings_back">返回</string>
     <string name="settings_info">关于应用</string>
-    <string name="settings_models">模型</string>
+    <string name="settings_models">模型配置</string>
     <string name="settings_app">应用</string>
     <string name="settings_chat">聊天模型</string>
     <string name="settings_image">图像生成模型</string>
-    <string name="settings_style">消息样式</string>
+    <string name="settings_style">外观</string>
     <string name="settings_data">数据管理</string>
     <string name="settings_about">关于 HydrionHub</string>
     <string name="settings_search">搜索设置</string>
     <string name="settings_end_search">退出搜索</string>
     <string name="settings_no_matches">没有匹配的设置</string>
+    <string name="settings_general">通用设置</string>
+    <string name="settings_tools">工具配置</string>
+    <string name="settings_assistants">助手管理</string>
+    <string name="settings_defaults">默认模型</string>
+    <string name="settings_web_search">网络搜索提供商</string>
+    <string name="settings_memory">记忆</string>
+    <string name="settings_environments">容器与环境</string>
+    <string name="settings_mcp">MCP</string>
+    <string name="settings_skill">Skill</string>
 </resources>

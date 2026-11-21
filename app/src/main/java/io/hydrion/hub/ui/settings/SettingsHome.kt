@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -45,17 +46,40 @@ import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.capsuleEdge
 
-internal enum class SettingsEntry(val label: Int, val terms: String) {
-    About(R.string.settings_about, "关于 应用 版本 about version hydrionhub 氢离子"),
-    Language(R.string.settings_chat, "语言模型供应商 聊天模型供应商 对话 配置 chat models provider reasoning 设置"),
-    Image(R.string.settings_image, "图片模型供应商 图像生成模型供应商 生图 绘图 image generation models provider 设置"),
-    Style(R.string.settings_style, "消息样式 外观与主题 字色 气泡 样式 配色 消息 颜色 message appearance style theme"),
-    Data(R.string.settings_data, "数据管理 存储 本机 历史 数据 data management storage history")
-}
+internal enum class SettingsEntry { About, Language, Image, Style, Data }
+
+private data class SettingsRow(
+    val label: Int,
+    val icon: ImageVector,
+    val terms: String,
+    val destination: SettingsEntry? = null,
+)
 
 private val settingsGroups = listOf(
-    R.string.settings_models to listOf(SettingsEntry.Language, SettingsEntry.Image),
-    R.string.settings_app to listOf(SettingsEntry.Style, SettingsEntry.Data, SettingsEntry.About)
+    R.string.settings_general to listOf(
+        SettingsRow(R.string.settings_style, Icons.Outlined.Palette,
+            "消息样式 外观与主题 字色 气泡 样式 配色 消息 颜色 message appearance style theme", SettingsEntry.Style),
+        SettingsRow(R.string.settings_assistants, Icons.Outlined.PersonOutline, "助手管理 assistants assistant management"),
+    ),
+    R.string.settings_models to listOf(
+        SettingsRow(R.string.settings_chat, Icons.Outlined.ChatBubbleOutline,
+            "语言模型供应商 聊天模型供应商 对话模型 供应商 配置 chat models provider reasoning 设置", SettingsEntry.Language),
+        SettingsRow(R.string.settings_image, Icons.Outlined.Image,
+            "图片模型供应商 图像生成模型供应商 生图 绘图 image generation models provider 设置", SettingsEntry.Image),
+        SettingsRow(R.string.settings_defaults, Icons.Outlined.Tune, "默认模型 default models"),
+        SettingsRow(R.string.settings_web_search, Icons.Outlined.TravelExplore,
+            "网络搜索提供商 网络搜索供应商 web search providers"),
+    ),
+    R.string.settings_tools to listOf(
+        SettingsRow(R.string.settings_memory, Icons.Outlined.Psychology, "记忆 memory"),
+        SettingsRow(R.string.settings_environments, Icons.Outlined.Terminal, "容器与环境 containers and environments"),
+        SettingsRow(R.string.settings_mcp, Icons.Outlined.Extension, "MCP model context protocol"),
+        SettingsRow(R.string.settings_skill, Icons.Outlined.AutoAwesome, "Skill 技能"),
+    ),
+    R.string.settings_app to listOf(
+        SettingsRow(R.string.settings_data, Icons.Outlined.Storage, "数据管理 存储 本机 历史 数据 data management storage history", SettingsEntry.Data),
+        SettingsRow(R.string.settings_about, Icons.Outlined.Info, "关于 应用 版本 about version hydrionhub 氢离子", SettingsEntry.About),
+    ),
 )
 
 @Composable
@@ -88,7 +112,7 @@ internal fun SettingsHome(
         settingsGroups.mapNotNull { (section, entries) ->
             val matches = entries.filter { entry ->
                 // About is always accessible in the top bar. Include it among explicitly matched results.
-                (entry != SettingsEntry.About || words.isNotEmpty()) &&
+                (entry.destination != SettingsEntry.About || words.isNotEmpty()) &&
                     words.all { entry.terms.contains(it, ignoreCase = true) }
             }
             if (matches.isEmpty()) null else section to matches
@@ -158,7 +182,7 @@ private fun RoundButton(icon: ImageVector, description: String, onClick: () -> U
 
 @Composable
 private fun SettingsGroup(
-    title: String, entries: List<SettingsEntry>, onOpen: (SettingsEntry) -> Unit
+    title: String, entries: List<SettingsRow>, onOpen: (SettingsEntry) -> Unit
 ) {
     val shape = RoundedCornerShape(27.dp)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -166,21 +190,23 @@ private fun SettingsGroup(
             color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
         Column(Modifier.fillMaxWidth().clip(shape).background(HubStyle.Surface)) {
             entries.forEachIndexed { index, entry ->
-                val icon = when (entry) {
-                    SettingsEntry.Language -> Icons.Outlined.ChatBubbleOutline
-                    SettingsEntry.Image -> Icons.Outlined.Image
-                    SettingsEntry.Style -> Icons.Outlined.Palette
-                    SettingsEntry.Data -> Icons.Outlined.Storage
-                    SettingsEntry.About -> Icons.Outlined.Info
+                val destination = entry.destination
+                val interaction = if (destination == null) {
+                    Modifier.semantics(mergeDescendants = true) { disabled() }
+                } else {
+                    Modifier.clickable(role = Role.Button) { onOpen(destination) }
                 }
-                Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(entry) }
+                val ink = if (destination == null) MaterialTheme.colorScheme.onSurfaceVariant else Color.White
+                Row(Modifier.fillMaxWidth().then(interaction)
                     .heightIn(min = 54.dp).padding(start = 18.dp, end = 16.dp, top = 7.dp, bottom = 7.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Icon(icon, null, Modifier.size(20.dp), tint = Color.White)
+                    Icon(entry.icon, null, Modifier.size(20.dp), tint = ink)
                     Text(stringResource(entry.label), Modifier.weight(1f), fontSize = 16.sp, lineHeight = 22.sp,
-                        color = Color.White)
-                    Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        color = ink)
+                    if (destination != null) {
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
                 if (index != entries.lastIndex) HorizontalDivider(thickness = Dp.Hairline, color = HubStyle.Border)
             }

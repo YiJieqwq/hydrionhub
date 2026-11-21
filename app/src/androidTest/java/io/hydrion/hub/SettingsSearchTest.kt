@@ -100,6 +100,27 @@ class SettingsSearchTest {
         search().assertDoesNotExist()
     }
 
+    @Test fun previewRowsCanBeFoundWithoutOfferingNavigation() {
+        openSettings()
+        search().performClick()
+        val previews = listOf(
+            "assistant" to R.string.settings_assistants,
+            "默认模型" to R.string.settings_defaults,
+            "web search" to R.string.settings_web_search,
+            "记忆" to R.string.settings_memory,
+            "containers" to R.string.settings_environments,
+            "mCp" to R.string.settings_mcp,
+            "Skill" to R.string.settings_skill,
+        )
+        for ((query, id) in previews) {
+            search().performTextReplacement(query)
+            screen.onNodeWithText(screen.activity.getString(id)).assertIsDisplayed()
+                .assertIsNotEnabled().assertHasNoClickAction()
+        }
+        search().performTextReplacement("消息样式")
+        screen.onNodeWithText(screen.activity.getString(R.string.settings_style)).assertHasClickAction()
+    }
+
     @Test fun infoOpensAboutAndLastRowRemainsAboveTheSearchField() {
         openSettings()
         screen.onNodeWithContentDescription(screen.activity.getString(R.string.settings_info)).performClick()
