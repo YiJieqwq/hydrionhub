@@ -15,7 +15,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,8 +25,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.annotation.DrawableRes
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import io.hydrion.hub.R
 import androidx.compose.ui.platform.LocalFocusManager
@@ -49,38 +51,38 @@ internal enum class SettingsEntry { About, Language, Image, Style, Data, Backup 
 
 private data class SettingsRow(
     val label: Int,
-    val icon: ImageVector,
+    @DrawableRes val icon: Int,
     val terms: String,
     val destination: SettingsEntry? = null,
 )
 
 private val settingsGroups = listOf(
     R.string.settings_general to listOf(
-        SettingsRow(R.string.settings_signed_in_accounts, Icons.Outlined.ManageAccounts,
+        SettingsRow(R.string.settings_signed_in_accounts, R.drawable.lucide_user_round,
             "登录账户管理 已登录账号 manage signed-in accounts signed in login"),
-        SettingsRow(R.string.settings_style, Icons.Outlined.Palette,
+        SettingsRow(R.string.settings_style, R.drawable.lucide_sun_moon,
             "消息样式 外观与主题 字色 气泡 样式 配色 消息 颜色 message appearance style theme", SettingsEntry.Style),
-        SettingsRow(R.string.settings_assistants, Icons.Outlined.PersonOutline, "助手管理 assistants assistant management"),
+        SettingsRow(R.string.settings_assistants, R.drawable.lucide_bot, "助手管理 assistants assistant management"),
     ),
     R.string.settings_models to listOf(
-        SettingsRow(R.string.settings_chat, Icons.Outlined.ChatBubbleOutline,
+        SettingsRow(R.string.settings_chat, R.drawable.lucide_boxes,
             "语言模型供应商 聊天模型供应商 对话模型 供应商 配置 chat models provider reasoning 设置", SettingsEntry.Language),
-        SettingsRow(R.string.settings_image, Icons.Outlined.Image,
+        SettingsRow(R.string.settings_image, R.drawable.lucide_image,
             "图片模型供应商 图像生成模型供应商 生图 绘图 image generation models provider 设置", SettingsEntry.Image),
-        SettingsRow(R.string.settings_defaults, Icons.Outlined.Tune, "默认模型 default models"),
-        SettingsRow(R.string.settings_web_search, Icons.Outlined.TravelExplore,
+        SettingsRow(R.string.settings_defaults, R.drawable.lucide_heart, "默认模型 default models"),
+        SettingsRow(R.string.settings_web_search, R.drawable.lucide_earth,
             "网络搜索提供商 网络搜索供应商 web search providers"),
     ),
     R.string.settings_tools to listOf(
-        SettingsRow(R.string.settings_memory, Icons.Outlined.Psychology, "记忆 memory"),
-        SettingsRow(R.string.settings_environments, Icons.Outlined.Terminal, "容器与环境 containers and environments"),
-        SettingsRow(R.string.settings_mcp, Icons.Outlined.Extension, "MCP model context protocol"),
-        SettingsRow(R.string.settings_skill, Icons.Outlined.AutoAwesome, "Skill 技能"),
+        SettingsRow(R.string.settings_memory, R.drawable.lucide_brain, "记忆 memory"),
+        SettingsRow(R.string.settings_environments, R.drawable.lucide_folder_code, "容器与环境 containers and environments"),
+        SettingsRow(R.string.settings_mcp, R.drawable.lucide_terminal, "MCP model context protocol"),
+        SettingsRow(R.string.settings_skill, R.drawable.lucide_wand_sparkles, "Skill 技能"),
     ),
     R.string.settings_app to listOf(
-        SettingsRow(R.string.settings_data, Icons.Outlined.Storage, "数据管理 存储 本机 历史 数据 data management storage history", SettingsEntry.Data),
-        SettingsRow(R.string.backup_title, Icons.Outlined.Backup, "数据备份 本地导出 恢复 local chat backup export restore", SettingsEntry.Backup),
-        SettingsRow(R.string.settings_about, Icons.Outlined.Info, "关于 应用 版本 about version hydrionhub 氢离子", SettingsEntry.About),
+        SettingsRow(R.string.settings_data, R.drawable.lucide_hard_drive, "数据管理 存储 本机 历史 数据 data management storage history", SettingsEntry.Data),
+        SettingsRow(R.string.backup_title, R.drawable.lucide_database, "数据备份 本地导出 恢复 local chat backup export restore", SettingsEntry.Backup),
+        SettingsRow(R.string.settings_about, R.drawable.lucide_badge_info, "关于 应用 版本 about version hydrionhub 氢离子", SettingsEntry.About),
     ),
 )
 
@@ -197,10 +199,14 @@ private fun SettingsGroup(
     title: String, entries: List<SettingsRow>, onOpen: (SettingsEntry) -> Unit
 ) {
     val shape = RoundedCornerShape(27.dp)
+    val colors = MaterialTheme.colorScheme
+    val dark = colors.onSurface.luminance() > colors.surface.luminance()
+    val fill = if (dark) HubStyle.Raised else colors.surfaceContainerHigh
+    val line = if (dark) HubStyle.ComposerBorder else colors.outlineVariant
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, Modifier.padding(start = 12.dp, top = 6.dp), fontSize = 13.sp, lineHeight = 18.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
-        Column(Modifier.fillMaxWidth().border(HubStyle.SettingsOutline, shape).clip(shape).background(HubStyle.Surface)) {
+        Column(Modifier.fillMaxWidth().border(HubStyle.SettingsOutline.width, line, shape).clip(shape).background(fill)) {
             entries.forEachIndexed { index, entry ->
                 val destination = entry.destination
                 val interaction = if (destination == null) {
@@ -208,19 +214,19 @@ private fun SettingsGroup(
                 } else {
                     Modifier.clickable(role = Role.Button) { onOpen(destination) }
                 }
-                val ink = if (destination == null) MaterialTheme.colorScheme.onSurfaceVariant else Color.White
+                val ink = if (destination == null) colors.onSurfaceVariant else if (dark) Color.White else colors.onSurface
                 Row(Modifier.fillMaxWidth().then(interaction)
                     .heightIn(min = 54.dp).padding(start = 18.dp, end = 16.dp, top = 7.dp, bottom = 7.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Icon(entry.icon, null, Modifier.size(20.dp), tint = ink)
+                    Icon(painterResource(entry.icon), null, Modifier.size(20.dp), tint = ink)
                     Text(stringResource(entry.label), Modifier.weight(1f), fontSize = 16.sp, lineHeight = 22.sp,
                         color = ink)
                     if (destination != null) {
-                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(16.dp),
+                        Icon(painterResource(R.drawable.lucide_chevron_right), null, Modifier.size(16.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                if (index != entries.lastIndex) HorizontalDivider(thickness = Dp.Hairline, color = HubStyle.Border)
+                if (index != entries.lastIndex) HorizontalDivider(thickness = Dp.Hairline, color = line)
             }
         }
     }

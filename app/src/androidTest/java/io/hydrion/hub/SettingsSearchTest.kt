@@ -1,6 +1,9 @@
 package io.hydrion.hub
 
+import android.graphics.Color
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.geometry.Offset
+import kotlin.math.roundToInt
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -60,6 +63,22 @@ class SettingsSearchTest {
         fun circle(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true)
             .assertWidthIsEqualTo(44.dp).assertHeightIsEqualTo(44.dp).fetchSemanticsNode().boundsInWindow
         assertEquals(circle("settings-back-circle").center.y, circle("settings-info-circle").center.y, 1f)
+    }
+
+    @Test fun darkGroupHasOneOutlineAndAMatchingDivider() {
+        openSettings()
+        val row = revealRow(screen.activity.getString(R.string.settings_style))
+        val bounds = row.fetchSemanticsNode().boundsInRoot
+        val image = screen.onRoot().captureToImage().asAndroidBitmap()
+        val x = bounds.left.roundToInt()
+        val y = bounds.center.y.roundToInt()
+        val density = screen.activity.resources.displayMetrics.density
+        val line = Color.rgb(79, 79, 79)
+        assertEquals(line, image.getPixel(x, y))
+        assertEquals(Color.rgb(48, 48, 48), image.getPixel(x + (6 * density).roundToInt(), y))
+        val edge = bounds.bottom.roundToInt()
+        assertTrue("Group separators use the same solid color as the perimeter",
+            (edge - 1..edge + 1).any { image.getPixel(bounds.center.x.roundToInt(), it) == line })
     }
 
     @Test fun focusedSearchFloatsOverTheListWithAnOpenScrollableGap() {
