@@ -20,6 +20,31 @@ class ChatArchiveTest {
         attachments = listOf(picked), imageKeys = listOf(key), error = "private-error-sentinel",
         parameters = mapOf("Authorization" to "private-header-sentinel"))), environmentId = "old-device")
 
+    @Test fun archivedMediaAndContextSurvivePortableBackupWithoutOldUris() = runBlocking {
+        val old = chat.messages.single()
+        val visible = old.copy(text = "new revision", imageKeys = emptyList(), attachments = emptyList())
+        val thread = chat.appendVersion(old, visible).copy(contextStart = old.id)
+        val zip = ChatArchive.export(root.newFolder(), SavedWorkspace(listOf(thread)),
+            { uri -> assertEquals(external, uri); original.inputStream() }, { id, out -> assertEquals(key, id); out.write(png) })
+        ZipFile(zip).use { file ->
+            val manifest = file.getInputStream(file.getEntry("manifest.json")).bufferedReader().use { it.readText() }
+            assertEquals(3, org.json.JSONObject(manifest).getInt("version"))
+        }
+        val archive = zip.inputStream().use { ChatArchive.inspect(root.newFolder(), it) }
+        val revived = archive.restored({ hash ->
+            assertArrayEquals(original, archive.blobs.getValue(hash).readBytes()); "content://fresh.test/picked"
+        }, { id ->
+            assertArrayEquals(png, archive.blobs.getValue(archive.generated.getValue(id)).readBytes()); "local-image"
+        }).history.single()
+        assertEquals(old.id, revived.contextStart)
+        assertEquals("new revision", revived.messages.single().text)
+        val previous = revived.withVersion(old.id, 0).messages.single()
+        assertEquals(listOf("local-image"), previous.imageKeys)
+        assertEquals("content://fresh.test/picked", previous.attachments.single().uri)
+        assertTrue(previous.parameters.isEmpty())
+        assertNull(previous.error)
+    }
+
     @Test fun freshStoreReadsBothDraftsAndMediaWithoutOriginalGrant() = runBlocking {
         val session = ConversationSession(this, FakeGenerationRepository {}, {})
         session.restore(SavedWorkspace(listOf(chat), mapOf(chat.id to Draft("old draft"))))

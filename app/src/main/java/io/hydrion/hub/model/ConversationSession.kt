@@ -258,9 +258,7 @@ internal class ConversationSession(
     fun duplicateConversation(id: String, title: String) {
         val source = screen.history.find { it.id == id } ?: return
         if (source.messages.any { it.status.isActive } || title.isBlank()) return
-        val keys = source.messages.associate { it.id to newId() }
-        val messages = source.messages.map { it.copy(id = keys.getValue(it.id), replyTo = keys[it.replyTo]) }
-        val copy = source.copy(id = newId(), title = title, messages = messages, pinned = false, updatedAt = now())
+        val copy = source.copyThrough(source.messages.lastIndex, title, now(), keepVersions = true)
         mutable.value = screen.copy(history = listOf(copy) + screen.history)
         save()
     }
@@ -358,7 +356,9 @@ internal class ConversationSession(
     }
 
     private fun generate(id: String, mode: Mode, response: Message, retry: Boolean = false) {
-        val history = requireNotNull(conversation(id)).messages.takeWhile { it.id != response.id }
+        val chat = requireNotNull(conversation(id))
+        val throughPrompt = chat.messages.takeWhile { it.id != response.id }
+        val history = chat.contextStart?.let { anchor -> throughPrompt.dropWhile { it.id != anchor } } ?: throughPrompt
         save()
         val job = scope.launch(start = CoroutineStart.LAZY) {
             val generation = coroutineContext[Job]
@@ -412,23 +412,80 @@ internal class ConversationSession(
         changeDraft(screen.draft.copy(text = text, attachments = message.attachments))
     }
 
-    fun editMessage(id: String, text: String) {
+    fun forkMessage(id: String, title: String): Boolean {
+        val source = screen.current
+        val end = source.messages.indexOfFirst { it.id == id }
+        if (source.mode != Mode.Chat || screen.isGenerating || end < 0 || title.isBlank()) return false
+        val fork = source.copyThrough(end, title, now(), keepVersions = false)
+        choose(fork, listOf(fork) + screen.history)
+        save()
+        return true
+    }
+
+    fun setContextStart(id: String?) {
         val item = screen.current
-        val target = item.messages.find { it.id == id } ?: return
-        if (target.status.isActive || (text.isBlank() && target.attachments.isEmpty())) return
-        touch(item.copy(messages = item.messages.map { if (it.id == id) it.copy(text = text.trim()) else it }))
+        if (item.mode != Mode.Chat || screen.isGenerating || item.contextStart == id ||
+            (id != null && item.messages.none { it.id == id })) return
+        update(item.copy(contextStart = id))
+        save()
+    }
+
+    fun chooseMessageVersion(id: String, ordinal: Int) {
+        val item = screen.current
+        if (item.mode != Mode.Chat || screen.isGenerating) return
+        val next = item.withVersion(id, ordinal)
+        if (next != item) { update(next); save() }
+    }
+
+    fun editMessage(id: String, text: String): Boolean {
+        val item = screen.current
+        val target = item.messages.find { it.id == id } ?: return false
+        val cleaned = if (item.mode == Mode.Chat) text else text.trim()
+        if (target.status.isActive || (item.mode == Mode.Chat && screen.isGenerating) ||
+            (cleaned.isBlank() && (target.attachments.isEmpty() || (item.mode == Mode.Chat && target.role != Role.User)))) return false
+        if (cleaned == target.text) return true
+        val edited = target.copy(text = cleaned)
+        if (item.mode == Mode.Chat) {
+            val version = if (target.role == Role.Assistant) edited.copy(thought = "", tool = null, totalTokens = null,
+                usage = null, status = Generation.Completed, error = null) else edited
+            touch(item.appendVersion(target, version))
+        } else touch(item.copy(messages = item.messages.map { if (it.id == id) edited else it }))
+        save()
+        return true
+    }
+
+    fun deleteSelectedVersions(conversationId: String, ids: Set<String>, allVersions: Boolean) {
+        val item = screen.current
+        if (item.id != conversationId) return
+        val next = item.deleteSelection(ids, allVersions)
+        if (next !== item) { touch(next); save() }
+    }
+
+    fun deleteChatVersion(id: String, otherVersions: Boolean = false) {
+        val item = screen.current
+        if (item.mode != Mode.Chat || screen.isGenerating) return
+        val group = item.versions[id]
+        if (otherVersions) {
+            if (group == null) return
+            touch(item.copy(versions = item.versions - id))
+        } else if (group != null) {
+            touch(item.withVersion(id, group.selected.coerceAtMost(group.others.lastIndex), deleteCurrent = true))
+        } else {
+            deleteMessage(id)
+            return
+        }
         save()
     }
 
     fun deleteMessage(id: String) {
         val item = screen.current
         val removed = item.messages.filter { it.id == id || it.replyTo == id }
-        if (removed.isEmpty()) return
+        if (removed.isEmpty() || (item.mode == Mode.Chat && removed.any { it.id == item.contextStart })) return
         if (removed.any { it.status.isActive }) {
             jobs.remove(item.id)?.cancel()
             dictatedDrafts.remove(item.id)
         }
-        touch(item.copy(messages = item.messages.filterNot { it.id == id || it.replyTo == id }))
+        touch(item.copy(messages = item.messages.filterNot { it.id == id || it.replyTo == id }, versions = item.versions - removed.map { it.id }.toSet()))
         save()
     }
 
@@ -439,6 +496,7 @@ internal class ConversationSession(
         val item = screen.current
         if (screen.isGenerating) return
         val target = item.messages.find { it.id == id } ?: return
+        if (item.mode == Mode.Chat && !item.canRetryChatMessage(target)) return
         val user = if (target.role == Role.User) target else item.messages.find { it.id == target.replyTo } ?: return
         val original = item.messages.find { it.replyTo == user.id }
         val needsImage = item.mode == Mode.Image || user.imageInvocation != null ||
@@ -467,9 +525,14 @@ internal class ConversationSession(
                 !allowSearch() && it.startsWith("网络搜索 · ")
             },
             createdAt = now())
-        val messages = item.messages.filterNot { it.id == response.id }.toMutableList()
-        messages.add(messages.indexOfFirst { it.id == user.id } + 1, response)
-        touch(item.copy(messages = messages))
+        val next = if (item.mode == Mode.Chat && original != null) {
+            item.appendVersion(original, response)
+        } else {
+            val messages = item.messages.filterNot { it.id == response.id }.toMutableList()
+            messages.add(messages.indexOfFirst { it.id == user.id } + 1, response)
+            item.copy(messages = messages)
+        }
+        touch(next)
         generate(item.id, item.mode, response, retry = true)
     }
 }

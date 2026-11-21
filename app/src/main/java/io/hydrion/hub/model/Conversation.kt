@@ -93,7 +93,9 @@ data class Conversation(
     val messages: List<Message> = emptyList(),
     val environmentId: String? = null,
     val assistantId: String = LocalAssistant.Default.id,
-    val modelRoutes: Map<Mode, RemoteModel>? = null
+    val modelRoutes: Map<Mode, RemoteModel>? = null,
+    val contextStart: String? = null,
+    val versions: Map<String, MessageVersions> = emptyMap()
 )
 
 data class HubState(

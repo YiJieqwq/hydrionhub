@@ -40,7 +40,7 @@ internal class LocalStorageFiles(private val files: File, private val cache: Fil
 }
 
 internal fun SavedWorkspace.clipboardOriginals(authority: String): Set<String> =
-    (history.asSequence().flatMap { it.messages.asSequence() }.flatMap { it.attachments.asSequence() } +
+    (history.asSequence().flatMap { it.allStoredMessages() }.flatMap { it.attachments.asSequence() } +
         drafts.values.asSequence().flatMap { it.attachments.asSequence() })
         .mapNotNull { it.uri?.let { raw -> runCatching { java.net.URI(raw) }.getOrNull() } }
         .filter { it.scheme == "content" && it.authority == authority && it.path?.startsWith("/generated/") == true }

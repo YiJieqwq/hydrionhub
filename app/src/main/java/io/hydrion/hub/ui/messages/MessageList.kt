@@ -36,6 +36,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -50,6 +52,8 @@ import androidx.compose.ui.unit.dp
 import io.hydrion.hub.model.*
 import io.hydrion.hub.R
 import io.hydrion.hub.provider.DEEPSEEK_PROVIDER_ID
+import io.hydrion.hub.ui.profile.LocalProfileStore
+import io.hydrion.hub.ui.profile.ProfileAvatar
 import io.hydrion.hub.ui.theme.IonMark
 import kotlinx.coroutines.flow.collect
 import java.text.DateFormat
@@ -112,6 +116,9 @@ fun MessageList(
             override fun calculateBottomPadding() = floatingBars.calculateBottomPadding() + 12.dp
         }
     }
+    var actionOwner by rememberSaveable(state.current.id) { mutableStateOf<String?>(null) }
+    var actionSheet by rememberSaveable(state.current.id) { mutableStateOf<TurnSheet?>(null) }
+    val open: (Message, TurnSheet) -> Unit = { target, sheet -> actionOwner = target.id; actionSheet = sheet }
     MessageCanvas(LocalMessageStyle.current, modifier.fillMaxSize()) {
         val edges = if (state.current.mode == Mode.Chat) {
             val origin = remember { mutableStateOf<IntOffset?>(null) }
@@ -122,22 +129,31 @@ fun MessageList(
         } else Modifier
         LazyColumn(
             state = list, modifier = Modifier.fillMaxSize().testTag("message-timeline").then(edges), contentPadding = padding,
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(if (state.current.mode == Mode.Chat) 24.dp else 14.dp)
         ) {
-            itemsIndexed(messages, key = { _, msg -> msg.id }, contentType = { _, msg -> msg.role }) { index, msg ->
+            itemsIndexed(messages, key = { _, msg -> msg.id }, contentType = { _, msg -> msg.role }) { _, msg ->
                 val selected = msg.id == match
                 val itemModifier = if (selected) Modifier
                     .clip(RoundedCornerShape(14.dp))
                     .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .7f), RoundedCornerShape(14.dp))
                     .padding(6.dp) else Modifier
-                Box(itemModifier.fillMaxWidth().testTag("message-turn-${msg.id}")) {
+                Column(itemModifier.fillMaxWidth().testTag("message-turn-${msg.id}")) {
+                    if (state.current.mode == Mode.Chat && msg.id == state.current.contextStart) {
+                        Text(stringResource(R.string.turn_start), style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary)
+                        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                    }
                     if (msg.role == Role.User) {
-                        val hasReply = messages.getOrNull(index + 1)?.replyTo == msg.id
-                        UserTurn(msg, state.current.mode, needle, vm, state.isGenerating, hasReply)
-                    } else AssistantTurn(msg, state.current.mode, needle, vm, state.isGenerating)
+                        UserTurn(msg, state.current, needle, vm, state.isGenerating, open)
+                    } else AssistantTurn(msg, state.current, needle, vm, state.isGenerating, open)
                 }
             }
             item(key = "timeline-bottom") { Spacer(Modifier.height(1.dp)) }
+        }
+    }
+    actionSheet?.let { sheet ->
+        messages.firstOrNull { it.id == actionOwner }?.let { target ->
+            ChatTurnOverlay(target, state.current, vm, state.isGenerating, sheet) { actionSheet = it }
         }
     }
 }
@@ -187,21 +203,41 @@ internal fun messageTime(time: Long, includeDate: Boolean = false): String {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun UserTurn(msg: Message, mode: Mode, query: String, vm: HubViewModel, busy: Boolean, hasReply: Boolean) {
+private fun UserTurn(msg: Message, chat: Conversation, query: String, vm: HubViewModel, busy: Boolean,
+    open: (Message, TurnSheet) -> Unit) {
+    val mode = chat.mode
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
         if (mode == Mode.Chat) {
-            MessageActions(msg, mode, vm, busy, hasReply = hasReply) { open ->
-                UserBubble(msg, query, mode, Modifier.combinedClickable(
-                    onClickLabel = "消息操作", onClick = open,
-                    onLongClickLabel = "消息操作", onLongClick = open
+            val context = LocalContext.current
+            val profile by remember(context) { LocalProfileStore.shared(context).profile }.collectAsState()
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f, fill = false), horizontalAlignment = Alignment.End) {
+                    Text(profile.name.ifBlank { stringResource(R.string.drawer_you) }, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(messageTime(msg.createdAt), fontSize = 11.sp, color = colors.onSurfaceVariant)
+                }
+                ProfileAvatar(profile, Modifier.size(30.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+            if (msg.attachments.isNotEmpty()) {
+                Column(Modifier.widthIn(max = (LocalConfiguration.current.screenWidthDp * .75f).dp),
+                    horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    msg.attachments.forEach { MessageAttachment(it, query) }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            ChatTurnActions(msg, chat, vm, busy, open) { showMenu ->
+                if (msg.text.isNotEmpty()) UserBubble(msg, query, mode, Modifier.combinedClickable(
+                    onClickLabel = stringResource(R.string.turn_more), onClick = showMenu,
+                    onLongClickLabel = stringResource(R.string.turn_more), onLongClick = showMenu
                 ))
             }
         } else {
             UserBubble(msg, query, mode)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(messageTime(msg.createdAt), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
-                MessageActions(msg, mode, vm, busy)
+                ImageMessageActions(msg, vm, busy)
             }
         }
     }
@@ -209,15 +245,16 @@ private fun UserTurn(msg: Message, mode: Mode, query: String, vm: HubViewModel, 
 
 @Composable
 internal fun UserBubble(msg: Message, query: String, mode: Mode, modifier: Modifier = Modifier) {
-    val bubble = if (mode == Mode.Chat) RoundedCornerShape(23.dp) else RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
+    val bubble = if (mode == Mode.Chat) RoundedCornerShape(16.dp) else RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
     val available = LocalConfiguration.current.screenWidthDp
+    val width = if (mode == Mode.Chat) .75f else .81f
     MessageCard(
         colors = LocalMessageStyle.current.renderPalette.user,
-        modifier = Modifier.widthIn(max = (available * .81f).dp).testTag("message-user-bubble").clip(bubble).then(modifier),
+        modifier = Modifier.widthIn(max = (available * width).dp).testTag("message-user-bubble").clip(bubble).then(modifier),
         shape = bubble
     ) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            msg.attachments.forEach { MessageAttachment(it, query) }
+        Column(Modifier.padding(if (mode == Mode.Chat) PaddingValues(12.dp) else PaddingValues(horizontal = 16.dp, vertical = 10.dp)), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (mode == Mode.Image) msg.attachments.forEach { MessageAttachment(it, query) }
             if (msg.text.isNotEmpty()) {
                 val text = highlighted(msg.text, query)
                 if (mode == Mode.Chat) Text(text, style = MaterialTheme.typography.bodyLarge)
@@ -228,27 +265,32 @@ internal fun UserBubble(msg: Message, query: String, mode: Mode, modifier: Modif
 }
 
 @Composable
-private fun AssistantTurn(msg: Message, mode: Mode, query: String, vm: HubViewModel, busy: Boolean) {
+private fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: HubViewModel, busy: Boolean,
+    open: (Message, TurnSheet) -> Unit) {
+    val mode = chat.mode
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = if (mode == Mode.Chat) 4.dp else 0.dp),
+        verticalArrangement = Arrangement.spacedBy(if (mode == Mode.Chat) 8.dp else 7.dp)) {
         if (mode == Mode.Image) Row(verticalAlignment = Alignment.CenterVertically) {
             IonMark(26.dp)
             Spacer(Modifier.width(8.dp))
             Text(msg.model.ifBlank { "HydrionHub" }, Modifier.weight(1f),
                 style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             Text(messageTime(msg.createdAt), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
-            MessageActions(msg, mode, vm, busy)
-        } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            ImageMessageActions(msg, vm, busy)
+        } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (msg.remoteModel?.providerId == DEEPSEEK_PROVIDER_ID) {
-                Box(Modifier.size(26.dp).clip(CircleShape).background(colors.surfaceContainerHigh),
+                Box(Modifier.size(30.dp).clip(CircleShape).background(colors.surfaceContainerHigh),
                     contentAlignment = Alignment.Center) {
                     Image(painterResource(R.drawable.deepseek_whale), "DeepSeek", Modifier.size(21.dp))
                 }
-            } else IonMark(22.dp)
-            Text(msg.model.ifBlank { "HydrionHub" }, Modifier.weight(1f, fill = false),
-                style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(messageTime(msg.createdAt), color = colors.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+            } else IonMark(30.dp)
+            Column(Modifier.weight(1f)) {
+                Text(msg.model.ifBlank { "HydrionHub" }, style = MaterialTheme.typography.labelMedium,
+                    fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(messageTime(msg.createdAt), color = colors.onSurfaceVariant, fontSize = 11.sp,
+                    style = MaterialTheme.typography.labelSmall)
+            }
         }
         val thinking = msg.remoteModel != null && msg.status.isActive && msg.text.isEmpty()
         var thoughtExpanded by rememberSaveable(msg.id, query, thinking) {
@@ -288,7 +330,7 @@ private fun AssistantTurn(msg: Message, mode: Mode, query: String, vm: HubViewMo
             Generation.Stopped -> Text("已停止", color = colors.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
             Generation.Completed -> Unit
         }
-        if (mode == Mode.Chat) MessageActions(msg, mode, vm, busy)
+        if (mode == Mode.Chat) ChatTurnActions(msg, chat, vm, busy, open)
     }
 }
 
@@ -324,50 +366,30 @@ private fun MessageIcon(icon: ImageVector, label: String, enabled: Boolean = tru
 }
 
 @Composable
-private fun MessageActions(
-    msg: Message,
-    mode: Mode,
-    vm: HubViewModel,
-    busy: Boolean,
-    hasReply: Boolean = false,
-    bubble: @Composable ((() -> Unit) -> Unit)? = null
-) {
-    val chat = mode == Mode.Chat
+private fun ImageMessageActions(msg: Message, vm: HubViewModel, busy: Boolean) {
     val user = msg.role == Role.User
     var menu by remember { mutableStateOf(false) }
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     var edit by rememberSaveable { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
     val colors = MaterialTheme.colorScheme
-    val copy = if (chat) msg.text else msg.text.ifEmpty { msg.prompt }
+    val copy = msg.text.ifEmpty { msg.prompt }
     val copyMessage = { clipboard.setText(AnnotatedString(copy)) }
     val openEditor = { edit = msg.text; dialog = "edit" }
 
-    Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start) {
-        bubble?.invoke { menu = true }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (chat) {
-                if (copy.isNotBlank()) MessageIcon(Icons.Outlined.ContentCopy,
-                    if (user) "复制消息" else "复制回复", action = copyMessage)
-                if (user) MessageIcon(Icons.Outlined.Edit, "编辑消息", enabled = !busy, action = openEditor)
-                else MessageIcon(Icons.Outlined.Refresh, "重新生成回复", enabled = !busy) { vm.regenerate(msg.id) }
+    Box {
+        MessageIcon(Icons.Outlined.MoreHoriz, "消息操作") { menu = true }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            if (copy.isNotBlank()) DropdownMenuItem(text = { Text(if (user) "复制文本" else "复制提示词") },
+                onClick = { copyMessage(); menu = false })
+            if (user) {
+                DropdownMenuItem(text = { Text("编辑消息") }, enabled = !busy, onClick = { openEditor(); menu = false })
             }
-            Box {
-                if (bubble == null) MessageIcon(Icons.Outlined.MoreHoriz,
-                    if (chat && !user) "回复操作" else "消息操作") { menu = true }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    if (!chat && copy.isNotBlank()) DropdownMenuItem(text = { Text(if (user) "复制文本" else "复制提示词") },
-                        onClick = { copyMessage(); menu = false })
-                    if ((!chat && user) || (chat && !user && msg.text.isNotBlank())) {
-                        DropdownMenuItem(text = { Text("编辑消息") }, enabled = !busy, onClick = { openEditor(); menu = false })
-                    }
-                    if (!chat || (user && !hasReply)) DropdownMenuItem(text = { Text("重新生成") }, enabled = !busy,
-                        onClick = { vm.regenerate(msg.id); menu = false })
-                    if (!user && (!chat || msg.imageKeys.isNotEmpty())) DropdownMenuItem(
-                        text = { Text("修改提示词后再生成") }, onClick = { vm.preparePrompt(msg.id); menu = false })
-                    DropdownMenuItem(text = { Text("删除消息", color = colors.error) }, onClick = { dialog = "delete"; menu = false })
-                }
-            }
+            DropdownMenuItem(text = { Text("重新生成") }, enabled = !busy,
+                onClick = { vm.regenerate(msg.id); menu = false })
+            if (!user) DropdownMenuItem(
+                text = { Text("修改提示词后再生成") }, onClick = { vm.preparePrompt(msg.id); menu = false })
+            DropdownMenuItem(text = { Text("删除消息", color = colors.error) }, onClick = { dialog = "delete"; menu = false })
         }
     }
     when (dialog) {

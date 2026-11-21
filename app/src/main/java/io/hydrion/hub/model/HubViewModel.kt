@@ -186,6 +186,15 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun stop() = session.stop()
     fun editMessage(id: String, text: String) = session.editMessage(id, text)
+    internal fun forkMessage(id: String, title: String) = session.forkMessage(id, title)
+    internal fun setContextStart(id: String?) = session.setContextStart(id)
+    internal fun chooseMessageVersion(id: String, ordinal: Int) = session.chooseMessageVersion(id, ordinal)
+    internal fun deleteSelectedVersions(chatId: String, ids: Set<String>, allVersions: Boolean) =
+        session.deleteSelectedVersions(chatId, ids, allVersions)
+    internal fun deleteChatVersion(id: String, otherVersions: Boolean = false) = session.deleteChatVersion(id, otherVersions)
+    internal fun deleteChatMessage(id: String) {
+        if (state.value.current.mode == Mode.Chat && !state.value.isGenerating) session.deleteMessage(id)
+    }
     fun deleteMessage(id: String) = session.deleteMessage(id)
     fun regenerate(id: String) {
         clearError(state.value.current.id)
@@ -212,7 +221,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
 }
 
 private fun SavedWorkspace.imageReferences(): Set<String> = buildSet {
-    for (conversation in history) for (message in conversation.messages) {
+    for (conversation in history) for (message in conversation.allStoredMessages()) {
         addAll(message.imageKeys)
         message.attachments.mapNotNullTo(this) { it.imageKey }
     }

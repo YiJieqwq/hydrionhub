@@ -7,6 +7,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.hydrion.hub.R
 import io.hydrion.hub.MainActivity
 import io.hydrion.hub.model.HubViewModel
 import java.util.UUID
@@ -43,9 +44,7 @@ class MessageAppearanceRenderTest {
     }
 
     private fun scrollToTurn(index: Int) {
-        screen.onNode(hasScrollAction() and hasAnyDescendant(
-            hasContentDescription("复制消息") or hasContentDescription("回复操作")
-        )).performScrollToIndex(index)
+        screen.onNodeWithTag("message-timeline").performScrollToIndex(index)
     }
 
     private fun pixels(tag: String): Map<Int, Int> {

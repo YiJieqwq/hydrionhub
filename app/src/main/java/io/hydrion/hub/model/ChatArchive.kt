@@ -68,6 +68,7 @@ private fun SavedWorkspace.transform(attachment: (Attachment) -> Attachment, ima
     )
     fun conversation(c: Conversation) = Conversation(id = c.id, title = c.title, mode = c.mode,
         pinned = c.pinned, updatedAt = c.updatedAt, messages = c.messages.map(::message), assistantId = c.assistantId,
+        contextStart = c.contextStart, versions = c.versions.mapValues { (_, group) -> group.copy(others = group.others.map(::message)) },
         modelRoutes = c.modelRoutes?.mapValues { (_, r) -> RemoteModel(r.providerId, r.modelId) })
     return SavedWorkspace(history.map(::conversation), drafts.mapValues { (_, d) ->
         Draft(d.text, d.attachments.map(::portableAttachment), d.search, d.imageTool)
@@ -101,7 +102,13 @@ private fun SavedWorkspace.checkIds() {
         val messages = c.messages.map { it.id }
         val keys = messages.toSet()
         require(messages.all(::stableId) && keys.size == messages.size)
-        for (message in c.messages) {
+        val visible = c.messages.associateBy { it.id }
+        require(c.contextStart == null || c.contextStart in keys)
+        for ((id, group) in c.versions) {
+            val target = visible.getValue(id)
+            require(group.others.all { it.id == id && it.role == target.role && it.replyTo == target.replyTo && !it.status.isActive })
+        }
+        for (message in c.allStoredMessages()) {
             require(message.replyTo == null || message.replyTo in keys)
             require(message.imageKeys.distinct().size == message.imageKeys.size)
             checkAttachments(message.attachments)
@@ -147,7 +154,7 @@ internal object ChatArchive {
             } else temp.delete()
             return id
         }
-        val attachments = (source.history.asSequence().flatMap { c -> c.messages.asSequence().flatMap { it.attachments.asSequence() } } +
+        val attachments = (source.history.asSequence().flatMap { c -> c.allStoredMessages().flatMap { it.attachments.asSequence() } } +
             source.drafts.values.asSequence().flatMap { it.attachments.asSequence() }).toList()
         for (a in attachments.distinctBy { it.uri }) {
             val uri = a.uri ?: continue
@@ -159,7 +166,7 @@ internal object ChatArchive {
             catch (_: Exception) { unavailable += a.name; temp.delete(); continue }
             picked[uri] = record(temp)
         }
-        val images = (source.history.flatMap { c -> c.messages.flatMap { it.imageKeys } } +
+        val images = (source.history.flatMap { c -> c.allStoredMessages().flatMap { it.imageKeys }.toList() } +
             attachments.mapNotNull { it.imageKey }).distinct()
         for (key in images) {
             if (demoImage.matches(key)) continue
@@ -180,7 +187,11 @@ internal object ChatArchive {
         }, { it })
         val state = encodeWorkspace(clean).toString().toByteArray()
         require(state.size <= MaxMetadata)
-        val version = if (clean.assistants == listOf(LocalAssistant.Default)) 1 else 2
+        val version = when {
+            clean.history.any { it.contextStart != null || it.versions.isNotEmpty() } -> 3
+            clean.assistants == listOf(LocalAssistant.Default) -> 1
+            else -> 2
+        }
         val manifest = JSONObject().put("format", "hydrion.chat").put("version", version)
             .put("workspaceSha256", digest(state)).put("generated", JSONObject(generated))
         val zip = File(work, "chats.zip")
@@ -210,7 +221,7 @@ internal object ChatArchive {
                 }.also { require(it.size.toLong() == entry.size) }
             }
             val manifest = parseObject(read("manifest.json"))
-            require(manifest.getString("format") == "hydrion.chat" && manifest.get("version") in listOf(1, 2))
+            require(manifest.getString("format") == "hydrion.chat" && manifest.get("version") in listOf(1, 2, 3))
             val state = read("workspace.json")
             require(digest(state) == manifest.getString("workspaceSha256"))
             val json = parseObject(state)
@@ -218,7 +229,9 @@ internal object ChatArchive {
             json.getJSONObject("drafts")
             val workspace = decodeWorkspace(json)
             workspace.checkIds()
-            require(manifest.getInt("version") == 2 || workspace.assistants == listOf(LocalAssistant.Default))
+            val version = manifest.getInt("version")
+            require(version >= 2 || workspace.assistants == listOf(LocalAssistant.Default))
+            require(version >= 3 || workspace.history.none { it.contextStart != null || it.versions.isNotEmpty() })
             val imageMap = manifest.getJSONObject("generated")
             val generated = imageMap.keys().asSequence().associateWith { id ->
                 GeneratedImageStore.dimensions(id)
@@ -247,7 +260,7 @@ internal object ChatArchive {
             val actual = entries.mapTo(mutableSetOf()) { it.name }
             val missing = expected - actual
             if (missing.isNotEmpty()) {
-                val attachments = clean.history.flatMap { c -> c.messages.flatMap { it.attachments } } +
+                val attachments = clean.history.flatMap { c -> c.allStoredMessages().flatMap { it.attachments }.toList() } +
                     clean.drafts.values.flatMap { it.attachments }
                 val names = attachments.filter { a -> a.uri?.let { "blobs/" + it.removePrefix("blob:") in missing } == true }
                     .mapTo(linkedSetOf()) { it.name }
