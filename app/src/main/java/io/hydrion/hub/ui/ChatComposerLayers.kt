@@ -93,23 +93,22 @@ internal fun ChatComposerLayers(
         val left = Alignment.CenterHorizontally.align(width, limits.maxWidth, layoutDirection)
         val barLeft = left + if (layoutDirection == LayoutDirection.Rtl) width - bar.width else 0
         val barTop = page.height - bar.height
-        // The selector's own Box applies vertical safeDrawing padding. Its origin is the
-        // workspace's left edge and its first unconsumed safe row, including in split screen.
-        val overlay = if (picker == null) null else {
-            val capsule = if (trackPickerAnchor()) bar.capsuleBounds() else null
-            val pickerOffset = IntOffset(barLeft, barTop - safe.exclude(consumed).getTop(this))
-            val bounds = capsule?.translate(pickerOffset)
-            val label = capsule?.let { bar.pickerModelLabel()?.translate(pickerOffset) }
-            val modelTravelX = if (capsule != null) bar.pickerModelTravelX() else 0
-            subcompose(WorkspaceLayer.Picker) {
-                CompositionLocalProvider(LocalPickerComposerBounds provides bounds, LocalPickerModelLabelBounds provides label,
-                    LocalPickerModelTravelX provides modelTravelX, content = picker)
-            }.singleOrNull()?.measure(limits)
-        }
+        val pickerOffset = IntOffset(barLeft, barTop - safe.exclude(consumed).getTop(this))
         layout(limits.maxWidth, page.height) {
             page.place(left, 0)
             bar.place(barLeft, barTop)
-            overlay?.place(0, 0)
+            // Read alignment lines from the finally placed toolbar, including RTL siblings.
+            // The picker is measured and placed in this same frame.
+            if (picker != null) {
+                val capsule = if (trackPickerAnchor()) bar.capsuleBounds() else null
+                val bounds = capsule?.translate(pickerOffset)
+                val label = capsule?.let { bar.pickerModelLabel()?.translate(pickerOffset) }
+                val modelTravelX = if (capsule != null) bar.pickerModelTravelX() else 0
+                subcompose(WorkspaceLayer.Picker) {
+                    CompositionLocalProvider(LocalPickerComposerBounds provides bounds, LocalPickerModelLabelBounds provides label,
+                        LocalPickerModelTravelX provides modelTravelX, content = picker)
+                }.singleOrNull()?.measure(limits)?.place(0, 0)
+            }
         }
     }
 }

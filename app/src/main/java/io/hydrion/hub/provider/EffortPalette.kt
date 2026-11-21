@@ -60,9 +60,11 @@ internal fun effortPalette(levels: List<String>, level: String?, dark: Boolean):
 
 internal fun ordinaryFastRailColors(dark: Boolean): EffortPalette = effortColors(EffortTone.Low, dark, false)
 
+internal fun effortThumbColor(dark: Boolean): Color = if (dark) Color(0xFFF9FAFB) else Color.White
+
 private fun effortColors(tone: EffortTone, dark: Boolean, isPeak: Boolean): EffortPalette {
     val fill = if (dark) tone.darkFill else tone.lightFill
-    val thumb = if (dark) Color(0xFFF9FAFB) else Color.White
+    val thumb = effortThumbColor(dark)
     return EffortPalette(
         fill = opaqueRgb(fill),
         ink = opaqueRgb(if (dark) tone.darkInk else tone.lightInk),

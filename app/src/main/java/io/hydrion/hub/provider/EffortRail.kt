@@ -135,7 +135,7 @@ internal fun EffortRail(
     val fast by rememberUpdatedState(accelerated)
     val rtl by rememberUpdatedState(LocalLayoutDirection.current == LayoutDirection.Rtl)
     var widthPx by remember { mutableIntStateOf(0) }
-    val maxThumbRadius = with(LocalDensity.current) { 15.dp.toPx() }
+    val maxThumbRadius = with(LocalDensity.current) { EffortThumbRadius.toPx() }
     // An initially selected peak uses the adjacent ordinary stop as its speed reference.
     var ordinaryIndex by remember(stops, highestIndex) { mutableIntStateOf((highestIndex - 1).coerceAtLeast(0)) }
     SideEffect {
@@ -180,7 +180,7 @@ internal fun EffortRail(
         }
     }
 
-    Spacer(Modifier.fillMaxWidth().height(30.dp).onSizeChanged { widthPx = it.width }.drawWithCache {
+    Spacer(Modifier.fillMaxWidth().height(EffortThumbRadius * 2).onSizeChanged { widthPx = it.width }.drawWithCache {
         val railHeight = EffortRailHeight.toPx()
         val top = (size.height - railHeight) / 2
         val y = size.height / 2

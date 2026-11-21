@@ -2,6 +2,7 @@
     <string name="chat_controls_select_model">选择模型</string>
     <string name="chat_controls_reset">恢复默认</string>
     <string name="chat_controls_effort">推理强度</string>
+    <string name="chat_controls_default">默认</string>
     <string name="chat_controls_speed">速度</string>
     <string name="chat_controls_fast">快速</string>
     <string name="chat_controls_standard">标准</string>

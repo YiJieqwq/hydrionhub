@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -84,7 +85,8 @@ internal fun ChatModelControls(
     val colors = MaterialTheme.colorScheme
     val caps = remember(model) { model.configureCapabilities() }
     val effort = caps.firstOrNull { it.key == "effort" }
-    val level = effort?.let { values[it.key] ?: it.choices.first() }
+    val adjustable = remember(model, effort) { model.hasAdjustableEffort(effort) }
+    val level = if (adjustable && effort != null) values[effort.key] ?: effort.choices.first() else null
     val speed = caps.firstOrNull { it.key == "speed" }
     val levels = remember(effort, model.profile.levels) {
         effort?.let { orderedEffortLevels(it.choices, model.profile.levels) }.orEmpty()
@@ -96,7 +98,7 @@ internal fun ChatModelControls(
     val accelerated = speeds.selected != null && speeds.selected == speeds.fast
     val titleTint by animateColorAsState(
         targetValue = when {
-            effort == null -> colors.onSurface
+            level == null -> colors.onSurfaceVariant
             palette.isPeak -> PeakEffortLabelColor
             else -> palette.ink
         },
@@ -121,9 +123,9 @@ internal fun ChatModelControls(
             }
             val sideInset = if (splitHeader) 0.dp else buttonWidth
             EffortHeaderLabels(
-                title = if (effort != null && shown != null) chatOptionLabel(effort, shown) else selectLabel,
+                title = if (effort != null && shown != null) chatOptionLabel(effort, shown) else stringResource(R.string.chat_controls_default),
                 modelName = model.name, titleTint = titleTint, cardWidth = maxWidth, startInset = sideInset,
-                besideButtons = !splitHeader, hasRail = effort != null && level != null,
+                besideButtons = !splitHeader,
                 modifier = Modifier.fillMaxWidth().padding(
                     start = sideInset, end = sideInset, top = if (splitHeader) resetTop + buttonWidth else 0.dp,
                 ).then(keepEditorFocus).testTag("chat-model-select")
@@ -136,17 +138,19 @@ internal fun ChatModelControls(
                     sideInset, onModels)
             }
             val resetLabel = stringResource(R.string.chat_controls_reset)
+            val resetAction = if (level == null) Modifier.semantics { disabled() }
+                else Modifier.clickable(role = Role.Button, onClick = onReset)
             Box(Modifier.align(Alignment.TopEnd).offset(y = resetTop).then(keepEditorFocus).width(buttonWidth).height(48.dp).testTag("chat-model-reset")
-                .semantics { contentDescription = resetLabel }
-                .clickable(role = Role.Button, onClick = onReset), contentAlignment = Alignment.Center) {
-                EffortToolGlyph(resetGlyph, Modifier.offset(x = 3.dp), tint = { colors.onSurfaceVariant })
+                .semantics { contentDescription = resetLabel }.then(resetAction), contentAlignment = Alignment.Center) {
+                EffortToolGlyph(resetGlyph, Modifier.offset(x = 3.dp),
+                    tint = { if (level == null) colors.onSurfaceVariant.copy(alpha = .38f) else colors.onSurfaceVariant })
             }
         }
         if (effort != null && level != null) {
             EffortTrack(effort, levels, level, peakEffortIndex(levels), accelerated,
                 onPreview = { preview = it }, onChoose = { onChoose(effort, it) })
-            Spacer(Modifier.height(2.dp))
-        }
+        } else FixedEffortTrack()
+        Spacer(Modifier.height(2.dp))
         for (cap in caps) {
             if (cap == effort || cap == speed) continue
             val value = values[cap.key] ?: cap.choices.first()
@@ -166,6 +170,17 @@ internal fun ChatModelControls(
 
 private val EffortTintEase = CubicBezierEasing(.25f, .1f, .25f, 1f)
 private val nonStrengths = setOf("off", "none", "disabled", "auto", "default")
+
+/** The fallback Auto sent by a typed profile isn't a second user-configured level. */
+internal fun ProviderModel.hasAdjustableEffort(capability: Capability?): Boolean {
+    if (capability == null || capability.choices.size < 2) return false
+    if (profile.type == null) return true
+    val declared = profile.levels.filter(String::isNotBlank).ifEmpty {
+        capabilities.firstOrNull { it.key == "effort" }?.choices.orEmpty()
+    }
+    val nonAuto = capability.choices.count { !it.equals("Auto", ignoreCase = true) }
+    return nonAuto > 1 || (nonAuto == 1 && declared.any { it.equals("Auto", ignoreCase = true) })
+}
 
 internal fun orderedEffortLevels(choices: List<String>, declared: List<String>): List<String> {
     val knownOrder = effortLabels.keys.toList()

@@ -4,12 +4,18 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -22,10 +28,10 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -34,7 +40,6 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import io.hydrion.hub.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -44,7 +49,7 @@ internal val EffortRailHitHeight = 48.dp
 internal val EffortRailHeight = 26.dp
 
 private val RailMargin = 12.dp
-private val ThumbRadius = 15.dp
+internal val EffortThumbRadius = 15.dp
 private val SnapSpec = tween<Float>(180, easing = CubicBezierEasing(.2f, .8f, .2f, 1f))
 
 internal fun effortPointerFraction(x: Float, width: Float, inset: Float, rtl: Boolean, fallback: Float): Float {
@@ -63,7 +68,7 @@ internal fun accessibleEffortIndex(requested: Float, current: Int, last: Int): I
     return target.roundToInt()
 }
 
-private fun stopFraction(index: Int, last: Int): Float = if (last == 0) .5f else index.toFloat() / last
+private fun stopFraction(index: Int, last: Int): Float = index.toFloat() / last
 
 private class EffortThumb(initial: Float) {
     var position by mutableFloatStateOf(initial)
@@ -89,11 +94,24 @@ private class EffortThumb(initial: Float) {
 }
 
 @Composable
+internal fun FixedEffortTrack() {
+    val colors = MaterialTheme.colorScheme
+    Box(Modifier.fillMaxWidth().height(EffortRailHitHeight).testTag("chat-model-effort").padding(horizontal = RailMargin),
+        contentAlignment = Alignment.Center) {
+        Spacer(Modifier.fillMaxWidth().height(EffortRailHeight).background(colors.surfaceContainerHighest, CircleShape))
+        Spacer(Modifier.size(EffortThumbRadius * 2).background(effortThumbColor(colors.surface.luminance() < .5f), CircleShape))
+    }
+}
+
+@Composable
 internal fun EffortTrack(
     cap: Capability, choices: List<String>, value: String, highestIndex: Int, accelerated: Boolean,
     onPreview: (String?) -> Unit, onChoose: (String) -> Unit,
 ) {
-    if (choices.isEmpty()) return
+    if (choices.size < 2) {
+        FixedEffortTrack()
+        return
+    }
     val last = choices.lastIndex
     val index = choices.indexOf(value).coerceAtLeast(0)
     val thumb = remember(choices) { EffortThumb(stopFraction(index, last)) }
@@ -113,15 +131,14 @@ internal fun EffortTrack(
     val nearest by remember(thumb) { derivedStateOf { (thumb.position * last).roundToInt().coerceIn(0, last) } }
     val announced = if (thumb.pressed) nearest else index
     val level = chatOptionLabel(cap, choices[announced])
-    val description = if (last == 0) stringResource(R.string.chat_controls_fixed, level) else level
     val label = chatCapabilityLabel(cap)
     fun select(i: Int) {
         thumb.settle(scope, stopFraction(i, last))
         if (i != currentIndex) choose(choices[i])
     }
 
-    val touch = if (last == 0) Modifier else Modifier.pointerInput(thumb, index, rtl) {
-        val inset = (RailMargin + ThumbRadius).toPx()
+    val touch = Modifier.pointerInput(thumb, index, rtl) {
+        val inset = (RailMargin + EffortThumbRadius).toPx()
         awaitEachGesture {
             val down = awaitFirstDown()
             down.consume()
@@ -158,15 +175,13 @@ internal fun EffortTrack(
 
     Box(Modifier.fillMaxWidth().heightIn(min = EffortRailHitHeight).testTag("chat-model-effort").then(touch).semantics {
         contentDescription = label
-        stateDescription = description
-        if (last > 0) {
-            progressBarRangeInfo = ProgressBarRangeInfo(announced.toFloat(), 0f..last.toFloat(), last - 1)
-            setProgress { requested ->
-                val next = accessibleEffortIndex(requested, currentIndex, last)
-                if (next == currentIndex) return@setProgress false
-                select(next)
-                true
-            }
+        stateDescription = level
+        progressBarRangeInfo = ProgressBarRangeInfo(announced.toFloat(), 0f..last.toFloat(), last - 1)
+        setProgress { requested ->
+            val next = accessibleEffortIndex(requested, currentIndex, last)
+            if (next == currentIndex) return@setProgress false
+            select(next)
+            true
         }
     }, contentAlignment = Alignment.Center) {
         Box(Modifier.fillMaxWidth().padding(horizontal = RailMargin), contentAlignment = Alignment.Center) {

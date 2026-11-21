@@ -2,6 +2,7 @@
     <string name="chat_controls_select_model">Select model</string>
     <string name="chat_controls_reset">Reset to default</string>
     <string name="chat_controls_effort">Reasoning effort</string>
+    <string name="chat_controls_default">Default</string>
     <string name="chat_controls_speed">Speed</string>
     <string name="chat_controls_fast">Fast</string>
     <string name="chat_controls_standard">Standard</string>

@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontStyle
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.hydrion.hub.R
 import kotlin.math.roundToInt
 
 /** Android glyph ink relative to the first baseline, using the same resolved face and size as Text. */
@@ -52,15 +54,20 @@ private fun rememberInkPaint(style: TextStyle): Paint {
 @Composable
 internal fun EffortHeaderLabels(
     title: String, modelName: String, titleTint: Color, cardWidth: Dp, startInset: Dp,
-    besideButtons: Boolean, hasRail: Boolean, modifier: Modifier,
+    besideButtons: Boolean, modifier: Modifier,
 ) {
     val titleStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp,
         letterSpacing = 0.sp, textAlign = TextAlign.Center)
     val nameStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp,
         letterSpacing = 0.sp, textAlign = TextAlign.Center)
-    val titlePaint = rememberInkPaint(titleStyle)
     val namePaint = rememberInkPaint(nameStyle)
     val textMeasurer = rememberTextMeasurer()
+    // Reserve one localized typographic line across all levels. A descender in "High"
+    // must not push the model name, chevron, and track away from their resting positions.
+    val reference = stringResource(R.string.chat_controls_default)
+    val titleLine = remember(textMeasurer, reference, titleStyle) {
+        textMeasurer.measure(reference, titleStyle, maxLines = 1, softWrap = false)
+    }
     val secondary = MaterialTheme.colorScheme.onSurfaceVariant
     Layout(modifier = modifier, content = {
         Text(title, Modifier.testTag("chat-model-effort-title"), color = titleTint, style = titleStyle,
@@ -82,30 +89,27 @@ internal fun EffortHeaderLabels(
             else inlineWidth
         val heading = parts[0].measure(Constraints(maxWidth = inlineWidth))
         val name = parts[1].measure(Constraints(maxWidth = nameWidth))
-        val baseHeight = maxOf(60.dp.roundToPx(), heading.height + name.height + 8.dp.roundToPx())
-        val titleY = 6.dp.roundToPx() + (baseHeight - 8.dp.roundToPx() - heading.height - name.height) / 2
-        fun ink(text: String, style: TextStyle, width: Int, paint: Paint): Rect {
-            val line = textMeasurer.measure(text, style, overflow = TextOverflow.Ellipsis, maxLines = 1,
-                constraints = Constraints(maxWidth = width))
-            val visible = if (line.isLineEllipsized(0)) text.take(line.getLineEnd(0, visibleEnd = true)) + "…" else text
-            return Rect().also { paint.getTextBounds(visible, 0, visible.length, it) }
-        }
-        val titleInk = ink(title, titleStyle, inlineWidth, titlePaint)
-        val nameInk = ink(modelName, nameStyle, nameWidth, namePaint)
-        val titleBottom = titleY + heading[FirstBaseline] + titleInk.bottom
+        val titleHeight = titleLine.size.height
+        val baseHeight = maxOf(60.dp.roundToPx(), titleHeight + name.height + 8.dp.roundToPx())
+        val titleY = 6.dp.roundToPx() + (baseHeight - 8.dp.roundToPx() - titleHeight - name.height) / 2
+        val nameLine = textMeasurer.measure(modelName, nameStyle, overflow = TextOverflow.Ellipsis, maxLines = 1,
+            constraints = Constraints(maxWidth = nameWidth))
+        val visibleName = if (nameLine.isLineEllipsized(0)) modelName.take(nameLine.getLineEnd(0, visibleEnd = true)) + "…" else modelName
+        val nameInk = Rect().also { namePaint.getTextBounds(visibleName, 0, visibleName.length, it) }
+        val titleBaseline = titleY + titleLine.firstBaseline.roundToInt()
         val nameInkSum = 2 * name[FirstBaseline] + nameInk.top + nameInk.bottom
         // The visible 26dp rail is centered in a 48dp hit row. Use its top, not the thumb or hit row.
-        val railInset = if (hasRail) ((EffortRailHitHeight - EffortRailHeight) / 2).roundToPx() else 0
+        val railInset = ((EffortRailHitHeight - EffortRailHeight) / 2).roundToPx()
         val firstNameInk = minOf(name[FirstBaseline] + nameInk.top, (name.height - arrow.height) / 2)
-        val minNameY = maxOf(titleY + heading.height, if (wideLine) buttonHeight - firstNameInk else 0)
+        val minNameY = maxOf(titleY + titleHeight, if (wideLine) buttonHeight - firstNameInk else 0)
         val height = limits.constrainHeight(maxOf(baseHeight,
-            2 * minNameY + nameInkSum - titleBottom - railInset,
-            titleBottom + railInset - nameInkSum + 2 * name.height))
+            2 * minNameY + nameInkSum - titleBaseline - railInset,
+            titleBaseline + railInset - nameInkSum + 2 * name.height))
         val lastY = (height - name.height).coerceAtLeast(0)
-        val nameY = ((titleBottom + height + railInset - nameInkSum) / 2f).roundToInt()
+        val nameY = ((titleBaseline + height + railInset - nameInkSum) / 2f).roundToInt()
             .coerceIn(minOf(minNameY, lastY), lastY)
         layout(limits.maxWidth, height) {
-            heading.placeRelative(centerX - heading.width / 2, titleY)
+            heading.placeRelative(centerX - heading.width / 2, titleBaseline - heading[FirstBaseline])
             val nameX = centerX - name.width / 2
             name.placeRelative(nameX, nameY)
             arrow.placeRelative(nameX + name.width + gap, nameY + (name.height - arrow.height) / 2)

@@ -32,7 +32,18 @@ class ChatTriggerLabelTest {
         assertTrue(high.selectedChatEffort(high.selectedEntry(Mode.Chat))!!.peak)
     }
 
-    @Test fun fixedAndMissingCapabilitiesUseTheSamePeakRulesAsThePicker() {
+    @Test fun effortSpaceUsesTheWidestRenderedChoiceForThisModel() {
+        val advances = mapOf("iiiiii" to 15, "高" to 20, "Wide" to 32)
+        for (selected in advances.keys) {
+            val label = ChatTriggerLabel("Atlas", selected, effortLabels = advances.keys.toList())
+            assertEquals("Atlas $selected", label.text)
+            assertEquals(32, label.effortWidth(advances::getValue))
+        }
+        assertEquals(20, ChatTriggerLabel("Fixed", "高").effortWidth(advances::getValue))
+        assertEquals(0, ChatTriggerLabel("Plain").effortWidth { error("No effort to measure") })
+    }
+
+    @Test fun composerKeepsTheConfiguredSuffixAndPeakColorForFixedAndMissingCapabilities() {
         for ((values, peak) in listOf(listOf("High") to false, listOf("Auto") to false,
             listOf("Ultra") to true, listOf("Off", "High") to false)) {
             val state = catalog(model(values))

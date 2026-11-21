@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.SemanticsActions
@@ -39,7 +40,7 @@ class ComposerModelGapTest {
 
     private fun node(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true)
 
-    private fun checkInk(direction: LayoutDirection, model: ProviderModel, enabled: Boolean): IntRange {
+    private fun checkInk(direction: LayoutDirection, model: ProviderModel, enabled: Boolean): Rect {
         val capsule = node("composer-capsule")
         val viewport = capsule.fetchSemanticsNode()
         val density = viewport.layoutInfo.density.density
@@ -68,9 +69,12 @@ class ComposerModelGapTest {
         val send = box(node("chat-composer-send"))
         val tolerance = 1.5f
         val rtl = direction == LayoutDirection.Rtl
-        assertTrue("Model label stays outside the dictation target", if (rtl) label.left >= mic.right - tolerance
+        val geometry = "direction=$direction model=${model.id} enabled=$enabled " +
+            "capsule=${viewport.boundsInRoot} label=$label mic=$mic send=$send " +
+            "ellipsis=${layouts.single().isLineEllipsized(0)}"
+        assertTrue("Model label stays outside the dictation target: $geometry", if (rtl) label.left >= mic.right - tolerance
             else label.right <= mic.left + tolerance)
-        assertTrue("Dictation and send have separate targets", if (rtl) send.right <= mic.left + tolerance
+        assertTrue("Dictation and send have separate targets: $geometry", if (rtl) send.right <= mic.left + tolerance
             else mic.right <= send.left + tolerance)
         assertTrue("Dictation retains its 48dp target", mic.width >= 48f * density - tolerance &&
             mic.height >= 48f * density - tolerance)
@@ -88,7 +92,7 @@ class ComposerModelGapTest {
         val microphoneToSend = (disk.center.x - mic.center.x) * (if (rtl) -1f else 1f)
         assertEquals("The mic sits immediately before the unchanged send face", 48.25f * density, microphoneToSend, 2f)
         assertEquals("Microphone and send share the toolbar center line", disk.center.y, mic.center.y, tolerance)
-        return paintedDisk
+        return face.fetchSemanticsNode().boundsInRoot
     }
 
     @Test fun modelInkKeepsTheToolbarRhythmInBothDirections() {
