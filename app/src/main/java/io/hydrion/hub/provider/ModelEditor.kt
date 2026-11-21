@@ -1,5 +1,8 @@
 package io.hydrion.hub.provider
 
+import androidx.compose.ui.res.stringResource
+import io.hydrion.hub.R
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -44,7 +47,7 @@ internal fun ModelEditor(
     onBack: () -> Unit, onSave: (ProviderModel, Boolean) -> Unit, onDelete: () -> Unit,
     fadeScrollEdges: Boolean = false,
 ) {
-    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var error by rememberSaveable { mutableStateOf<Int?>(null) }
     var discard by rememberSaveable { mutableStateOf(false) }
     var deleting by rememberSaveable { mutableStateOf(false) }
     val focus = LocalFocusManager.current
@@ -65,10 +68,10 @@ internal fun ModelEditor(
     }
     BackHandler(onBack = requestExit)
     Row(Modifier.fillMaxWidth().heightIn(min = 52.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = requestExit) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
-        Text(if (exists) "编辑模型" else "添加模型", Modifier.weight(1f),
+        IconButton(onClick = requestExit) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.settings_back)) }
+        Text(if (exists) stringResource(R.string.model_edit) else stringResource(R.string.model_add), Modifier.weight(1f),
             style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        IconButton(onClick = save) { Icon(Icons.Outlined.Check, "保存模型", tint = MaterialTheme.colorScheme.primary) }
+        IconButton(onClick = save) { Icon(Icons.Outlined.Check, stringResource(R.string.model_save), tint = MaterialTheme.colorScheme.primary) }
     }
     Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Row(Modifier.fillMaxWidth().selectableGroup().padding(4.dp)) {
@@ -80,14 +83,14 @@ internal fun ModelEditor(
                         focus.clearFocus()
                         draft.page = item
                     }).heightIn(min = 38.dp), contentAlignment = Alignment.Center) {
-                        Text(item.title, color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        Text(stringResource(item.title), color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                     }
                 }
             }
         }
     }
-    error?.let { Text(it, Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+    error?.let { Text(stringResource(it), Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     pageStates.SaveableStateProvider(draft.page.name) {
         val scroll = rememberScrollState()
         val edges = if (fadeScrollEdges) Modifier.modelConfigEdgeFades(scroll, MaterialTheme.colorScheme.background) else Modifier
@@ -102,14 +105,14 @@ internal fun ModelEditor(
                         onImageBudget = { draft.imageBudget = it }, onHeaders = { draft.headers = it })
                     ConfigurableParameters(draft)
                     if (exists) TextButton(onClick = { deleting = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("删除模型", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.model_remove), color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
         }
     }
     if (discard) DiscardChanges(onKeep = { discard = false }, onDiscard = exit)
-    if (deleting) ConfirmRemoval("从供应商移除“${draft.initial.name}”？", { deleting = false }) {
+    if (deleting) ConfirmRemoval(stringResource(R.string.model_remove_named, draft.initial.name), { deleting = false }) {
         focus.clearFocus()
         onDelete()
     }
@@ -117,10 +120,10 @@ internal fun ModelEditor(
 
 @Composable
 private fun ConfigurableParameters(draft: ModelEditDraft) {
-    ModelGroup("可配置参数") {
+    ModelGroup(stringResource(R.string.model_params)) {
         draft.builtinOptions().forEach { option ->
             val selected = option.key in draft.checked
-            ModelToggle(if (option.key == "speed") "响应速度" else option.label, selected) {
+            ModelToggle(if (option.key == "speed") stringResource(R.string.model_speed) else chatCapabilityLabel(option), selected) {
                 draft.checked = if (it) draft.checked + option.key else draft.checked - option.key
             }
         }
@@ -129,12 +132,12 @@ private fun ConfigurableParameters(draft: ModelEditDraft) {
                 val update: (CapabilityDraft) -> Unit = { new ->
                     draft.custom = draft.custom.map { if (it.id == field.id) new else it }
                 }
-                ModelField("字段名", field.key, { update(field.copy(key = it)) })
-                ModelField("显示名称", field.label, { update(field.copy(label = it)) })
-                ModelField("可选值（逗号分隔，首项为默认值）", field.values, { update(field.copy(values = it)) })
-                TextButton(onClick = { draft.custom = draft.custom.filterNot { it.id == field.id } }) { Text("移除参数") }
+                ModelField(stringResource(R.string.model_field_key), field.key, { update(field.copy(key = it)) })
+                ModelField(stringResource(R.string.model_field_label), field.label, { update(field.copy(label = it)) })
+                ModelField(stringResource(R.string.model_field_values), field.values, { update(field.copy(values = it)) })
+                TextButton(onClick = { draft.custom = draft.custom.filterNot { it.id == field.id } }) { Text(stringResource(R.string.model_delete_param)) }
             }
         }
-        TextButton(onClick = { draft.custom = draft.custom + CapabilityDraft() }) { Text("添加自定义参数") }
+        TextButton(onClick = { draft.custom = draft.custom + CapabilityDraft() }) { Text(stringResource(R.string.model_add_param)) }
     }
 }

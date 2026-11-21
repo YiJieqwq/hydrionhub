@@ -44,7 +44,7 @@ internal suspend fun sendDraft(
             remoteModel = RemoteModel(provider.id, model.id), restoreDraftOnError = fromDictation)
         return null
     }
-    val tool = selectedTool(mode, before.draft)
+    val tool = selectedTool(mode, before.draft, vm.webSearch.settings.value.localEnabled)
     val imageTool = tool?.startsWith("图片生成") == true
     if (imageTool && catalog.selectedEntry(Mode.Image) == null) return IMAGE_MODEL_REQUIRED
     if (tool != null && model.profile.type != null && "tools" !in model.profile.abilities)

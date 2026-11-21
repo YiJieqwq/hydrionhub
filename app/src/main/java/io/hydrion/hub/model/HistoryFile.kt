@@ -71,11 +71,15 @@ private fun readConversation(item: JSONObject) = Conversation(
     id = item.getString("id"), title = item.getString("title"),
     mode = Mode.valueOf(item.getString("mode")), pinned = item.optBoolean("pinned"),
     updatedAt = item.getLong("updatedAt"), messages = item.optJSONArray("messages").objects().map(::readMessage),
-    environmentId = item.optional("environmentId"), assistantId = item.optString("assistantId", LocalAssistant.Default.id))
+    environmentId = item.optional("environmentId"), assistantId = item.optString("assistantId", LocalAssistant.Default.id),
+    modelRoutes = item.optJSONObject("modelRoutes")?.let { json ->
+        Mode.entries.mapNotNull { mode -> json.readRoute(mode.name)?.let { mode to it } }.toMap()
+    })
 
 private fun writeConversation(c: Conversation) = JSONObject().put("id", c.id).put("title", c.title)
     .put("mode", c.mode.name).put("pinned", c.pinned).put("updatedAt", c.updatedAt)
     .put("messages", JSONArray(c.messages.map(::writeMessage))).put("environmentId", c.environmentId).put("assistantId", c.assistantId)
+    .put("modelRoutes", c.modelRoutes?.let { routes -> JSONObject().apply { routes.forEach { (mode, r) -> put(mode.name, r.toJson()) } } })
 
 private fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else
     (0 until length()).map { getJSONObject(it) }

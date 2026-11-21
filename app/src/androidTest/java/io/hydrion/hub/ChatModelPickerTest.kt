@@ -47,6 +47,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.hasTestTag
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -56,7 +58,6 @@ class ChatModelPickerTest {
 
     private val editor get() = screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction())
     private fun control(name: String) = screen.onNodeWithTag("chat-model-$name")
-    private fun provider(id: String) = control("provider:$id")
     private fun option(route: RemoteModel) = control("option:${route.providerId}/${route.modelId}")
 
     private fun softwareKeyboardIsOpen() = screen.runOnUiThread {
@@ -159,14 +160,7 @@ class ChatModelPickerTest {
             control("select").performClick()
             option(reason).assertIsSelected()
             option(mini).assertIsDisplayed()
-            option(deepSeek).assertDoesNotExist()
-
-            control("provider-trigger").performClick()
-            provider(reason.providerId).assertIsSelected()
-            provider("demo-image").assertDoesNotExist()
-            provider(deepSeek.providerId).performClick()
-            control("list").assertIsDisplayed()
-            option(reason).assertDoesNotExist()
+            control("results").performScrollToNode(hasTestTag("chat-model-option:${deepSeek.providerId}/${deepSeek.modelId}"))
             option(deepSeek).assertIsDisplayed().assertIsNotSelected()
             screen.runOnIdle { assertEquals(reason, store.catalog.value.active[Mode.Chat]) }
             option(deepSeek).performClick()
@@ -176,9 +170,9 @@ class ChatModelPickerTest {
             control("ultrafast").assertDoesNotExist()
             screen.runOnIdle { assertEquals(networkParameters, store.selection(Mode.Chat).parameters) }
             control("select").performClick()
+            control("results").performScrollToNode(hasTestTag("chat-model-option:${deepSeek.providerId}/${deepSeek.modelId}"))
             option(deepSeek).assertIsSelected()
-            control("provider-trigger").performClick()
-            provider(reason.providerId).performClick()
+            control("results").performScrollToNode(hasTestTag("chat-model-option:${reason.providerId}/${reason.modelId}"))
             screen.runOnIdle { assertEquals(deepSeek, store.catalog.value.active[Mode.Chat]) }
             option(reason).performClick()
 
@@ -291,7 +285,7 @@ class ChatModelPickerTest {
     }
 
     @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
-    @Test fun appBackFromProvidersDismissesThePickerWithoutChangingEditing() {
+    @Test fun appBackFromGroupedListDismissesThePickerWithoutChangingEditing() {
         editor.performTouchInput { click(center) }
         screen.waitUntil(15_000) { softwareKeyboardIsOpen() }
         val active = screen.runOnIdle {
@@ -329,8 +323,7 @@ class ChatModelPickerTest {
         control("select").performTouchInput { click(center) }
         control("list").assertIsDisplayed()
         control("search-field").assertIsFocused()
-        control("provider-trigger").performTouchInput { click(center) }
-        provider(active.providerId).assertIsSelected()
+        option(active).assertIsSelected()
         control("search-field").assertIsFocused()
         assertTrue(softwareKeyboardIsOpen())
         // Exercise the Back delivered to the app; a physical Back can be consumed by the IME first.

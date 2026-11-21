@@ -2,6 +2,7 @@ package io.hydrion.hub.provider
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -20,20 +21,6 @@ import io.hydrion.hub.R
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
 
-// Keep the provider heading and switch in one item so model keys and scroll indices stay stable.
-private const val FirstModelRow = 2
-private const val ProviderRow = "provider"
-private const val ModelsHeading = "models"
-private const val EmptyRow = "empty"
-
-private fun modelRowKey(providerId: String, modelId: String) = "model:${providerId.length}:$providerId/$modelId"
-
-private fun menuRowKeys(providerId: String, models: List<ProviderModel>) = buildList {
-    add(ProviderRow)
-    add(ModelsHeading)
-    if (models.isEmpty()) add(EmptyRow) else models.forEach { add(modelRowKey(providerId, it.id)) }
-}
-
 private fun LazyListState.anchor(): PickerScrollAnchor {
     val index = firstVisibleItemIndex
     val key = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.key as? String
@@ -49,79 +36,31 @@ internal fun matchingMenuModels(models: List<ProviderModel>, query: String): Lis
     }
 }
 
-@Composable
-internal fun ChatModelBrowsePage(
-    store: ProviderStore, picker: ChatModelPickerState, page: ChatModelPickerState.Page,
-    suspended: Boolean, hideForReturn: Boolean, composerPadding: Dp,
-    onEditModel: (RemoteModel, PickerBrowseSnapshot) -> Unit, modifier: Modifier = Modifier,
-) {
-    val catalog by store.catalog.collectAsState()
-    val providers = remember(catalog.providers) { catalog.providers.filter { it.enabled && it.mode == Mode.Chat } }
-    val entries = remember(catalog.providers) { catalog.entries(Mode.Chat) }
-    val active = remember(catalog) { catalog.selectedEntry(Mode.Chat, entries) }
-    val open = picker.modelListNavigation
-    val interactive = open && !suspended && !hideForReturn
-    if (interactive) ChatModelPickerBack(onBack = picker::systemBack, imeFirst = true)
+internal data class ModelMenuRow(val provider: Provider, val model: ProviderModel?, val label: String) {
+    val key = if (model == null) "heading:${provider.id}" else "model:${provider.id.length}:${provider.id}/${model.id}"
+}
 
-    // The logical selection ends immediately. Keep its last visible results during the slide out.
-    var lastQuery by remember(picker) { mutableStateOf(picker.searchQuery.text) }
-    var lastProvider by remember(picker) { mutableStateOf(picker.browsedProviderId) }
-    val query = if (open) picker.searchQuery.text else lastQuery
-    val providerId = if (open) picker.browsedProviderId else lastProvider
-    if (open) SideEffect { lastQuery = query; lastProvider = providerId }
-    val browsing = providers.find { it.id == providerId } ?: active?.second ?: providers.firstOrNull()
-    val restore = picker.pendingBrowseRestore
-    LaunchedEffect(browsing?.id, interactive, restore) {
-        if (browsing == null && restore != null) picker.consumeBrowseRestore(restore)
-        else if (browsing != null && interactive && restore == null && picker.browsedProviderId != browsing.id) {
-            picker.models(browsing.id)
-        }
-    }
-    val pageInsets = composerPadding + 8.dp
-    Box(modifier.fillMaxSize()) {
-        key(browsing?.id) {
-            // Keep the current supplier's list positions while the supplier chooser covers it.
-            val browsingScroll = rememberLazyListState()
-            val filteredScroll = rememberLazyListState()
-            if (page == ChatModelPickerState.Page.Providers) {
-                val index = providers.indexOfFirst { it.id == browsing?.id }.coerceAtLeast(0)
-                val nameCounts = remember(providers) { providers.groupingBy { it.name }.eachCount() }
-                LazyColumn(Modifier.fillMaxSize().testTag("chat-provider-list"),
-                    contentPadding = PaddingValues(top = 8.dp, bottom = pageInsets),
-                    state = rememberLazyListState(initialFirstVisibleItemIndex = index)) {
-                    item { BrowseHeading(stringResource(R.string.chat_picker_provider)) }
-                    items(providers, key = { it.id }) { candidate ->
-                        val name = if (nameCounts.getValue(candidate.name) > 1)
-                            "${candidate.name} · ${candidate.id}" else candidate.name
-                        BrowseTile(name, candidate, null, candidate.id == browsing?.id, Modifier.testTag("chat-model-provider:${candidate.id}")) {
-                            if (interactive && picker.page == ChatModelPickerState.Page.Providers) picker.models(candidate.id)
-                        }
-                    }
-                }
-            } else if (browsing == null) {
-                LazyColumn(Modifier.fillMaxSize().testTag("chat-model-list"),
-                    contentPadding = PaddingValues(top = 8.dp, bottom = pageInsets)) {
-                    item { BrowseHeading(stringResource(R.string.chat_picker_provider)) }
-                    item { BrowseHeading(stringResource(R.string.chat_picker_models)) }
-                    item { Text(stringResource(R.string.chat_picker_no_models), Modifier.padding(horizontal = 14.dp)) }
-                }
-            } else {
-                val models = remember(entries, browsing.id) {
-                    entries.mapNotNull { (model, provider) -> model.takeIf { provider.id == browsing.id } }
-                }
-                ProviderModelsList(browsing, models, active?.route, picker, query.trim(), pageInsets,
-                    browsingScroll, filteredScroll, interactive, hideForReturn, onEditModel) { next ->
-                    if (interactive && picker.modelListNavigation) {
-                        val latest = store.catalog.value
-                        val route = (next to browsing).route
-                        val available = latest.entries(Mode.Chat)
-                        val selected = available.find { it.route == route }
-                        if (selected != null) {
-                            if (latest.selectedEntry(Mode.Chat, available)?.route != route)
-                                store.configure(Mode.Chat, route, latest.parameters(selected.first, selected.second))
-                            picker.open()
-                        }
-                    }
+internal fun modelMenuRows(entries: List<Pair<ProviderModel, Provider>>, query: String,
+    labels: Map<String, String> = emptyMap()): List<ModelMenuRow> {
+    val groups = entries.groupBy { it.second.id }
+    val providerNames = groups.values.groupingBy { group ->
+        val provider = group.first().second
+        labels[provider.id] ?: provider.name
+    }.eachCount()
+    val term = query.trim()
+    return buildList {
+        groups.values.forEach { group ->
+            val provider = group.first().second
+            val models = group.map { it.first }
+            val title = labels[provider.id] ?: provider.name
+            val matches = if (title.contains(term, true) || provider.name.contains(term, true)) models else matchingMenuModels(models, term)
+            if (matches.isNotEmpty()) {
+                val name = if (providerNames[title] == 1) title else "$title · ${provider.id}"
+                add(ModelMenuRow(provider, null, name))
+                val names = models.groupingBy { it.name }.eachCount()
+                matches.forEach { model ->
+                    val label = if (names[model.name] == 1) model.name else "${model.name} · ${model.id}"
+                    add(ModelMenuRow(provider, model, label))
                 }
             }
         }
@@ -129,81 +68,99 @@ internal fun ChatModelBrowsePage(
 }
 
 @Composable
-private fun ProviderModelsList(
-    provider: Provider, models: List<ProviderModel>, active: RemoteModel?, picker: ChatModelPickerState,
-    query: String, pageInsets: Dp, browsingScroll: LazyListState, filteredScroll: LazyListState,
-    interactive: Boolean, hideForReturn: Boolean,
-    onEditModel: (RemoteModel, PickerBrowseSnapshot) -> Unit, onPick: (ProviderModel) -> Unit,
+internal fun modelGroupLabels(entries: List<Pair<ProviderModel, Provider>>): Map<String, String> {
+    val providers = remember(entries) { entries.map { it.second }.distinctBy { it.id } }
+    return providers.associate { it.id to providerLabel(it) }
+}
+
+internal fun LazyListScope.modelMenuItems(rows: List<ModelMenuRow>,
+    selected: RemoteModel?, onPick: (RemoteModel) -> Unit, onEdit: ((RemoteModel) -> Unit)? = null) {
+    items(rows, key = { it.key }, contentType = { if (it.model == null) "header" else "model" }) { row ->
+        val model = row.model
+        if (model == null) BrowseHeading(row.label)
+        else {
+            val route = RemoteModel(row.provider.id, model.id)
+            BrowseTile(row.label, row.provider, model, route == selected,
+                Modifier.testTag("chat-model-option:${route.providerId}/${route.modelId}"),
+                onEdit = onEdit?.let { edit -> { edit(route) } }, onPick = { onPick(route) })
+        }
+    }
+}
+
+@Composable
+internal fun ChatModelBrowsePage(
+    store: ProviderStore, picker: ChatModelPickerState, suspended: Boolean, hideForReturn: Boolean, composerPadding: Dp,
+    onEditModel: (RemoteModel, PickerBrowseSnapshot) -> Unit, modifier: Modifier = Modifier,
 ) {
-    val matches = remember(models, query) { matchingMenuModels(models, query) }
-    val nameCounts = remember(models) { models.groupingBy { it.name }.eachCount() }
+    val catalog by store.catalog.collectAsState()
+    val entries = remember(catalog.providers) { catalog.entries(Mode.Chat) }
+    val active = catalog.selectedEntry(Mode.Chat, entries)?.route
+    val open = picker.modelListNavigation
+    val interactive = open && !suspended && !hideForReturn
+    if (interactive) ChatModelPickerBack(onBack = picker::systemBack, imeFirst = true)
+
+    var lastQuery by remember(picker) { mutableStateOf(picker.searchQuery.text) }
+    val query = (if (open) picker.searchQuery.text else lastQuery).trim()
+    if (open) SideEffect { lastQuery = query }
+    val labels = modelGroupLabels(entries)
+    val all = remember(entries, labels) { modelMenuRows(entries, "", labels) }
+    val rows = remember(all, query) { if (query.isEmpty()) all else modelMenuRows(entries, query, labels) }
+    val browsingScroll = rememberLazyListState()
+    val filteredScroll = rememberLazyListState()
     val scroll = if (query.isEmpty()) browsingScroll else filteredScroll
     val restore = picker.pendingBrowseRestore
-    var savedRoom by remember(query) { mutableStateOf<Dp?>(null) }
     val request = picker.pendingSearchScroll
+    var savedRoom by remember(query) { mutableStateOf<Dp?>(null) }
     LaunchedEffect(query, request, interactive, restore) {
-        if (!interactive || restore != null || request == null || request != picker.pendingSearchScroll ||
-            query != picker.searchQuery.text.trim()) return@LaunchedEffect
-        val view = scroll.layoutInfo
-        val unobscuredEnd = view.viewportEndOffset - view.afterContentPadding
-        val groupFits = request == ChatModelPickerState.SearchScroll.Filter && scroll.firstVisibleItemIndex == 0 &&
-            view.visibleItemsInfo.any { it.index == FirstModelRow && it.offset + it.size <= unobscuredEnd }
-        scroll.requestScrollToItem(if (query.isEmpty() || groupFits) 0 else FirstModelRow)
-        picker.consumeSearchScroll()
+        if (interactive && request != null && restore == null && query == picker.searchQuery.text.trim()) {
+            val firstModel = rows.indexOfFirst { it.model != null }.coerceAtLeast(0)
+            val layout = scroll.layoutInfo
+            val fits = request == ChatModelPickerState.SearchScroll.Filter && scroll.firstVisibleItemIndex == 0 &&
+                layout.visibleItemsInfo.any { it.index == firstModel && it.offset + it.size <= layout.viewportEndOffset - layout.afterContentPadding }
+            scroll.requestScrollToItem(if (query.isEmpty() || fits) 0 else firstModel)
+            picker.consumeSearchScroll()
+        }
     }
     LaunchedEffect(restore, hideForReturn, interactive) {
         if (restore == null || (!interactive && !hideForReturn)) return@LaunchedEffect
-        if (provider.id == restore.providerId) {
-            savedRoom = restore.menuHeightDp.takeIf { it > 0f }?.dp
-            val browsingIndex = restore.browsing.resolveIndex(menuRowKeys(provider.id, models))
-            val filtered = matchingMenuModels(models, restore.query.text)
-            val filteredIndex = restore.filtered.resolveIndex(menuRowKeys(provider.id, filtered))
-            if (scroll === browsingScroll) {
-                filteredScroll.requestScrollToItem(filteredIndex, restore.filtered.offset)
-                browsingScroll.scrollToItem(browsingIndex, restore.browsing.offset)
-            } else {
-                browsingScroll.requestScrollToItem(browsingIndex, restore.browsing.offset)
-                filteredScroll.scrollToItem(filteredIndex, restore.filtered.offset)
-            }
+        savedRoom = restore.menuHeightDp.takeIf { it > 0f }?.dp
+        val fullIndex = restore.browsing.resolveIndex(all.map { it.key })
+        val resultIndex = restore.filtered.resolveIndex(rows.map { it.key })
+        if (scroll === browsingScroll) {
+            filteredScroll.requestScrollToItem(resultIndex, restore.filtered.offset)
+            browsingScroll.scrollToItem(fullIndex, restore.browsing.offset)
+        } else {
+            browsingScroll.requestScrollToItem(fullIndex, restore.browsing.offset)
+            filteredScroll.scrollToItem(resultIndex, restore.filtered.offset)
         }
-        picker.consumeBrowseRestore(restore, provider.id)
+        picker.consumeBrowseRestore(restore)
     }
-    BoxWithConstraints(Modifier.fillMaxSize().testTag("chat-model-list")) {
-        val room = (maxHeight - pageInsets).coerceAtLeast(0.dp)
-        // When the IME closes over a visit, keep the old browsing space until restoration.
-        // A temporarily taller page must not clamp a saved near-end scroll anchor.
-        val saved = restore?.takeIf { it.providerId == provider.id && it.menuHeightDp > 0f }?.menuHeightDp?.dp ?: savedRoom
+    BoxWithConstraints(modifier.fillMaxSize().testTag("chat-model-list")) {
+        val room = (maxHeight - composerPadding - 8.dp).coerceAtLeast(0.dp)
+        val saved = restore?.menuHeightDp?.takeIf { it > 0f }?.dp ?: savedRoom
         val heldRoom = if (!interactive && saved != null) minOf(room, saved) else room
         LazyColumn(Modifier.fillMaxSize().testTag("chat-model-results"), state = scroll,
             contentPadding = PaddingValues(top = 8.dp, bottom = maxHeight - heldRoom)) {
-            item(key = ProviderRow) {
-                Column {
-                    BrowseHeading(stringResource(R.string.chat_picker_provider))
-                    BrowseTile(provider.name, provider, null, null, Modifier.testTag("chat-model-provider-trigger")) {
-                        if (interactive) picker.providers()
-                    }
+            if (rows.isEmpty()) item(key = "empty") {
+                Text(stringResource(if (query.isEmpty()) R.string.chat_picker_no_models else R.string.chat_picker_search_empty),
+                    Modifier.testTag("chat-model-search-empty").semantics { liveRegion = LiveRegionMode.Polite }
+                        .padding(horizontal = 14.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, color = browseColors().heading)
+            }
+            modelMenuItems(rows, active, onPick = pick@{ route ->
+                if (!interactive || !picker.modelListNavigation) return@pick
+                val latest = store.catalog.value
+                val selected = latest.entries(Mode.Chat).find { it.route == route } ?: return@pick
+                if (latest.selectedEntry(Mode.Chat)?.route != route)
+                    store.configure(Mode.Chat, route, latest.parameters(selected.first, selected.second))
+                picker.open()
+            }, onEdit = { route ->
+                val page = picker.page
+                if (interactive && (page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Search)) {
+                    savedRoom = room
+                    onEditModel(route, PickerBrowseSnapshot(page, picker.searchQuery,
+                        browsingScroll.anchor(), filteredScroll.anchor(), room.value))
                 }
-            }
-            item(key = ModelsHeading) { BrowseHeading(stringResource(R.string.chat_picker_models)) }
-            if (matches.isEmpty()) item(key = EmptyRow) {
-                val empty = if (models.isEmpty()) R.string.chat_picker_provider_empty else R.string.chat_picker_search_empty
-                Text(stringResource(empty), Modifier.testTag("chat-model-search-empty")
-                    .semantics { liveRegion = LiveRegionMode.Polite }.padding(horizontal = 14.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.bodySmall, color = browseColors().heading)
-            }
-            items(matches, key = { modelRowKey(provider.id, it.id) }) { model ->
-                val route = (model to provider).route
-                val name = if (nameCounts[model.name] == 1) model.name else "${model.name} · ${model.id}"
-                BrowseTile(name, provider, model, active == route, Modifier.testTag("chat-model-option:${provider.id}/${model.id}"),
-                    onEdit = {
-                        val page = picker.page
-                        if (interactive && (page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Search)) {
-                            savedRoom = room
-                            onEditModel(route, PickerBrowseSnapshot(page, provider.id, picker.searchQuery,
-                                browsingScroll.anchor(), filteredScroll.anchor(), room.value))
-                        }
-                    }) { onPick(model) }
-            }
+            })
         }
     }
 }

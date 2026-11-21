@@ -44,62 +44,45 @@ internal fun browseColors(): BrowseColors = with(MaterialTheme.colorScheme) {
 
 @Composable
 internal fun BrowseHeading(label: String) {
-    Text(label, Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 8.dp).semantics { heading() },
-        maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, lineHeight = 17.sp,
+    Text(label, Modifier.padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 4.dp).semantics { heading() },
+        maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 11.5.sp, lineHeight = 17.sp,
         letterSpacing = .25.sp, fontWeight = FontWeight.Medium, color = browseColors().heading)
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun BrowseTile(
-    label: String, provider: Provider, model: ProviderModel?, checked: Boolean?,
+    label: String, provider: Provider, model: ProviderModel, checked: Boolean,
     modifier: Modifier, onEdit: (() -> Unit)? = null, onPick: () -> Unit,
 ) {
     val colors = browseColors()
     val shape = RoundedCornerShape(14.dp)
     val action = modifier.focusProperties { canFocus = false }
-        .semantics { if (checked != null) selected = checked }
-        .combinedClickable(role = if (checked == null) Role.Button else Role.RadioButton,
+        .semantics { selected = checked }
+        .combinedClickable(role = Role.RadioButton,
             onLongClickLabel = if (onEdit != null) stringResource(R.string.chat_picker_edit_model) else null,
             onLongClick = onEdit, onClick = onPick)
-    if (model == null) {
-        Box(Modifier.padding(horizontal = 16.dp)) {
-            Box(Modifier.fillMaxWidth().then(action).heightIn(min = 48.dp), contentAlignment = Alignment.CenterStart) {
-                val fill = if (checked == false) Color.Transparent else colors.primary.copy(alpha = if (colors.dark) .08f else .05f)
-                val outline = (if (colors.dark) Color.White else Color.Black).copy(alpha = .25f)
-                Row(Modifier.clip(shape).background(fill).border(1.dp, outline, shape).padding(horizontal = 10.dp, vertical = 7.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    BrowseAvatar(provider, null, 18.dp, colors)
-                    Text(label, Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        fontSize = 12.sp, lineHeight = 17.sp, letterSpacing = .25.sp, color = colors.text)
-                    if (checked != false) Icon(painterResource(if (checked == null) R.drawable.lucide_chevron_right else R.drawable.lucide_check),
-                        null, Modifier.size(14.dp), tint = colors.primary)
-                }
-            }
-        }
-        return
-    }
     Box(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-        Row(Modifier.fillMaxWidth().clip(shape).background(if (checked == true) colors.selected else Color.Transparent)
+        Row(Modifier.fillMaxWidth().clip(shape).background(if (checked) colors.selected else Color.Transparent)
             .then(action).heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically) {
             BrowseAvatar(provider, model, 28.dp, colors)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(label, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .25.sp,
-                    fontWeight = FontWeight.Medium, color = colors.text)
+                    fontWeight = FontWeight.SemiBold, color = colors.text)
                 BrowseModelTags(model, provider, colors)
             }
             // Keep labels and badges the same width on selected and unselected rows.
             Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
-                if (checked == true) Icon(painterResource(R.drawable.lucide_check), null, Modifier.size(20.dp), tint = colors.primary)
+                if (checked) Icon(painterResource(R.drawable.lucide_check), null, Modifier.size(20.dp), tint = colors.primary)
             }
         }
     }
 }
 
 @Composable
-private fun BrowseAvatar(provider: Provider, model: ProviderModel?, size: Dp, colors: BrowseColors) {
+internal fun BrowseAvatar(provider: Provider, model: ProviderModel?, size: Dp, colors: BrowseColors) {
     val ring = if (model == null) Modifier.border(.5.dp, colors.text.copy(alpha = if (colors.dark) .24f else .12f), CircleShape) else Modifier
     Box(Modifier.size(size).background(colors.avatar, CircleShape).then(ring), contentAlignment = Alignment.Center) {
         val iconSize = Modifier.size(size * (if (model == null) .7f else .62f))

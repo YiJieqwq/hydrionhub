@@ -301,10 +301,10 @@ private fun Workspace(vm: HubViewModel) {
                                 excessDockPx, vm::setSearch, vm::setImageTool)
                         }
                     }
-                    modelBrowse.page?.let { browsePage ->
+                    modelBrowse.page?.let {
                         ChatSlidingPage({ modelBrowse.progress }, modelBrowse.interactive && editVisit == null,
                             "chat-model-browse-surface") {
-                            ChatModelBrowsePage(providers, chatPicker, browsePage, suspended = editVisit != null,
+                            ChatModelBrowsePage(providers, chatPicker, suspended = editVisit != null,
                                 hideForReturn = returning, composerPadding = panelDock,
                                 modifier = Modifier.clipSlidingPageContent(excessDockPx),
                                 onEditModel = edit@{ route, browse ->

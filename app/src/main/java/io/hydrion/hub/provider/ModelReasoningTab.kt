@@ -1,5 +1,8 @@
 package io.hydrion.hub.provider
 
+import androidx.compose.ui.res.stringResource
+import io.hydrion.hub.R
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.*
@@ -7,63 +10,62 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 
-private val levelTitles = linkedMapOf(
-    "Minimal" to "最低", "Low" to "低", "Medium" to "中", "High" to "高",
-    "Extra High" to "极高", "Max" to "最高"
-)
-
 @Composable
 internal fun ModelReasoningTab(profile: ModelProfile, onUpdate: (ModelProfile) -> Unit) {
     if (profile.type != null && profile.type != ModelType.Chat) {
-        Text("推理设置适用于对话模型。", style = MaterialTheme.typography.bodyMedium,
+        Text(stringResource(R.string.model_for_chat), style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
     if ("reasoning" !in profile.abilities) {
-        ModelGroup("推理能力") {
-            ModelToggle("启用推理", false) { enabled ->
+        ModelGroup(stringResource(R.string.model_reasoning_ability)) {
+            ModelToggle(stringResource(R.string.model_enable_reasoning), false) { enabled ->
                 if (enabled) onUpdate(profile.copy(abilities = profile.abilities + "reasoning"))
             }
         }
         return
     }
 
-    ModelGroup("推理方言") {
-        EditableReasoningChoice("方言", profile.dialect,
-            listOf("" to "自动", "reasoning_effort" to "OpenAI · reasoning_effort")) {
+    ModelGroup(stringResource(R.string.model_dialect_section)) {
+        EditableReasoningChoice(stringResource(R.string.model_dialect), profile.dialect,
+            listOf("" to stringResource(R.string.model_auto), "reasoning_effort" to "OpenAI · reasoning_effort")) {
             onUpdate(profile.copy(dialect = it))
         }
     }
+    val levelTitles = linkedMapOf(
+        "Minimal" to stringResource(R.string.model_minimal), "Low" to stringResource(R.string.model_low), "Medium" to stringResource(R.string.model_medium), "High" to stringResource(R.string.model_high),
+        "Extra High" to stringResource(R.string.model_xhigh), "Max" to stringResource(R.string.model_max)
+    )
     val levels = levelTitles + profile.levels.filterNot { it in levelTitles }.associateWith { it }
-    ModelGroup("支持的档位") {
+    ModelGroup(stringResource(R.string.model_levels)) {
         ModelChips(levels.toList(), profile.levels.toSet()) { choice ->
             val next = if (choice in profile.levels) profile.levels - choice else profile.levels + choice
             val removingDefault = choice == profile.defaultLevel && choice !in next
             onUpdate(profile.copy(levels = next, defaultLevel = if (removingDefault) "" else profile.defaultLevel))
         }
-        ModelToggle("允许关闭推理", profile.allowDisabling) { enabled ->
+        ModelToggle(stringResource(R.string.model_can_disable), profile.allowDisabling) { enabled ->
             val default = if (!enabled && profile.defaultLevel == "Off") "" else profile.defaultLevel
             onUpdate(profile.copy(allowDisabling = enabled, defaultLevel = default))
         }
         val defaults = buildList {
-            add("" to "自动")
+            add("" to stringResource(R.string.model_auto))
             profile.levels.filterNot { it in setOf("Auto", "Off", "") }.forEach { add(it to levels.getValue(it)) }
-            if (profile.allowDisabling) add("Off" to "关闭")
+            if (profile.allowDisabling) add("Off" to stringResource(R.string.model_off))
         }
         val selected = profile.defaultLevel.takeUnless { it == "Auto" }.orEmpty()
-        ModelChoice("默认档位", selected, withCurrent(defaults, selected)) {
+        ModelChoice(stringResource(R.string.model_default_level), selected, withCurrent(defaults, selected)) {
             onUpdate(profile.copy(defaultLevel = it))
         }
     }
-    ModelGroup("策略") {
-        EditableReasoningChoice("采样", profile.sampling, listOf(
-            "" to "自动", "never/strip" to "从不（移除采样参数）", "keep" to "保留采样参数"
+    ModelGroup(stringResource(R.string.model_policy)) {
+        EditableReasoningChoice(stringResource(R.string.model_sampling), profile.sampling, listOf(
+            "" to stringResource(R.string.model_auto), "never/strip" to stringResource(R.string.model_strip_sampling), "keep" to stringResource(R.string.model_keep_sampling)
         )) { onUpdate(profile.copy(sampling = it)) }
-        EditableReasoningChoice("推理回放", profile.reasoningReplay, listOf(
-            "" to "自动", "all" to "全部", "last" to "仅上一轮", "none" to "关闭"
+        EditableReasoningChoice(stringResource(R.string.model_replay), profile.reasoningReplay, listOf(
+            "" to stringResource(R.string.model_auto), "all" to stringResource(R.string.model_all), "last" to stringResource(R.string.model_last_turn), "none" to stringResource(R.string.model_off)
         )) { onUpdate(profile.copy(reasoningReplay = it)) }
-        EditableReasoningChoice("回放字段", profile.replayField, listOf(
-            "" to "自动", "reasoning_content" to "reasoning_content"
+        EditableReasoningChoice(stringResource(R.string.model_replay_field), profile.replayField, listOf(
+            "" to stringResource(R.string.model_auto), "reasoning_content" to "reasoning_content"
         )) { onUpdate(profile.copy(replayField = it)) }
     }
 }
@@ -78,17 +80,17 @@ private fun EditableReasoningChoice(
     var entering by rememberSaveable { mutableStateOf(false) }
     // An empty DB value is the inherited option. The input action is never written into the profile.
     val customAction = "\u0000"
-    ModelChoice(label, value, withCurrent(presets, value) + (customAction to "自定义…")) { choice ->
+    ModelChoice(label, value, withCurrent(presets, value) + (customAction to stringResource(R.string.model_custom_entry))) { choice ->
         if (choice == customAction) entering = true else onChange(choice)
     }
     if (entering) {
         var draft by rememberSaveable { mutableStateOf(value) }
-        AlertDialog(onDismissRequest = { entering = false }, title = { Text("自定义$label") }, text = {
+        AlertDialog(onDismissRequest = { entering = false }, title = { Text(stringResource(R.string.model_custom_named, label)) }, text = {
             Column(Modifier.fillMaxWidth()) { ModelField(label, draft, { draft = it }) }
-        }, dismissButton = { TextButton(onClick = { entering = false }) { Text("取消") } },
+        }, dismissButton = { TextButton(onClick = { entering = false }) { Text(stringResource(R.string.settings_cancel)) } },
             confirmButton = { TextButton(enabled = draft.isNotBlank(), onClick = {
                 onChange(draft.trim())
                 entering = false
-            }) { Text("完成") } })
+            }) { Text(stringResource(R.string.model_done)) } })
     }
 }

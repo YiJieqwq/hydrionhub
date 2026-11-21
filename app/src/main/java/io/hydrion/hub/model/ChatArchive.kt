@@ -67,7 +67,8 @@ private fun SavedWorkspace.transform(attachment: (Attachment) -> Attachment, ima
         },
     )
     fun conversation(c: Conversation) = Conversation(id = c.id, title = c.title, mode = c.mode,
-        pinned = c.pinned, updatedAt = c.updatedAt, messages = c.messages.map(::message), assistantId = c.assistantId)
+        pinned = c.pinned, updatedAt = c.updatedAt, messages = c.messages.map(::message), assistantId = c.assistantId,
+        modelRoutes = c.modelRoutes?.mapValues { (_, r) -> RemoteModel(r.providerId, r.modelId) })
     return SavedWorkspace(history.map(::conversation), drafts.mapValues { (_, d) ->
         Draft(d.text, d.attachments.map(::portableAttachment), d.search, d.imageTool)
     }, unsent?.let(::conversation), assistants.map { LocalAssistant(it.id, it.name) }, selectedAssistant,

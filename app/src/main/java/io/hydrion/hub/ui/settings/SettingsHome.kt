@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.sp
 import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 import io.hydrion.hub.ui.theme.HubStyle
 
-internal enum class SettingsEntry { About, Language, Image, Style, Data, Backup, Assistants }
+internal enum class SettingsEntry { About, Language, Image, Style, Data, Backup, Assistants, Defaults, Search }
 
 private data class SettingsRow(
     val label: Int,
@@ -65,13 +65,13 @@ private val settingsGroups = listOf(
         SettingsRow(R.string.settings_assistants, R.drawable.lucide_bot, "助手管理 assistants assistant management", SettingsEntry.Assistants),
     ),
     R.string.settings_models to listOf(
+        SettingsRow(R.string.settings_defaults, R.drawable.lucide_heart, "默认模型配置 default models", SettingsEntry.Defaults),
         SettingsRow(R.string.settings_chat, R.drawable.lucide_boxes,
             "语言模型供应商 聊天模型供应商 对话模型 供应商 配置 chat models provider reasoning 设置", SettingsEntry.Language),
         SettingsRow(R.string.settings_image, R.drawable.lucide_image,
             "图片模型供应商 图像生成模型供应商 生图 绘图 image generation models provider 设置", SettingsEntry.Image),
-        SettingsRow(R.string.settings_defaults, R.drawable.lucide_heart, "默认模型 default models"),
         SettingsRow(R.string.settings_web_search, R.drawable.lucide_earth,
-            "网络搜索提供商 网络搜索供应商 web search providers"),
+            "联网搜索配置 网络搜索提供商 网络搜索供应商 web search providers", SettingsEntry.Search),
     ),
     R.string.settings_tools to listOf(
         SettingsRow(R.string.settings_memory, R.drawable.lucide_brain, "记忆 memory"),

@@ -1,5 +1,7 @@
 package io.hydrion.hub.provider
 
+import io.hydrion.hub.R
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
@@ -92,8 +94,8 @@ internal fun ModelChips(options: List<Pair<String, String>>, selected: Set<Strin
     }
 }
 
-internal val profileIcons = listOf("chat" to "对话", "image" to "图片", "bolt" to "闪电", "code" to "代码",
-    "cube" to "立方体", "sparkle" to "星光")
+internal val profileIcons = listOf("chat" to R.string.model_type_chat, "image" to R.string.model_io_image, "bolt" to R.string.model_bolt, "code" to R.string.model_code,
+    "cube" to R.string.model_cube, "sparkle" to R.string.model_sparkle)
 
 @Composable
 internal fun ProfileIcon(key: String, type: ModelType, modifier: Modifier = Modifier) {

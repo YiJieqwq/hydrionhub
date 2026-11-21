@@ -15,6 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
+import io.hydrion.hub.R
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -153,8 +154,6 @@ class SettingsSearchTest {
         val previews = listOf(
             "登录账户" to R.string.settings_signed_in_accounts,
             "signed-in accounts" to R.string.settings_signed_in_accounts,
-            "默认模型" to R.string.settings_defaults,
-            "web search" to R.string.settings_web_search,
             "记忆" to R.string.settings_memory,
             "containers" to R.string.settings_environments,
             "mCp" to R.string.settings_mcp,
@@ -165,10 +164,33 @@ class SettingsSearchTest {
             screen.onNodeWithText(screen.activity.getString(id)).assertIsDisplayed()
                 .assertIsNotEnabled().assertHasNoClickAction()
         }
+        for ((query, id) in listOf("默认模型" to R.string.settings_defaults, "web search" to R.string.settings_web_search)) {
+            search().performTextReplacement(query)
+            screen.onNodeWithText(screen.activity.getString(id)).assertIsDisplayed().assertHasClickAction()
+        }
         search().performTextReplacement("assistant")
         screen.onNodeWithText(screen.activity.getString(R.string.settings_assistants)).assertHasClickAction()
         search().performTextReplacement("消息样式")
         screen.onNodeWithText(screen.activity.getString(R.string.settings_style)).assertHasClickAction()
+    }
+
+    @Test fun defaultModelsAndSearchProvidersOpenAndCancelWithoutChangingConfiguration() {
+        fun label(id: Int) = screen.activity.getString(id)
+        openSettings()
+        revealRow(label(R.string.settings_defaults)).performClick()
+        screen.onNodeWithText(label(R.string.settings_chat)).assertExists()
+        screen.onNodeWithText(label(R.string.settings_image)).assertExists()
+        screen.onNodeWithContentDescription(label(R.string.settings_back)).performClick()
+        revealRow(label(R.string.settings_web_search)).performClick()
+        screen.onNodeWithText(label(R.string.search_local_demo)).assertIsDisplayed()
+        screen.onNodeWithContentDescription(label(R.string.model_settings_add_provider)).performClick()
+        screen.onNode(hasText(label(R.string.search_provider_name)) and hasSetTextAction()).performTextReplacement("Unsaved fixture")
+        screen.onNodeWithContentDescription(label(R.string.settings_save)).performClick()
+        screen.onNodeWithText(label(R.string.search_invalid)).assertIsDisplayed()
+        screen.onNodeWithContentDescription(label(R.string.settings_back)).performClick()
+        screen.onNodeWithText(label(R.string.model_settings_drop)).performClick()
+        screen.onNodeWithText("Unsaved fixture").assertDoesNotExist()
+        screen.onNodeWithText(label(R.string.search_local_demo)).assertIsDisplayed()
     }
 
     @Test fun infoOpensAboutAndLastRowRemainsAboveTheSearchField() {
@@ -189,9 +211,9 @@ class SettingsSearchTest {
             rowBounds.bottom <= searchBounds.top)
 
         revealRow(screen.activity.getString(R.string.settings_image)).performClick()
-        screen.onNodeWithText("图像生成模型供应商").assertIsDisplayed()
-        screen.onNodeWithContentDescription("添加供应商").assertIsDisplayed()
-        screen.onNodeWithContentDescription("返回").performClick()
+        screen.onNodeWithText(screen.activity.getString(R.string.model_settings_image_providers)).assertIsDisplayed()
+        screen.onNodeWithContentDescription(screen.activity.getString(R.string.model_settings_add_provider)).assertIsDisplayed()
+        screen.onNodeWithContentDescription(screen.activity.getString(R.string.settings_back)).performClick()
         search().assertIsDisplayed()
     }
 }

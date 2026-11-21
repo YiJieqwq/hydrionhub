@@ -58,13 +58,13 @@ internal class FakeGenerationRepository(
     }
 }
 
-internal fun selectedTool(mode: Mode, draft: Draft): String? {
+internal fun selectedTool(mode: Mode, draft: Draft, allowSearch: Boolean = true): String? {
     if (mode != Mode.Chat) return null
     val prompt = draft.text.lowercase()
     return when {
         draft.imageTool != "禁用" && listOf("生成图", "画一", "画幅", "draw ", "generate an image").any { it in prompt } ->
             "图片生成 · ${draft.imageTool}"
-        draft.search != "禁用" && listOf("搜索", "查找", "search", "查询").any { it in prompt } ->
+        allowSearch && draft.search != "禁用" && listOf("搜索", "查找", "search", "查询").any { it in prompt } ->
             "网络搜索 · ${draft.search}"
         else -> null
     }

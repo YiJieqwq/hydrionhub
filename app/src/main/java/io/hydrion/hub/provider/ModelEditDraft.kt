@@ -1,11 +1,13 @@
 package io.hydrion.hub.provider
 
+import io.hydrion.hub.R
+
 import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import io.hydrion.hub.model.Mode
 import java.util.UUID
 
-internal enum class ModelPage(val title: String) { Basic("基础"), Reasoning("推理"), Advanced("高级") }
+internal enum class ModelPage(val title: Int) { Basic(R.string.model_tab_basic), Reasoning(R.string.model_tab_reasoning), Advanced(R.string.model_tab_advanced) }
 
 internal data class HeaderDraft(val id: String, val key: String = "", val value: String = "")
 
@@ -82,33 +84,33 @@ internal class ModelEditDraft(val initial: ProviderModel, val mode: Mode, val wa
         Capability(it.key.trim(), it.label.trim(), it.values.split(',', '，').map(String::trim).filter(String::isNotEmpty).distinct())
     }
 
-    fun error(others: List<ProviderModel>): Pair<ModelPage, String>? {
+    fun error(others: List<ProviderModel>): Pair<ModelPage, Int>? {
         val id = profile.externalId.trim().ifBlank { name.trim() }
         val label = name.trim().ifBlank { id }
-        if (id.isBlank()) return ModelPage.Basic to "请输入模型 ID 或名称"
-        if (others.any { it.id != initial.id && it.externalModelId.trim() == id }) return ModelPage.Basic to "供应商中已有相同模型 ID"
-        if (others.any { it.id != initial.id && it.name.trim().equals(label, ignoreCase = true) }) return ModelPage.Basic to "供应商中已有同名模型"
+        if (id.isBlank()) return ModelPage.Basic to R.string.model_need_id
+        if (others.any { it.id != initial.id && it.externalModelId.trim() == id }) return ModelPage.Basic to R.string.model_duplicate_id
+        if (others.any { it.id != initial.id && it.name.trim().equals(label, ignoreCase = true) }) return ModelPage.Basic to R.string.model_duplicate_name
         if (type == ModelType.Chat && contextWindow.isNotBlank() && (contextWindow.toIntOrNull() ?: 0) <= 0)
-            return ModelPage.Basic to "上下文窗口须为正整数，留空使用预设值。"
+            return ModelPage.Basic to R.string.model_invalid_window
         val invalidBudget = listOf(budget, imageBudget).any { it.isNotBlank() && (it.toIntOrNull() ?: -1) < 0 }
-        if (invalidBudget) return ModelPage.Advanced to "预算必须是非负整数"
+        if (invalidBudget) return ModelPage.Advanced to R.string.model_invalid_budget
         if (headers.any { !headerName.matches(it.key.trim()) || it.value.any { c -> c == '\n' || c == '\r' } }) {
-            return ModelPage.Advanced to "请输入有效的请求头名称和单行值"
+            return ModelPage.Advanced to R.string.model_invalid_header
         }
-        if (headers.map { it.key.trim().lowercase() }.distinct().size < headers.size) return ModelPage.Advanced to "请求头名称重复"
+        if (headers.map { it.key.trim().lowercase() }.distinct().size < headers.size) return ModelPage.Advanced to R.string.model_duplicate_header
         if (profile.requestBody.isNotBlank() && RequestTemplate.preview(profile.requestBody, null).isFailure) {
-            return ModelPage.Advanced to "请求体须为有效的 JSON 对象"
+            return ModelPage.Advanced to R.string.model_invalid_json
         }
         val extras = customCapabilities()
         if (extras.any { !fieldName.matches(it.key) || it.label.isBlank() || it.choices.isEmpty() }) {
-            return ModelPage.Advanced to "请填写有效的自定义字段名、显示名称与可选值"
+            return ModelPage.Advanced to R.string.model_invalid_param
         }
         val reserved = builtinOptions().map { it.key }.toSet() + "effort"
         if (extras.map { it.key }.distinct().size < extras.size || extras.any { it.key in reserved }) {
-            return ModelPage.Advanced to "自定义参数字段名重复"
+            return ModelPage.Advanced to R.string.model_duplicate_param
         }
         if (type == ModelType.Image && extras.any { it.key in RequestTemplate.contextVariables }) {
-            return ModelPage.Advanced to "字段名与图片请求模板变量重名"
+            return ModelPage.Advanced to R.string.model_conflicting_param
         }
         return null
     }

@@ -35,7 +35,7 @@ class ModelBrowseMotionTest {
             launch(frames, start = CoroutineStart.UNDISPATCHED) { models.travel(open, restoring = false) },
         )
         picker.open()
-        picker.models("provider", startSearching = true)
+        picker.models()
         models.retain(ChatModelPickerState.Page.Search)
         tools.open()
         val entrance = animate(true)
@@ -58,7 +58,7 @@ class ModelBrowseMotionTest {
         assertTrue(models.active)
         retreat.forEach { it.cancelAndJoin() }
 
-        picker.models("provider", startSearching = true)
+        picker.models()
         tools.open()
         val resume = animate(true)
         frame(0)

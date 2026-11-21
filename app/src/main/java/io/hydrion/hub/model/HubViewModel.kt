@@ -3,6 +3,7 @@ package io.hydrion.hub.model
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import io.hydrion.hub.provider.WebSearchStore
 import io.hydrion.hub.provider.ProviderStore
 import io.hydrion.hub.provider.responsesImageSources
 import io.hydrion.hub.provider.LocalModelRequest
@@ -35,6 +36,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     private val initialMediaScan = CompletableDeferred<Unit>()
     private var changedDuringLoad = false
     internal val providers = ProviderStore(app)
+    internal val webSearch = WebSearchStore(app)
     private val environments by lazy { ProotEnvironmentStore(app) }
     private val images = GeneratedImageStore(app)
     private val generation = ImageGenerationRepository(
@@ -45,7 +47,8 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     internal val errors = mutableErrors.asStateFlow()
     private val session = ConversationSession(viewModelScope, generation,
         persist = { snapshot -> if (loaded) writes.trySend(storageEpoch to snapshot) else changedDuringLoad = true },
-        onGenerationError = ::reportError)
+        newRoutes = providers::newThreadRoutes, showRoutes = providers::showRoutes,
+        allowSearch = { webSearch.settings.value.localEnabled }, onGenerationError = ::reportError)
     val state = session.state
     internal fun addAssistant(name: String) = loaded && session.addAssistant(name)
     internal fun renameAssistant(id: String, name: String) = loaded && session.renameAssistant(id, name)
@@ -54,6 +57,9 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     val notice = mutableNotice.asStateFlow()
 
     init {
+        val previousRoutes = providers.legacyRoutes()
+        providers.onModelPicked = session::selectModel
+        providers.showRoutes(state.value.current.modelRoutes)
         // The single writer finishes queued atomic saves even if the Activity is closed.
         CoroutineScope(Dispatchers.IO).launch {
             for ((epoch, snapshot) in writes) {
@@ -67,9 +73,10 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val saved = withContext(Dispatchers.IO) { historyFile.load() }
-                session.restore(saved)
+                val scoped = saved.withLegacyModelRoutes(previousRoutes)
+                session.restore(scoped)
                 load.value = WorkspaceLoad.Ready
-                if (changedDuringLoad) writes.trySend(storageEpoch to session.snapshot())
+                if (changedDuringLoad || scoped != saved) writes.trySend(storageEpoch to session.snapshot())
                 val retained = saved.imageReferences() + session.snapshot().imageReferences() +
                     state.value.draft.attachments.mapNotNull { it.imageKey }
                 try {
@@ -98,13 +105,14 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     internal suspend fun applyBackup(preview: InspectedChatArchive) {
         initialMediaScan.await()
         val before = backupSnapshot()
-        mergeBackup(before, preview.workspace) // Fail on collisions before publishing any files.
+        val legacyRoutes = providers.legacyRoutes()
+        mergeBackup(before, preview.workspace.withLegacyModelRoutes(legacyRoutes)) // Fail on collisions before publishing any files.
         withContext(Dispatchers.IO) {
             var rollback: java.io.File? = null
             try {
                 backups.withMedia(preview, beforeWrite = { incoming ->
-                    rollback = backups.stageRollback(before, mergeBackup(before, incoming))
-                }) { incoming -> commitBackup(before, mergeBackup(before, incoming), requireNotNull(rollback)) }
+                    rollback = backups.stageRollback(before, mergeBackup(before, incoming.withLegacyModelRoutes(legacyRoutes)))
+                }) { incoming -> commitBackup(before, mergeBackup(before, incoming.withLegacyModelRoutes(legacyRoutes)), requireNotNull(rollback)) }
             } finally { rollback?.delete() }
         }
     }

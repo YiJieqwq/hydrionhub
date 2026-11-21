@@ -12,7 +12,6 @@ internal data class PickerScrollAnchor(val key: String?, val index: Int, val off
 // Each visit is a distinct restore request even when its recorded values match an earlier visit.
 internal class PickerBrowseSnapshot(
     val page: ChatModelPickerState.Page,
-    val providerId: String,
     val query: TextFieldValue,
     val browsing: PickerScrollAnchor,
     val filtered: PickerScrollAnchor,

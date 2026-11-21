@@ -17,9 +17,15 @@ internal class ConversationSession(
     private val repository: GenerationRepository,
     private val persist: (SavedWorkspace) -> Unit,
     private val now: () -> Long = System::currentTimeMillis,
+    private val newRoutes: () -> Map<Mode, RemoteModel>? = { null },
+    private val showRoutes: (Map<Mode, RemoteModel>?) -> Unit = {},
+    private val allowSearch: () -> Boolean = { true },
     private val onGenerationError: (conversationId: String, detail: String) -> Unit = { _, _ -> }
 ) {
-    private val mutable = MutableStateFlow(HubState())
+    private fun newChat(owner: String = LocalAssistant.Default.id) =
+        Conversation(assistantId = owner, modelRoutes = newRoutes())
+
+    private val mutable = MutableStateFlow(HubState(current = newChat()))
     val state: StateFlow<HubState> = mutable.asStateFlow()
     private val screen get() = mutable.value
     private val drafts = mutableMapOf<String, Draft>()
@@ -43,15 +49,15 @@ internal class ConversationSession(
             })
         }
         saved.drafts.forEach { (id, draft) -> drafts.putIfAbsent(id, draft) }
-        val untouched = liveIds.isEmpty() && !screen.modeLocked && screen.draft == Draft() &&
+        val untouched = liveIds.isEmpty() && restoredUnsentId == null && !screen.modeLocked && screen.draft == Draft() &&
             screen.current.mode == Mode.Chat && screen.current.environmentId == null
         mutable.value = screen.copy(history = (screen.history + restored).sortedByDescending { it.updatedAt },
             assistants = saved.assistants)
         lastThreads.putAll(saved.lastThreads)
         saved.pending.associateByTo(parked) { it.assistantId }
-        restoredUnsentId = saved.unsent?.id
+        if (restoredUnsentId == null) restoredUnsentId = saved.unsent?.id
         if (untouched && (hasSeveral || saved.unsent != null)) {
-            choose(rememberedLocation(saved.selectedAssistant) ?: Conversation(assistantId = saved.selectedAssistant))
+            choose(rememberedLocation(saved.selectedAssistant) ?: newChat(saved.selectedAssistant))
         }
     }
 
@@ -66,7 +72,7 @@ internal class ConversationSession(
         if (!screen.modeLocked) emptyThreads[owner] = screen.current
         val pending = emptyThreads.values.filter { item ->
             (hasSeveral || includeUnsent || item.id == restoredUnsentId) &&
-                (item.id in drafts || (hasSeveral && (item.mode != Mode.Chat || item.environmentId != null)))
+                (item.id in drafts || item.id == restoredUnsentId || (hasSeveral && (item.mode != Mode.Chat || item.environmentId != null)))
         }
         pending.forEach { savedDrafts[it.id] = drafts[it.id] ?: Draft() }
         val resume = if (hasSeveral || includeUnsent) history.filter { lastThreads[it.assistantId] == it.id }
@@ -87,7 +93,7 @@ internal class ConversationSession(
         restoredUnsentId = saved.unsent?.id
         mutable.value = HubState(history = saved.history, assistants = saved.assistants)
         val previous = saved.history.find { it.id == oldId }
-        choose(previous ?: rememberedLocation(saved.selectedAssistant) ?: Conversation(assistantId = saved.selectedAssistant))
+        choose(previous ?: rememberedLocation(saved.selectedAssistant) ?: newChat(saved.selectedAssistant))
     }
 
     fun addAssistant(name: String): Boolean {
@@ -110,7 +116,7 @@ internal class ConversationSession(
         if (owner == id || screen.assistants.none { it.id == id }) return
         rememberCurrent()
         choose(rememberedLocation(id) ?: screen.history.firstOrNull { it.assistantId == id }
-            ?: Conversation(assistantId = id))
+            ?: newChat(id))
         save()
     }
 
@@ -148,13 +154,25 @@ internal class ConversationSession(
         if (parked[item.assistantId]?.id == item.id) parked.remove(item.assistantId)
         if (screen.history.any { it.id == item.id }) lastThreads[item.assistantId] = item.id
         else lastThreads.remove(item.assistantId)
+        showRoutes(item.modelRoutes)
         mutable.value = screen.copy(current = item, draft = drafts[item.id] ?: Draft())
+    }
+
+    fun selectModel(mode: Mode, route: RemoteModel) {
+        val current = screen.current
+        val routes = current.modelRoutes.orEmpty()
+        if (routes[mode] == route) return
+        val next = routes + (mode to route)
+        if (!screen.modeLocked) restoredUnsentId = current.id
+        update(current.copy(modelRoutes = next))
+        showRoutes(next)
+        save()
     }
 
     fun newConversation() {
         if (!screen.modeLocked) drafts.remove(screen.current.id)
         val discardImported = !screen.modeLocked && screen.current.id == restoredUnsentId
-        choose(parked[owner] ?: Conversation(assistantId = owner))
+        choose(parked[owner] ?: newChat(owner))
         if (hasSeveral || discardImported) save()
     }
 
@@ -202,7 +220,7 @@ internal class ConversationSession(
         drafts.remove(id)
         mutable.value = screen.copy(history = screen.history.filterNot { it.id == id })
         if (screen.current.id == id) {
-            val next = parked[owner] ?: Conversation(assistantId = owner)
+            val next = parked[owner] ?: newChat(owner)
             choose(next)
         }
         save()
@@ -259,7 +277,7 @@ internal class ConversationSession(
         val response = Message(role = Role.Assistant, status = Generation.Sending, prompt = prompt,
             model = image?.model ?: model, parameters = user.imageInvocation?.parameters ?: user.parameters,
             replyTo = user.id, createdAt = now(), remoteModel = remoteModel, imageInvocation = user.imageInvocation,
-            attachments = draft.attachments, tool = if (remoteModel == null) selectedTool(s.current.mode, draft) else null)
+            attachments = draft.attachments, tool = if (remoteModel == null) selectedTool(s.current.mode, draft, allowSearch()) else null)
         val title = if (!s.modeLocked && s.current.title == "新会话")
             prompt.ifBlank { draft.attachments.first().name }.lineSequence().first().take(32) else s.current.title
         changeDraft(draft.copy(text = "", attachments = emptyList()))
@@ -375,7 +393,9 @@ internal class ConversationSession(
             parameters = image?.parameters ?: original?.parameters ?: user.parameters,
             prompt = user.text, attachments = user.attachments, replyTo = user.id, imageInvocation = image,
             imageKeys = if (original != null && image?.remoteModel != null && original.imageInvocation == image) original.imageKeys else emptyList(),
-            tool = if (image != null && item.mode == Mode.Chat) "图片生成 · $CUSTOM_IMAGE_TOOL" else original?.tool,
+            tool = if (image != null && item.mode == Mode.Chat) "图片生成 · $CUSTOM_IMAGE_TOOL" else original?.tool?.takeUnless {
+                !allowSearch() && it.startsWith("网络搜索 · ")
+            },
             createdAt = now())
         val messages = item.messages.filterNot { it.id == response.id }.toMutableList()
         messages.add(messages.indexOfFirst { it.id == user.id } + 1, response)

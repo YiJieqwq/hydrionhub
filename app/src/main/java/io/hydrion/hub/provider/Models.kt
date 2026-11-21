@@ -54,6 +54,15 @@ data class ModelCatalog(
         return available.find { it.route == defaults[mode] } ?: available.firstOrNull()
     }
 
+    internal fun initialRoutes(): Map<Mode, RemoteModel> = Mode.entries.mapNotNull { mode ->
+        (defaults[mode] ?: defaultEntry(mode)?.route)?.let { mode to it }
+    }.toMap()
+
+    internal fun withDefault(mode: Mode, route: RemoteModel): ModelCatalog? {
+        if (entries(mode).none { it.route == route }) return null
+        return copy(defaults = defaults + (mode to route))
+    }
+
     fun defaultModel(mode: Mode): ProviderModel? = defaultEntry(mode)?.first
 
     fun selectedEntry(mode: Mode): Pair<ProviderModel, Provider>? = selectedEntry(mode, entries(mode))

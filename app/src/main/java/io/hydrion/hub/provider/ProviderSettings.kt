@@ -29,8 +29,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.hydrion.hub.model.Mode
 import java.util.UUID
 
-private fun category(mode: Mode) = if (mode == Mode.Chat) "聊天模型供应商" else "图像生成模型供应商"
-
 @Composable
 fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
     val catalog by store.catalog.collectAsState()
@@ -52,33 +50,12 @@ fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
             edit != null -> key(edit.initial.id) {
                 ProviderEditor(store, edit, onBack = { navigation.edit = null })
             }
-            currentMode != null -> Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 16.dp)) {
-                Header(category(currentMode), goBack) {
-                    IconButton(onClick = {
-                        val blank = Provider(UUID.randomUUID().toString(), currentMode, "",
-                            if (currentMode == Mode.Chat) "OpenAI Compatible" else "OpenAI Images", "", emptyList())
-                        navigation.open(blank, store)
-                    }) { Icon(Icons.Default.Add, "添加供应商") }
-                }
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(top = 14.dp, bottom = 24.dp)) {
-                    val providers = catalog.providers.filter { it.mode == currentMode }
-                    if (providers.isEmpty()) item {
-                        Text("还没有供应商，点击右上角添加。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    items(providers, key = { it.id }) { provider ->
-                        val defaultIds = Mode.entries.mapNotNull { catalog.defaultModel(it)?.id }
-                        val defaults = provider.models.filter { it.id in defaultIds }.joinToString { it.name }
-                        val connection = if (provider.id == DEEPSEEK_PROVIDER_ID) "在线" else "本地模拟"
-                        val subtitle = listOfNotNull(if (provider.enabled) null else "已停用", connection, provider.protocol,
-                            "${provider.models.size} 个模型", defaults.takeIf { it.isNotEmpty() }?.let { "默认 · $it" })
-                        LinkRow(provider.name, subtitle.joinToString("  ·  ")) { navigation.open(provider, store) }
-                    }
-                    if (currentMode == Mode.Chat && providers.none { it.id == DEEPSEEK_PROVIDER_ID }) {
-                        item { LinkRow("添加 DeepSeek", deepSeekProvider.protocol) { navigation.open(deepSeekProvider, store) } }
-                    }
-                }
-            }
+            currentMode != null -> ModelProviderPage(currentMode, catalog, goBack, onAdd = {
+                navigation.open(Provider(UUID.randomUUID().toString(), currentMode, "",
+                    if (currentMode == Mode.Chat) "OpenAI Compatible" else "OpenAI Images", "", emptyList()), store)
+            }, onOpen = { navigation.open(it, store) })
+            detail == SettingsEntry.Defaults -> DefaultModelsPage(store, catalog, goBack)
+            detail == SettingsEntry.Search -> SearchProvidersPage(viewModel<io.hydrion.hub.model.HubViewModel>().webSearch, goBack)
             detail == SettingsEntry.Assistants -> io.hydrion.hub.ui.settings.AssistantSettings(viewModel(), goBack)
             detail == SettingsEntry.Backup -> io.hydrion.hub.ui.settings.BackupSettings(viewModel(), goBack)
             detail == SettingsEntry.Data -> io.hydrion.hub.ui.settings.StorageSettings(viewModel(), onBack = goBack)
@@ -116,25 +93,10 @@ internal fun Header(title: String, onBack: () -> Unit, action: @Composable () ->
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Surface(modifier = Modifier.capsuleEdge(), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.settings_back)) }
         }
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         action()
-    }
-}
-
-@Composable
-private fun LinkRow(title: String, subtitle: String? = null, onClick: () -> Unit) {
-    Surface(shape = RoundedCornerShape(17.dp), color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = MaterialTheme.typography.bodyLarge)
-                if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
     }
 }
 
@@ -147,6 +109,6 @@ internal fun EditField(label: String, value: String, onValueChange: (String) -> 
 @Composable
 internal fun ConfirmRemoval(question: String, onDismiss: () -> Unit, onRemove: () -> Unit) {
     AlertDialog(onDismissRequest = onDismiss, title = { Text(question) },
-        confirmButton = { TextButton(onClick = onRemove) { Text("删除", color = MaterialTheme.colorScheme.error) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })
+        confirmButton = { TextButton(onClick = onRemove) { Text(stringResource(R.string.drawer_delete), color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) } })
 }

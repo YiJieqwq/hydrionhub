@@ -1,5 +1,8 @@
 package io.hydrion.hub.provider
 
+import androidx.compose.ui.res.stringResource
+import io.hydrion.hub.R
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,9 +42,9 @@ internal fun ModelAdvancedTab(
     var editingBody by rememberSaveable { mutableStateOf(false) }
     val overrideBudget = imageBudget.isNotBlank() || budget.isNotBlank()
     ModelGroup("") {
-        AdvancedAction("图片与请求预算", if (overrideBudget) "自定义" else "继承") { editingBudget = true }
+        AdvancedAction(stringResource(R.string.model_budget), if (overrideBudget) stringResource(R.string.model_custom) else stringResource(R.string.model_inherit)) { editingBudget = true }
     }
-    ModelGroup("请求配置") {
+    ModelGroup(stringResource(R.string.model_request_config)) {
         headers.forEachIndexed { index, header ->
             key(header.id) {
                 HeaderEditor(index + 1, header, update = { edited ->
@@ -52,23 +55,23 @@ internal fun ModelAdvancedTab(
         TextButton(onClick = { onHeaders(headers + HeaderDraft(UUID.randomUUID().toString())) }) {
             Icon(Icons.Outlined.Add, null, Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text("添加请求头")
+            Text(stringResource(R.string.model_add_header))
         }
         if (profile.requestBody.isEmpty()) {
             TextButton(onClick = { editingBody = true }) {
                 Icon(Icons.Outlined.Add, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("添加请求体")
+                Text(stringResource(R.string.model_add_body))
             }
         } else {
-            AdvancedAction("自定义请求体", "编辑 JSON") { editingBody = true }
+            AdvancedAction(stringResource(R.string.model_json_body), stringResource(R.string.model_edit_json)) { editingBody = true }
         }
     }
-    ModelGroup("图片输入") {
-        ModelToggle("远程图片链接", profile.imageLinks) { onProfile(profile.copy(imageLinks = it)) }
+    ModelGroup(stringResource(R.string.model_image_input)) {
+        ModelToggle(stringResource(R.string.model_remote_images), profile.imageLinks) { onProfile(profile.copy(imageLinks = it)) }
     }
-    ModelGroup("内置工具") {
-        ModelToggle("代码解释器", profile.codeInterpreter) { onProfile(profile.copy(codeInterpreter = it)) }
+    ModelGroup(stringResource(R.string.model_builtin_tools)) {
+        ModelToggle(stringResource(R.string.model_interpreter), profile.codeInterpreter) { onProfile(profile.copy(codeInterpreter = it)) }
     }
     if (editingBudget) {
         BudgetDialog(imageBudget, budget, onDismiss = { editingBudget = false },
@@ -102,19 +105,19 @@ private fun HeaderEditor(index: Int, header: HeaderDraft, update: (HeaderDraft) 
     var revealed by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("请求头 $index", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-            IconButton(remove) { Icon(Icons.Outlined.Close, "移除请求头 $index", Modifier.size(18.dp)) }
+            Text(stringResource(R.string.model_header_number, index), Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+            IconButton(remove) { Icon(Icons.Outlined.Close, stringResource(R.string.model_remove_header, index), Modifier.size(18.dp)) }
         }
-        ModelField("请求头名称", header.key, { update(header.copy(key = it)) })
+        ModelField(stringResource(R.string.model_header_name), header.key, { update(header.copy(key = it)) })
         CompositionLocalProvider(LocalSaveableStateRegistry provides null) {
             OutlinedTextField(header.value, { update(header.copy(value = it)) }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(), label = { Text("请求头值") }, shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.model_header_value)) }, shape = RoundedCornerShape(12.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 visualTransformation = if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
                     IconButton(onClick = { revealed = !revealed }) {
                         Icon(if (revealed) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                            if (revealed) "隐藏请求头值" else "显示请求头值", Modifier.size(19.dp))
+                            if (revealed) stringResource(R.string.model_hide_header) else stringResource(R.string.model_show_header), Modifier.size(19.dp))
                     }
                 })
         }
@@ -127,39 +130,40 @@ private fun BudgetDialog(images: String, requests: String, onDismiss: () -> Unit
     var requestLimit by rememberSaveable { mutableStateOf(requests) }
     fun isLimitValid(value: String) = value.isBlank() || value.trim().toIntOrNull()?.let { it >= 0 } == true
     val valid = isLimitValid(imageLimit) && isLimitValid(requestLimit)
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("图片与请求预算") }, text = {
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.model_budget)) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            ModelField("每次发送的图片上限（张）", imageLimit, { imageLimit = it }, keyboard = KeyboardType.Number)
-            ModelField("每次发送的请求上限（次）", requestLimit, { requestLimit = it }, keyboard = KeyboardType.Number)
-            if (!valid) Text("预算必须是非负整数。", color = MaterialTheme.colorScheme.error)
-            else Text("留空继承，填 0 将禁止该项。", style = MaterialTheme.typography.bodySmall,
+            ModelField(stringResource(R.string.model_image_limit), imageLimit, { imageLimit = it }, keyboard = KeyboardType.Number)
+            ModelField(stringResource(R.string.model_request_limit), requestLimit, { requestLimit = it }, keyboard = KeyboardType.Number)
+            if (!valid) Text(stringResource(R.string.model_invalid_budget), color = MaterialTheme.colorScheme.error)
+            else Text(stringResource(R.string.model_inherit_help), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = { onApply("", "") }) { Text("恢复继承") }
+            TextButton(onClick = { onApply("", "") }) { Text(stringResource(R.string.model_restore_inherited)) }
         }
-    }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) } },
         confirmButton = { TextButton(enabled = valid, onClick = {
             onApply(imageLimit.trim(), requestLimit.trim())
-        }) { Text("完成") } })
+        }) { Text(stringResource(R.string.model_done)) } })
 }
 
 @Composable
 private fun BodyDialog(initial: String, onDismiss: () -> Unit, onApply: (String) -> Unit) {
     var json by rememberSaveable { mutableStateOf(initial.ifBlank { "{}" }) }
-    var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("自定义请求体") }, text = {
+    var error by remember { mutableStateOf<Int?>(null) }
+    val jsonLabel = stringResource(R.string.model_json_accessible)
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.model_json_body)) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(json, { json = it; error = null }, modifier = Modifier.fillMaxWidth().semantics {
-                contentDescription = "JSON 请求体"
-            }, minLines = 4, maxLines = 8, label = { Text("JSON 对象") }, shape = RoundedCornerShape(12.dp))
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            if (initial.isNotEmpty()) TextButton(onClick = { onApply("") }) { Text("移除请求体") }
+                contentDescription = jsonLabel
+            }, minLines = 4, maxLines = 8, label = { Text(stringResource(R.string.model_json_object)) }, shape = RoundedCornerShape(12.dp))
+            error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            if (initial.isNotEmpty()) TextButton(onClick = { onApply("") }) { Text(stringResource(R.string.model_delete_body)) }
         }
-    }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_cancel)) } },
         confirmButton = { TextButton(onClick = {
             val raw = json.trim()
             error = if (raw.isEmpty()) null else RequestTemplate.preview(raw, null).exceptionOrNull()?.let {
-                "请求体有误：${it.message.orEmpty()}"
+                R.string.model_invalid_json
             }
             if (error == null) onApply(raw)
-        }) { Text("完成") } })
+        }) { Text(stringResource(R.string.model_done)) } })
 }

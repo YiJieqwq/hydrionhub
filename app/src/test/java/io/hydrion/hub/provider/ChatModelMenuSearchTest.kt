@@ -27,13 +27,12 @@ class ChatModelMenuSearchTest {
         assertEquals(null, picker.page)
 
         picker.open()
-        picker.models("provider", startSearching = true)
+        picker.models()
         val query = TextFieldValue("model", selection = TextRange(1, 3))
         picker.updateSearchQuery(query)
         picker.dismissEffort()
         assertEquals(ChatModelPickerState.Page.Search, picker.page)
         assertEquals(query, picker.searchQuery)
-        assertEquals("provider", picker.browsedProviderId)
     }
 
     @Test fun editorReturnKeepsTheQueryAndConsumesItsScrollSnapshotOnce() {
@@ -43,16 +42,15 @@ class ChatModelMenuSearchTest {
         val filtered = PickerScrollAnchor("model:provider/first", 2, 7)
         for (page in listOf(ChatModelPickerState.Page.Search, ChatModelPickerState.Page.Models)) {
             picker.open()
-            picker.models("provider", startSearching = true)
+            picker.models()
             picker.updateSearchQuery(TextFieldValue("old"))
             assertEquals(ChatModelPickerState.SearchScroll.Filter, picker.pendingSearchScroll)
-            val snapshot = PickerBrowseSnapshot(page, "provider", query, browsing, filtered, 240f)
+            val snapshot = PickerBrowseSnapshot(page, query, browsing, filtered, 240f)
             picker.restoreBrowsing(snapshot)
             assertEquals(page, picker.page)
-            assertEquals("provider", picker.browsedProviderId)
             assertEquals(query, picker.searchQuery)
             assertEquals(null, picker.pendingSearchScroll)
-            val nextVisit = PickerBrowseSnapshot(page, "provider", query, browsing, filtered, 240f)
+            val nextVisit = PickerBrowseSnapshot(page, query, browsing, filtered, 240f)
             picker.restoreBrowsing(nextVisit)
             picker.consumeBrowseRestore(snapshot) // A late layout from the first visit cannot consume the second.
             assertSame(nextVisit, picker.pendingBrowseRestore)
@@ -79,32 +77,13 @@ class ChatModelMenuSearchTest {
         assertEquals(15, anchor.offset)
     }
 
-    @Test fun enteringAndChoosingAnotherProviderUsesTheSameSearchEditor() {
+    @Test fun changingAndClearingSearchKeepsTheGroupedListOpen() {
         val picker = ChatModelPickerState()
         picker.open()
-        picker.models("first", startSearching = true)
-        assertEquals(ChatModelPickerState.Page.Search, picker.page)
-        assertEquals(TextFieldValue(), picker.searchQuery)
-        val value = TextFieldValue("模型名称", selection = TextRange(4, 2), composition = TextRange(1, 3))
-        picker.updateSearchQuery(value)
-        picker.providers()
-        picker.updateSearchQuery(value.copy(selection = TextRange(1)))
-        assertEquals(ChatModelPickerState.Page.Providers, picker.page)
-        picker.models("second")
-        assertEquals("second", picker.browsedProviderId)
-        assertEquals(ChatModelPickerState.Page.Search, picker.page)
-        assertEquals(value.copy(selection = TextRange(1)), picker.searchQuery)
-        assertEquals(ChatModelPickerState.SearchScroll.Filter, picker.pendingSearchScroll)
-    }
-
-    @Test fun changingSearchTextFromProvidersShowsMatchesButClearingDoesNotNavigate() {
-        val picker = ChatModelPickerState()
-        picker.open()
-        picker.models("p", startSearching = true)
+        picker.models()
         picker.updateSearchQuery(TextFieldValue("abc"))
-        picker.providers()
         picker.clearSearchQuery()
-        assertEquals(ChatModelPickerState.Page.Providers, picker.page)
+        assertEquals(ChatModelPickerState.Page.Search, picker.page)
         assertEquals(TextFieldValue(), picker.searchQuery)
         picker.updateSearchQuery(TextFieldValue("Atlas"))
         assertEquals(ChatModelPickerState.Page.Search, picker.page)
@@ -116,12 +95,11 @@ class ChatModelMenuSearchTest {
 
     @Test fun editorBackReturnsToEffortAndAppBackDismissesFromEitherPage() {
         val picker = ChatModelPickerState()
-        for (providers in listOf(false, true)) for (system in listOf(false, true)) {
+        for (system in listOf(false, true)) {
             picker.open()
-            picker.models("first", startSearching = true)
+            picker.models()
             assertEquals(TextFieldValue(), picker.searchQuery)
             picker.updateSearchQuery(TextFieldValue("pending"))
-            if (providers) picker.providers()
             assertTrue(picker.modelListNavigation)
             if (system) picker.systemBack() else picker.open()
             assertEquals(if (system) null else ChatModelPickerState.Page.Controls, picker.page)
@@ -152,15 +130,19 @@ class ChatModelMenuSearchTest {
         assertEquals(emptyList<ProviderModel>(), matchingMenuModels(choices, "absent"))
     }
 
-    @Test fun onlyEnabledChatModelsFromTheBrowsedProviderCanMatch() {
+    @Test fun oneListUsesEligibleRoutesAcrossProvidersAndOmitsEmptyGroups() {
         val hidden = first.copy(id = "disabled", enabled = false)
         val image = first.copy(id = "image", profile = ModelProfile(type = ModelType.Image))
-        val provider = deepSeekProvider.copy(id = "selected", models = choices + hidden + image)
-        val other = provider.copy(id = "other", models = listOf(first.copy(id = "other-only")))
-        val disabled = other.copy(id = "offline", enabled = false)
-        val catalog = ModelCatalog(listOf(provider, other, disabled))
-        val candidates = catalog.entries(Mode.Chat).filter { it.second.id == provider.id }.map { it.first }
-        assertEquals(choices, matchingMenuModels(candidates, "模型"))
-        assertEquals(emptyList<ProviderModel>(), matchingMenuModels(candidates, "other-only"))
+        val p = deepSeekProvider.copy(id = "a", name = "First", models = choices + hidden + image)
+        val q = p.copy(id = "b", name = "Second", models = listOf(first))
+        val catalog = ModelCatalog(listOf(p, q, q.copy(id = "off", enabled = false)))
+        val entries = catalog.entries(Mode.Chat)
+        val all = modelMenuRows(entries, "")
+        assertEquals(listOf(null, first.id, second.id, null, first.id), all.map { it.model?.id })
+        assertEquals(all.size, all.map { it.key }.distinct().size)
+        assertEquals(listOf("a", "a", "b", "b"), modelMenuRows(entries, "route-X").map { it.provider.id })
+        assertEquals(listOf(null, first.id), modelMenuRows(entries, "SeCoNd").map { it.model?.id })
+        assertTrue(modelMenuRows(entries, "disabled").isEmpty())
+        assertTrue(modelMenuRows(entries, "image").isEmpty())
     }
 }

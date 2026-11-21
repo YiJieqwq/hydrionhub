@@ -1,5 +1,8 @@
 package io.hydrion.hub.provider
 
+import androidx.compose.ui.res.stringResource
+import io.hydrion.hub.R
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -36,7 +39,7 @@ internal fun ProviderModelsTab(
     var choosing by rememberSaveable(provider.id) { mutableStateOf(false) }
     Box(modifier.fillMaxSize()) {
         if (provider.models.isEmpty()) {
-            Text("尚未添加模型", Modifier.align(Alignment.Center),
+            Text(stringResource(R.string.model_none_added), Modifier.align(Alignment.Center),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 6.dp, bottom = 84.dp)) {
@@ -44,7 +47,7 @@ internal fun ProviderModelsTab(
                     val edit = { onEdit(model) }
                     ModelLine(model, provider.mode, model.id in defaultIds, Modifier.clickable(onClick = edit)) {
                         IconButton(onClick = edit) {
-                            Icon(Icons.Outlined.Tune, "配置 ${model.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(Icons.Outlined.Tune, stringResource(R.string.model_configure_named, model.name), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -59,13 +62,13 @@ internal fun ProviderModelsTab(
                 TextButton(onClick = { choosing = true }) {
                     Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, null, Modifier.size(19.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("选择模型")
+                    Text(stringResource(R.string.chat_controls_select_model))
                 }
                 VerticalDivider(Modifier.height(18.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 TextButton(onClick = { onEdit(ProviderModel(UUID.randomUUID().toString(), "")) }) {
                     Icon(Icons.Outlined.Add, null, Modifier.size(19.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("添加模型")
+                    Text(stringResource(R.string.model_add))
                 }
             }
         }
@@ -98,7 +101,7 @@ private fun ModelLine(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 ModelTag(type.name, primary = true)
                 modelBadges(model).forEach { ModelTag(it) }
-                if (isDefault) ModelTag("默认")
+                if (isDefault) ModelTag(stringResource(R.string.model_default))
             }
         }
         action()
@@ -135,17 +138,17 @@ private fun LocalModelPicker(
     ) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.82f).padding(horizontal = 16.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("选择模型", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                TextButton(onClick = onDismiss) { Text("完成") }
+                Text(stringResource(R.string.chat_controls_select_model), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.model_done)) }
             }
-            Text(if (provider.id == DEEPSEEK_PROVIDER_ID) "DeepSeek 模型预设" else "本地示例目录", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            Text(if (provider.id == DEEPSEEK_PROVIDER_ID) stringResource(R.string.model_deepseek_presets) else stringResource(R.string.model_local_catalog), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
                 value = query, onValueChange = { query = it }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(), placeholder = { Text("搜索模型或能力") },
+                modifier = Modifier.fillMaxWidth(), placeholder = { Text(stringResource(R.string.model_filter_capability)) },
                 leadingIcon = { Icon(Icons.Outlined.Search, null) },
                 trailingIcon = if (query.isEmpty()) null else ({
-                    IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, "清空搜索") }
+                    IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, stringResource(R.string.model_clear_query)) }
                 }),
                 shape = RoundedCornerShape(18.dp),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -157,34 +160,34 @@ private fun LocalModelPicker(
             LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(bottom = 16.dp)) {
                 if (choices.available.isNotEmpty()) {
                     item(key = "available-header") {
-                        GroupHeader("未添加", choices.available.size, showAvailable, { showAvailable = !showAvailable }) {
+                        GroupHeader(stringResource(R.string.model_not_added), choices.available.size, showAvailable, { showAvailable = !showAvailable }) {
                             TextButton(onClick = {
                                 onModelsChange(addLocalModels(provider, choices.available.map { it.id }.toSet()))
-                            }) { Text(if (query.isBlank()) "全部添加" else "添加匹配项") }
+                            }) { Text(if (query.isBlank()) stringResource(R.string.model_add_all) else stringResource(R.string.model_add_matches)) }
                         }
                     }
                     if (showAvailable) items(choices.available, key = { "available/${it.id}" }) { model ->
                         ModelLine(model, provider.mode, false) {
                             IconButton(onClick = { onModelsChange(addLocalModels(provider, setOf(model.id))) }) {
-                                Icon(Icons.Outlined.Add, "添加 ${model.name}", tint = colors.primary)
+                                Icon(Icons.Outlined.Add, stringResource(R.string.model_add_named, model.name), tint = colors.primary)
                             }
                         }
                     }
                 }
                 if (choices.configured.isNotEmpty()) {
                     item(key = "configured-header") {
-                        GroupHeader("已添加", choices.configured.size, showConfigured, { showConfigured = !showConfigured })
+                        GroupHeader(stringResource(R.string.model_added), choices.configured.size, showConfigured, { showConfigured = !showConfigured })
                     }
                     if (showConfigured) items(choices.configured, key = { "configured/${it.id}" }) { model ->
                         ModelLine(model, provider.mode, model.id in defaultIds) {
                             Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                                Icon(Icons.Outlined.Check, "已添加 ${model.name}", Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+                                Icon(Icons.Outlined.Check, stringResource(R.string.model_added_named, model.name), Modifier.size(18.dp), tint = colors.onSurfaceVariant)
                             }
                         }
                     }
                 }
                 if (choices.available.isEmpty() && choices.configured.isEmpty()) {
-                    item { Text("没有匹配的模型", Modifier.padding(vertical = 24.dp),
+                    item { Text(stringResource(R.string.chat_picker_search_empty), Modifier.padding(vertical = 24.dp),
                         style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant) }
                 }
             }
@@ -204,7 +207,7 @@ private fun GroupHeader(
         Row(Modifier.weight(1f).clickable(role = Role.Button, onClick = onToggle)
             .heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight,
-                if (expanded) "收起$title" else "展开$title", Modifier.size(20.dp))
+                if (expanded) stringResource(R.string.model_collapse_section, title) else stringResource(R.string.model_expand_section, title), Modifier.size(20.dp))
             Text("$title · $count", style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         trailing?.invoke()

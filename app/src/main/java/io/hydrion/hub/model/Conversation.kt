@@ -92,7 +92,8 @@ data class Conversation(
     val updatedAt: Long = System.currentTimeMillis(),
     val messages: List<Message> = emptyList(),
     val environmentId: String? = null,
-    val assistantId: String = LocalAssistant.Default.id
+    val assistantId: String = LocalAssistant.Default.id,
+    val modelRoutes: Map<Mode, RemoteModel>? = null
 )
 
 data class HubState(
@@ -116,4 +117,10 @@ internal data class SavedWorkspace(
     val lastThreads: Map<String, String> = emptyMap(),
 ) {
     val pending: List<Conversation> get() = listOfNotNull(unsent) + otherUnsent
+}
+
+/** Older histories used one global selection. Snapshot it once before a new default can change it. */
+internal fun SavedWorkspace.withLegacyModelRoutes(routes: Map<Mode, RemoteModel>): SavedWorkspace {
+    fun pin(chat: Conversation) = if (chat.modelRoutes == null) chat.copy(modelRoutes = routes) else chat
+    return copy(history = history.map(::pin), unsent = unsent?.let(::pin), otherUnsent = otherUnsent.map(::pin))
 }

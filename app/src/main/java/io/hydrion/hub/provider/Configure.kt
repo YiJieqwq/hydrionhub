@@ -9,13 +9,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.hydrion.hub.R
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
 
@@ -34,6 +37,14 @@ fun ConfigureSheet(store: ProviderStore, mode: Mode, onDismiss: () -> Unit) {
     val entry = models.firstOrNull { it.route == route }
     var edits by remember(mode, catalog) { mutableStateOf(emptyMap<RemoteModel, Map<String, String>>()) }
     val values = entry?.let { edits[it.route] ?: catalog.parameters(it.first, it.second) }.orEmpty()
+    var choosing by rememberSaveable(mode) { mutableStateOf(false) }
+    if (choosing) {
+        ModelSelectionSheet(models, route, onDismiss = { choosing = false }) {
+            route = it
+            choosing = false
+        }
+        return
+    }
     ModalBottomSheet(onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface,
@@ -41,15 +52,15 @@ fun ConfigureSheet(store: ProviderStore, mode: Mode, onDismiss: () -> Unit) {
         LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(start = 22.dp, end = 22.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
-                Text("Configure", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
+                Text(stringResource(R.string.model_configure), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp))
             }
-            if (entry == null) item { Text("请在设置中启用供应商并添加模型。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (entry == null) item { Text(stringResource(R.string.model_settings_no_models), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             else {
                 val model = entry.first
                 item {
-                    ChoiceRow("Model", model.name, models.map { it.route to (it.first.name + " · " + it.second.name) }, entry.route) {
-                        route = it
+                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                        ModelSettingsRow(model.name, { choosing = true }, { BrowseAvatar(entry.second, model, 22.dp, browseColors()) })
                     }
                 }
                 items(model.configureCapabilities(), key = { it.key }) { cap ->
@@ -65,7 +76,7 @@ fun ConfigureSheet(store: ProviderStore, mode: Mode, onDismiss: () -> Unit) {
                             edits = edits + (default.route to catalog.parameters(default.first, emptyMap()))
                         }
                     }) {
-                        Text("Reset to default", color = MaterialTheme.colorScheme.primary)
+                        Text(stringResource(R.string.model_reset), color = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
@@ -75,7 +86,7 @@ fun ConfigureSheet(store: ProviderStore, mode: Mode, onDismiss: () -> Unit) {
                     onDismiss()
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onSurface,
-                        contentColor = MaterialTheme.colorScheme.surface)) { Text("Done") }
+                        contentColor = MaterialTheme.colorScheme.surface)) { Text(stringResource(R.string.model_done)) }
             }
         }
     }

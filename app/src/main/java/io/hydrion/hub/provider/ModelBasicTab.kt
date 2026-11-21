@@ -1,5 +1,8 @@
 package io.hydrion.hub.provider
 
+import androidx.compose.ui.res.stringResource
+import io.hydrion.hub.R
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
@@ -18,15 +21,14 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
-private val modelTypes = listOf(ModelType.Chat to "对话", ModelType.Embedding to "嵌入", ModelType.Image to "图像")
-private val inputs = listOf("text" to "文本", "image" to "图片", "audio" to "音频", "video" to "视频", "pdf" to "PDF")
-private val outputs = inputs.take(3)
-private val abilities = listOf("tools" to "工具调用", "reasoning" to "推理", "structured" to "结构化输出")
-
 private fun Set<String>.toggled(key: String) = if (key in this) this - key else this + key
 
 @Composable
 internal fun ModelBasicTab(draft: ModelEditDraft) {
+    val modelTypes = listOf(ModelType.Chat to stringResource(R.string.model_type_chat), ModelType.Embedding to stringResource(R.string.model_type_embed), ModelType.Image to stringResource(R.string.model_type_image))
+    val inputs = listOf("text" to stringResource(R.string.model_io_text), "image" to stringResource(R.string.model_io_image), "audio" to stringResource(R.string.model_io_audio), "video" to stringResource(R.string.model_io_video), "pdf" to "PDF")
+    val outputs = inputs.take(3)
+    val abilities = listOf("tools" to stringResource(R.string.model_tools), "reasoning" to stringResource(R.string.model_tab_reasoning), "structured" to stringResource(R.string.model_structured))
     var iconPicker by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val profile = draft.profile
@@ -36,21 +38,21 @@ internal fun ModelBasicTab(draft: ModelEditDraft) {
             Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 ProfileIcon(profile.icon, draft.type, Modifier.padding(9.dp).size(22.dp))
             }
-            Text("模型图标", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.model_icon), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(18.dp))
         }
     }
-    ModelField("模型 ID", profile.externalId, { draft.profile = profile.copy(externalId = it) },
+    ModelField(stringResource(R.string.model_id), profile.externalId, { draft.profile = profile.copy(externalId = it) },
         trailingIcon = { IconButton(enabled = profile.externalId.isNotBlank(), onClick = {
             clipboard.setText(AnnotatedString(profile.externalId))
-        }) { Icon(Icons.Outlined.ContentCopy, "复制模型 ID", Modifier.size(19.dp)) } })
-    ModelField("模型名称", draft.name, { draft.name = it })
+        }) { Icon(Icons.Outlined.ContentCopy, stringResource(R.string.model_copy_id), Modifier.size(19.dp)) } })
+    ModelField(stringResource(R.string.model_name), draft.name, { draft.name = it })
     if (draft.type == ModelType.Chat) {
         val preset = defaultContextWindowTokens(profile.externalId.ifBlank { draft.name })
-        ModelField("上下文窗口（tokens）", draft.contextWindow, { draft.contextWindow = it },
-            keyboard = KeyboardType.Number, placeholder = "默认 $preset")
+        ModelField(stringResource(R.string.model_window), draft.contextWindow, { draft.contextWindow = it },
+            keyboard = KeyboardType.Number, placeholder = stringResource(R.string.model_window_preset, preset))
     }
-    ModelGroup("模型类型") {
+    ModelGroup(stringResource(R.string.model_type)) {
         Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             modelTypes.forEach { (type, label) ->
                 val active = type == draft.type
@@ -64,13 +66,13 @@ internal fun ModelBasicTab(draft: ModelEditDraft) {
             }
         }
     }
-    ModelGroup("输入") {
+    ModelGroup(stringResource(R.string.model_input)) {
         ModelChips(inputs, profile.input) { draft.profile = profile.copy(input = profile.input.toggled(it)) }
     }
-    ModelGroup("输出") {
+    ModelGroup(stringResource(R.string.model_output)) {
         ModelChips(outputs, profile.output) { draft.profile = profile.copy(output = profile.output.toggled(it)) }
     }
-    ModelGroup("能力") {
+    ModelGroup(stringResource(R.string.model_abilities)) {
         ModelChips(abilities, profile.abilities) { key ->
             val selected = profile.abilities.toggled(key)
             val levels = if (key == "reasoning" && key in selected && profile.levels.isEmpty()) listOf("Low", "Medium", "High") else profile.levels
@@ -78,13 +80,13 @@ internal fun ModelBasicTab(draft: ModelEditDraft) {
         }
     }
     if (draft.type != ModelType.Embedding) ModelGroup("") {
-        ModelToggle(if (draft.currentDefault) "当前默认模型" else "设为该模式的默认模型", draft.makeDefault,
+        ModelToggle(if (draft.currentDefault) stringResource(R.string.model_current_default) else stringResource(R.string.model_make_default), draft.makeDefault,
             enabled = !draft.currentDefault) { draft.makeDefault = it }
     }
     if (iconPicker) {
-        AlertDialog(onDismissRequest = { iconPicker = false }, title = { Text("选择模型图标") },
+        AlertDialog(onDismissRequest = { iconPicker = false }, title = { Text(stringResource(R.string.model_select_icon)) },
             text = { Column {
-                (listOf("" to "自动") + profileIcons).forEach { (key, title) ->
+                (listOf("" to stringResource(R.string.model_auto)) + profileIcons.map { it.first to stringResource(it.second) }).forEach { (key, title) ->
                     Row(Modifier.fillMaxWidth().selectable(key == profile.icon, role = Role.RadioButton, onClick = {
                         draft.profile = profile.copy(icon = key)
                         iconPicker = false
@@ -95,6 +97,6 @@ internal fun ModelBasicTab(draft: ModelEditDraft) {
                         if (key == profile.icon) Icon(Icons.Outlined.Check, null, Modifier.size(17.dp))
                     }
                 }
-            } }, confirmButton = { TextButton(onClick = { iconPicker = false }) { Text("取消") } })
+            } }, confirmButton = { TextButton(onClick = { iconPicker = false }) { Text(stringResource(R.string.settings_cancel)) } })
     }
 }

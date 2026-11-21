@@ -1,5 +1,8 @@
 package io.hydrion.hub.provider
 
+import androidx.compose.ui.res.stringResource
+import io.hydrion.hub.R
+
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -39,51 +42,51 @@ internal fun ProviderConfigTab(
     var reveal by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        GroupTitle("供应商管理")
+        GroupTitle(stringResource(R.string.model_provider_management))
         Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(16.dp)) {
             Column {
-                ManageSwitch("启用供应商", Icons.Outlined.PowerSettingsNew, provider.enabled) { onUpdate(provider.copy(enabled = it)) }
-                ManageLink("API 协议", Icons.Outlined.Cable, provider.protocol,
+                ManageSwitch(stringResource(R.string.model_provider_enable), Icons.Outlined.PowerSettingsNew, provider.enabled) { onUpdate(provider.copy(enabled = it)) }
+                ManageLink(stringResource(R.string.model_api_protocol), Icons.Outlined.Cable, provider.protocol,
                     if (provider.id == DEEPSEEK_PROVIDER_ID) null else { { protocolDialog = true } })
-                ManageLink("管理模型", Icons.Outlined.ViewInAr, provider.models.size.toString(), onModels)
+                ManageLink(stringResource(R.string.model_manage_models), Icons.Outlined.ViewInAr, provider.models.size.toString(), onModels)
             }
         }
-        GroupTitle("API 配置")
-        ConfigField("Name", "供应商名称", provider.name, { onUpdate(provider.copy(name = it)) })
-        ConfigField("API Key", "API Key", apiKey, onKey, placeholder = "仅在本次运行中保留",
+        GroupTitle(stringResource(R.string.model_api_config))
+        ConfigField(stringResource(R.string.search_provider_name), stringResource(R.string.search_provider_name), provider.name, { onUpdate(provider.copy(name = it)) })
+        ConfigField("API Key", "API Key", apiKey, onKey, placeholder = stringResource(R.string.model_session_key_note),
             keyboardType = KeyboardType.Password,
             transformation = if (reveal) VisualTransformation.None else PasswordVisualTransformation(),
             action = {
                 IconButton(onClick = { reveal = !reveal }) {
                     Icon(if (reveal) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                        if (reveal) "隐藏 API Key" else "显示 API Key", Modifier.size(21.dp))
+                        if (reveal) stringResource(R.string.model_hide_key) else stringResource(R.string.model_show_key), Modifier.size(21.dp))
                 }
             })
         ConfigField("Base URL", "Base URL", provider.baseUrl, { onUpdate(provider.copy(baseUrl = it)) },
             keyboardType = KeyboardType.Uri, placeholder = "https://")
         if (provider.id == DEEPSEEK_PROVIDER_ID) {
             val endpoint = remember(provider.baseUrl) { runCatching { provider.deepSeekEndpoint() } }
-            Text(endpoint.getOrElse { it.message ?: "服务地址无效" }, style = MaterialTheme.typography.bodySmall,
+            Text(endpoint.getOrNull() ?: stringResource(R.string.model_invalid_service), style = MaterialTheme.typography.bodySmall,
                 color = if (endpoint.isSuccess) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
         }
         if (provider.mode == Mode.Image) {
             TemplateField(provider.requestBody, sample, onChange = { onUpdate(provider.copy(requestBody = it)) })
         }
         if (existing) TextButton(onClick = onDelete, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-            Text("删除供应商", color = MaterialTheme.colorScheme.error)
+            Text(stringResource(R.string.model_remove_provider), color = MaterialTheme.colorScheme.error)
         }
         Spacer(Modifier.height(8.dp))
     }
 
     if (protocolDialog) {
         var protocol by rememberSaveable { mutableStateOf(provider.protocol) }
-        AlertDialog(onDismissRequest = { protocolDialog = false }, title = { Text("API 协议") },
-            text = { ConfigField("协议类型", "协议类型", protocol, { protocol = it }) },
-            dismissButton = { TextButton(onClick = { protocolDialog = false }) { Text("取消") } },
+        AlertDialog(onDismissRequest = { protocolDialog = false }, title = { Text(stringResource(R.string.model_api_protocol)) },
+            text = { ConfigField(stringResource(R.string.model_protocol_type), stringResource(R.string.model_protocol_type), protocol, { protocol = it }) },
+            dismissButton = { TextButton(onClick = { protocolDialog = false }) { Text(stringResource(R.string.settings_cancel)) } },
             confirmButton = { TextButton(enabled = protocol.isNotBlank(), onClick = {
                 onUpdate(provider.copy(protocol = protocol.trim()))
                 protocolDialog = false
-            }) { Text("完成") } })
+            }) { Text(stringResource(R.string.model_done)) } })
     }
 }
 
@@ -144,20 +147,21 @@ private fun fieldColors() = TextFieldDefaults.colors(
 @Composable
 private fun TemplateField(value: String, sample: Map<String, Any>, onChange: (String) -> Unit) {
     var result by remember(value, sample) { mutableStateOf<Result<String>?>(null) }
-    GroupTitle("自定义请求体")
-    TextField(value, onChange, Modifier.fillMaxWidth().semantics { contentDescription = "JSON 模板" },
+    GroupTitle(stringResource(R.string.model_json_body))
+    val templateLabel = stringResource(R.string.model_json_template)
+    TextField(value, onChange, Modifier.fillMaxWidth().semantics { contentDescription = templateLabel },
         minLines = 4, maxLines = 10, shape = RoundedCornerShape(12.dp), colors = fieldColors(),
         textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
     Text(sample.keys.joinToString("  ") { "{{$it}}" },
         color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-    OutlinedButton(onClick = { result = RequestTemplate.preview(value, sample) }) { Text("预览请求体") }
+    OutlinedButton(onClick = { result = RequestTemplate.preview(value, sample) }) { Text(stringResource(R.string.model_preview_body)) }
     result?.fold(onSuccess = { json ->
         Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
             Text(json, Modifier.fillMaxWidth().padding(12.dp),
                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
         }
-    }, onFailure = { error ->
-        Text("请求体有误：${error.message.orEmpty()}", color = MaterialTheme.colorScheme.error,
+    }, onFailure = {
+        Text(stringResource(R.string.model_body_invalid), color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodySmall)
     })
 }

@@ -40,13 +40,13 @@ import io.hydrion.hub.model.Mode
 import kotlin.math.roundToInt
 
 internal class ChatModelPickerState {
-    enum class Page { Controls, Models, Search, Providers, Options }
+    enum class Page { Controls, Models, Search, Options }
     enum class SearchScroll { Filter, Submit }
 
     var page by mutableStateOf<Page?>(null)
         private set
     val modelListNavigation: Boolean
-        get() = page == Page.Models || page == Page.Search || page == Page.Providers
+        get() = page == Page.Models || page == Page.Search
     var optionKey by mutableStateOf("")
         private set
     var composerBounds by mutableStateOf<IntRect?>(null)
@@ -62,22 +62,18 @@ internal class ChatModelPickerState {
         private set
     var pendingSearchScroll by mutableStateOf<SearchScroll?>(null)
         private set
-    var browsedProviderId by mutableStateOf<String?>(null)
-        private set
     var pendingBrowseRestore by mutableStateOf<PickerBrowseSnapshot?>(null)
         private set
 
     fun restoreBrowsing(snapshot: PickerBrowseSnapshot) {
-        browsedProviderId = snapshot.providerId
         page = snapshot.page
         searchQuery = snapshot.query.copy(composition = null)
         pendingSearchScroll = null
         pendingBrowseRestore = snapshot
     }
 
-    fun consumeBrowseRestore(snapshot: PickerBrowseSnapshot, availableProvider: String = snapshot.providerId) {
+    fun consumeBrowseRestore(snapshot: PickerBrowseSnapshot) {
         if (pendingBrowseRestore === snapshot) {
-            browsedProviderId = availableProvider
             pendingBrowseRestore = null
         }
     }
@@ -90,13 +86,9 @@ internal class ChatModelPickerState {
         if (next != Page.Search) pendingSearchScroll = null
         page = next
     }
-    fun open() { browsedProviderId = null; show(Page.Controls) }
-    fun models(providerId: String, startSearching: Boolean = false) {
-        if (startSearching && page != Page.Controls) return
-        val changedProvider = providerId != browsedProviderId
-        browsedProviderId = providerId
-        show(Page.Search)
-        if (changedProvider && searchQuery.text.isNotBlank()) pendingSearchScroll = SearchScroll.Filter
+    fun open() = show(Page.Controls)
+    fun models() {
+        if (page == Page.Controls) show(Page.Search)
     }
     fun clearSearchQuery() {
         if (!modelListNavigation) return
@@ -105,7 +97,6 @@ internal class ChatModelPickerState {
     }
     fun updateSearchQuery(value: TextFieldValue) {
         if (!modelListNavigation) return
-        // A caret change does not navigate away from the provider choices.
         if (value.text != searchQuery.text && page != Page.Search) show(Page.Search)
         val term = value.text.trim()
         if (term != searchQuery.text.trim()) pendingSearchScroll = if (term.isEmpty()) null else SearchScroll.Filter
@@ -117,7 +108,6 @@ internal class ChatModelPickerState {
         pendingSearchScroll = SearchScroll.Submit
     }
     fun consumeSearchScroll() { pendingSearchScroll = null }
-    fun providers() { show(Page.Providers) }
     fun options(cap: Capability) { optionKey = cap.key; show(Page.Options) }
     fun dismiss() { show(null) }
     fun dismissEffort() {
@@ -196,7 +186,7 @@ internal fun ChatModelPicker(
                     else -> key(entry.route) {
                         Column(Modifier.verticalScroll(rememberScrollState()).testTag("chat-model-card")) {
                             val speeds = remember(model, provider, values) { model.chatSpeedControls(provider, values) }
-                            ChatModelControls(model, values, speeds = speeds, onModels = { picker.models(provider.id, startSearching = true) },
+                            ChatModelControls(model, values, speeds = speeds, onModels = picker::models,
                                 onChoose = { capability, choice ->
                                     // Back or a profile change can arrive while the rail still owns a pointer.
                                     if (picker.page == ChatModelPickerState.Page.Controls &&

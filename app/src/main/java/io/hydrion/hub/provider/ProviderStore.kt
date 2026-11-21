@@ -15,7 +15,24 @@ private const val CATALOG_FORMAT = 5
 class ProviderStore(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("model_catalog_v1", Context.MODE_PRIVATE)
     private var storageKey = "catalog"
-    private val state = MutableStateFlow(loadCatalog())
+    private var stored = loadCatalog()
+    private var conversationRoutes: Map<Mode, RemoteModel>? = null
+    internal var onModelPicked: ((Mode, RemoteModel) -> Unit)? = null
+    private val state = MutableStateFlow(stored)
+
+    internal fun newThreadRoutes(): Map<Mode, RemoteModel> = stored.initialRoutes()
+    internal fun legacyRoutes(): Map<Mode, RemoteModel> = stored.initialRoutes() + stored.active
+
+    internal fun showRoutes(routes: Map<Mode, RemoteModel>?) {
+        conversationRoutes = routes
+        state.value = routes?.let { stored.copy(active = it) } ?: stored
+    }
+
+    fun setDefault(mode: Mode, route: RemoteModel): Boolean {
+        val next = stored.withDefault(mode, route) ?: return false
+        update(next)
+        return true
+    }
 
     private fun loadCatalog(): ModelCatalog {
         val raw = preferences.getString("catalog", null) ?: return demoCatalog().withDeepSeekPreset()
@@ -60,10 +77,11 @@ class ProviderStore(context: Context) {
     }
 
     fun configure(mode: Mode, route: RemoteModel, parameters: Map<String, String>) {
-        val old = state.value
+        val old = stored
         val entry = old.entries(mode).singleOrNull { it.route == route } ?: return
         update(old.copy(active = old.active + (mode to route),
             overrides = old.overrides + (route to old.parameters(entry.first, parameters))))
+        onModelPicked?.invoke(mode, route)
     }
 
     fun save(provider: Provider, sessionKey: String, defaultModelId: String?) {
@@ -74,24 +92,25 @@ class ProviderStore(context: Context) {
 
     fun saveDefaults(provider: Provider, sessionKey: String, defaults: Map<Mode, String>) {
         sessionKeys[provider.id] = sessionKey
-        update(state.value.withProvider(provider, defaults))
+        update(stored.withProvider(provider, defaults))
     }
 
     internal fun editModel(route: RemoteModel, model: ProviderModel?, makeDefault: Boolean = false) {
-        val current = state.value
+        val current = stored
         val edited = current.withEditedModel(route, model, makeDefault)
         if (edited != current) update(edited)
     }
 
     fun remove(providerId: String) {
         sessionKeys.remove(providerId)
-        update(state.value.copy(providers = state.value.providers.filterNot { it.id == providerId }))
+        update(stored.copy(providers = stored.providers.filterNot { it.id == providerId }))
     }
 
     private fun update(catalog: ModelCatalog) {
         val next = catalog.normalized()
         preferences.edit().putString(storageKey, encodeCatalog(next).toString()).apply()
-        state.value = next
+        stored = next
+        showRoutes(conversationRoutes)
     }
 }
 

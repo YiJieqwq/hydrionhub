@@ -11,6 +11,7 @@ import java.util.UUID
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
+import io.hydrion.hub.R
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -33,25 +34,25 @@ class ModelEditorFlowTest {
         ui.onNodeWithContentDescription("打开侧栏").performClick()
         ui.onNodeWithTag("drawer-settings").performClick()
         ui.onNodeWithText(ui.activity.getString(io.hydrion.hub.R.string.settings_chat)).performClick()
-        ui.onNodeWithContentDescription("添加供应商").performClick()
-        ui.onNodeWithContentDescription("供应商名称").performTextReplacement(providerName)
-        tab("模型").performClick()
-        ui.onNodeWithText("添加模型").performSemanticsAction(SemanticsActions.OnClick)
-        ui.onNodeWithContentDescription("模型 ID").performScrollTo().performTextReplacement(modelId)
-        ui.onNodeWithContentDescription("模型名称").performScrollTo().performTextReplacement(modelName)
-        tab("推理").performClick()
-        ui.onNodeWithText("启用推理").performSemanticsAction(SemanticsActions.OnClick)
-        ui.onNodeWithText("允许关闭推理").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
-        tab("高级").performClick()
+        ui.onNodeWithContentDescription(ui.activity.getString(R.string.model_settings_add_provider)).performClick()
+        ui.onNodeWithContentDescription(ui.activity.getString(R.string.search_provider_name)).performTextReplacement(providerName)
+        tab(ui.activity.getString(R.string.chat_picker_models)).performClick()
+        ui.onNodeWithText(ui.activity.getString(R.string.model_add)).performSemanticsAction(SemanticsActions.OnClick)
+        ui.onNodeWithContentDescription(ui.activity.getString(R.string.model_id)).performScrollTo().performTextReplacement(modelId)
+        ui.onNodeWithContentDescription(ui.activity.getString(R.string.model_name)).performScrollTo().performTextReplacement(modelName)
+        tab(ui.activity.getString(R.string.model_tab_reasoning)).performClick()
+        ui.onNodeWithText(ui.activity.getString(R.string.model_enable_reasoning)).performSemanticsAction(SemanticsActions.OnClick)
+        ui.onNodeWithText(ui.activity.getString(R.string.model_can_disable)).performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        tab(ui.activity.getString(R.string.model_tab_advanced)).performClick()
         ui.onNodeWithText("图像生成").assertDoesNotExist()
         ui.onNodeWithText("图像模型").assertDoesNotExist()
-        ui.onNodeWithText("远程图片链接").assertExists()
-        ui.onNodeWithText("代码解释器").performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
-        ui.onNodeWithContentDescription("保存模型").performClick()
+        ui.onNodeWithText(ui.activity.getString(R.string.model_remote_images)).assertExists()
+        ui.onNodeWithText(ui.activity.getString(R.string.model_interpreter)).performScrollTo().performSemanticsAction(SemanticsActions.OnClick)
+        ui.onNodeWithContentDescription(ui.activity.getString(R.string.model_save)).performClick()
 
         ui.onNodeWithText(modelName).assertExists()
         assertNull("模型完成只更新供应商草稿", findProvider())
-        ui.onNodeWithText("保存").performClick()
+        ui.onNodeWithText(ui.activity.getString(R.string.settings_save)).performClick()
         val saved = requireNotNull(findProvider()).models.single()
         assertEquals(modelId, saved.externalModelId)
         assertEquals(modelName, saved.name)
@@ -60,12 +61,12 @@ class ModelEditorFlowTest {
         assertTrue(saved.profile.codeInterpreter)
 
         ui.onNodeWithText(providerName).performClick()
-        tab("模型").performClick()
-        ui.onNodeWithContentDescription("配置 $modelName").performClick()
-        ui.onNodeWithContentDescription("模型 ID").assertTextContains(modelId)
-        tab("推理").performClick()
-        ui.onNodeWithText("允许关闭推理").assertIsOn()
-        tab("高级").performClick()
-        ui.onNodeWithText("代码解释器").assertIsOn()
+        tab(ui.activity.getString(R.string.chat_picker_models)).performClick()
+        ui.onNodeWithContentDescription(ui.activity.getString(R.string.model_configure_named, modelName)).performClick()
+        ui.onNodeWithContentDescription(ui.activity.getString(R.string.model_id)).assertTextContains(modelId)
+        tab(ui.activity.getString(R.string.model_tab_reasoning)).performClick()
+        ui.onNodeWithText(ui.activity.getString(R.string.model_can_disable)).assertIsOn()
+        tab(ui.activity.getString(R.string.model_tab_advanced)).performClick()
+        ui.onNodeWithText(ui.activity.getString(R.string.model_interpreter)).assertIsOn()
     }
 }

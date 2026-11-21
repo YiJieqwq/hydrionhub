@@ -1,5 +1,8 @@
 package io.hydrion.hub.provider
 
+import androidx.compose.ui.res.stringResource
+import io.hydrion.hub.R
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -29,7 +32,7 @@ internal fun ProviderEditor(store: ProviderStore, edit: ProviderDraft, onBack: (
     val nestedModel = edit.editingModel
     val configScroll = rememberScrollState()
     val tabStates = rememberSaveableStateHolder()
-    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var error by rememberSaveable { mutableStateOf<Int?>(null) }
     var discard by rememberSaveable { mutableStateOf(false) }
     var delete by rememberSaveable { mutableStateOf(false) }
     val focus = LocalFocusManager.current
@@ -68,14 +71,14 @@ internal fun ProviderEditor(store: ProviderStore, edit: ProviderDraft, onBack: (
         } else {
             BackHandler(onBack = requestExit)
             Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = requestExit) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") }
-                Text(draft.name.ifBlank { "添加供应商" }, Modifier.weight(1f),
+                IconButton(onClick = requestExit) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.settings_back)) }
+                Text(if (draft.name.isBlank()) stringResource(R.string.model_settings_add_provider) else providerLabel(draft), Modifier.weight(1f),
                     style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (edit.dirty || !edit.existing) TextButton(onClick = save) { Text("保存") }
+                if (edit.dirty || !edit.existing) TextButton(onClick = save) { Text(stringResource(R.string.settings_save)) }
             }
             error?.let {
-                Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                Text(stringResource(it), Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                     color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             Box(Modifier.weight(1f)) {
@@ -95,23 +98,23 @@ internal fun ProviderEditor(store: ProviderStore, edit: ProviderDraft, onBack: (
         }
     }
     if (discard) DiscardChanges(onKeep = { discard = false }, onDiscard = onBack)
-    if (delete) ConfirmRemoval("删除“${edit.initial.name}”及其模型？", { delete = false }) {
+    if (delete) ConfirmRemoval(stringResource(R.string.model_remove_provider_models, edit.initial.name), { delete = false }) {
         store.remove(edit.initial.id)
         onBack()
     }
 }
 
-private fun validateProvider(provider: Provider, sample: Map<String, Any>): String? {
-    if (provider.name.isBlank()) return "请输入供应商名称"
-    if (provider.protocol.isBlank()) return "请输入协议类型"
+private fun validateProvider(provider: Provider, sample: Map<String, Any>): Int? {
+    if (provider.name.isBlank()) return R.string.model_enter_provider
+    if (provider.protocol.isBlank()) return R.string.model_enter_protocol
     if (provider.baseUrl.isNotEmpty()) {
         val uri = runCatching { URI(provider.baseUrl) }.getOrNull()
         if (uri?.scheme?.lowercase() !in setOf("http", "https") || uri?.host.isNullOrBlank()) {
-            return "请输入有效的 HTTP 或 HTTPS Base URL"
+            return R.string.model_valid_url
         }
     }
     return if (provider.mode == Mode.Image) {
-        RequestTemplate.preview(provider.requestBody, sample).exceptionOrNull()?.let { "请求体有误：${it.message.orEmpty()}" }
+        RequestTemplate.preview(provider.requestBody, sample).exceptionOrNull()?.let { R.string.model_body_invalid }
     } else null
 }
 
@@ -128,7 +131,7 @@ private fun EditorTabs(selected: EditorTab, onTab: (EditorTab) -> Unit) {
                 Icon(if (tab == EditorTab.Config) Icons.Outlined.Settings else Icons.Outlined.ViewInAr,
                     null, Modifier.size(22.dp), tint)
                 Spacer(Modifier.height(2.dp))
-                Text(if (tab == EditorTab.Config) "配置" else "模型", color = tint,
+                Text(if (tab == EditorTab.Config) stringResource(R.string.model_configure) else stringResource(R.string.chat_picker_models), color = tint,
                     fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal,
                     style = MaterialTheme.typography.labelMedium)
             }
@@ -138,7 +141,7 @@ private fun EditorTabs(selected: EditorTab, onTab: (EditorTab) -> Unit) {
 
 @Composable
 internal fun DiscardChanges(onKeep: () -> Unit, onDiscard: () -> Unit) {
-    AlertDialog(onDismissRequest = onKeep, title = { Text("放弃未保存的更改？") },
-        dismissButton = { TextButton(onClick = onKeep) { Text("继续编辑") } },
-        confirmButton = { TextButton(onClick = onDiscard) { Text("放弃更改", color = MaterialTheme.colorScheme.error) } })
+    AlertDialog(onDismissRequest = onKeep, title = { Text(stringResource(R.string.model_settings_discard)) },
+        dismissButton = { TextButton(onClick = onKeep) { Text(stringResource(R.string.model_settings_keep)) } },
+        confirmButton = { TextButton(onClick = onDiscard) { Text(stringResource(R.string.model_settings_drop), color = MaterialTheme.colorScheme.error) } })
 }
