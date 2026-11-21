@@ -1,29 +1,21 @@
 package io.hydrion.hub.provider
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.R
@@ -102,11 +94,11 @@ internal fun ChatModelBrowsePage(
                 LazyColumn(Modifier.fillMaxSize().testTag("chat-provider-list"),
                     contentPadding = PaddingValues(top = 8.dp, bottom = pageInsets),
                     state = rememberLazyListState(initialFirstVisibleItemIndex = index)) {
-                    item { PickerHeading(stringResource(R.string.chat_picker_provider), headingColor) }
+                    item { BrowseHeading(stringResource(R.string.chat_picker_provider), headingColor) }
                     items(providers, key = { it.id }) { candidate ->
                         val name = if (nameCounts.getValue(candidate.name) > 1)
                             "${candidate.name} · ${candidate.id}" else candidate.name
-                        PickerOption(name, candidate.id == browsing?.id, Modifier.testTag("chat-model-provider:${candidate.id}")) {
+                        BrowseTile(name, candidate, null, candidate.id == browsing?.id, Modifier.testTag("chat-model-provider:${candidate.id}")) {
                             if (interactive && picker.page == ChatModelPickerState.Page.Providers) picker.models(candidate.id)
                         }
                     }
@@ -114,8 +106,8 @@ internal fun ChatModelBrowsePage(
             } else if (browsing == null) {
                 LazyColumn(Modifier.fillMaxSize().testTag("chat-model-list"),
                     contentPadding = PaddingValues(top = 8.dp, bottom = pageInsets)) {
-                    item { PickerHeading(stringResource(R.string.chat_picker_provider), headingColor) }
-                    item { PickerHeading(stringResource(R.string.chat_picker_models), headingColor) }
+                    item { BrowseHeading(stringResource(R.string.chat_picker_provider), headingColor) }
+                    item { BrowseHeading(stringResource(R.string.chat_picker_models), headingColor) }
                     item { Text(stringResource(R.string.chat_picker_no_models), Modifier.padding(horizontal = 14.dp)) }
                 }
             } else {
@@ -183,7 +175,6 @@ private fun ProviderModelsList(
     }
     val colors = MaterialTheme.colorScheme
     val headingColor = if (dark) Color(0xFFAFAFAF) else colors.onSurfaceVariant
-    val modelColor = if (dark) Color(0xFFEDEDED) else colors.onSurface
     BoxWithConstraints(Modifier.fillMaxSize().testTag("chat-model-list")) {
         val room = (maxHeight - pageInsets).coerceAtLeast(0.dp)
         // When the IME closes over a visit, keep the old browsing space until restoration.
@@ -194,17 +185,13 @@ private fun ProviderModelsList(
             contentPadding = PaddingValues(top = 8.dp, bottom = maxHeight - heldRoom)) {
             item(key = ProviderRow) {
                 Column {
-                    PickerHeading(stringResource(R.string.chat_picker_provider), headingColor)
-                    Row(Modifier.fillMaxWidth().focusProperties { canFocus = false }.testTag("chat-model-provider-trigger")
-                        .clickable(role = Role.Button) { if (interactive) picker.providers() }.heightIn(min = 48.dp)
-                        .padding(horizontal = 14.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(provider.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(18.dp))
+                    BrowseHeading(stringResource(R.string.chat_picker_provider), headingColor)
+                    BrowseTile(provider.name, provider, null, null, Modifier.testTag("chat-model-provider-trigger")) {
+                        if (interactive) picker.providers()
                     }
                 }
             }
-            item(key = ModelsHeading) { PickerHeading(stringResource(R.string.chat_picker_models), headingColor) }
+            item(key = ModelsHeading) { BrowseHeading(stringResource(R.string.chat_picker_models), headingColor) }
             if (matches.isEmpty()) item(key = EmptyRow) {
                 val empty = if (models.isEmpty()) R.string.chat_picker_provider_empty else R.string.chat_picker_search_empty
                 Text(stringResource(empty), Modifier.testTag("chat-model-search-empty")
@@ -214,8 +201,8 @@ private fun ProviderModelsList(
             items(matches, key = { modelRowKey(provider.id, it.id) }) { model ->
                 val route = (model to provider).route
                 val name = if (nameCounts[model.name] == 1) model.name else "${model.name} · ${model.id}"
-                PickerOption(name, active == route, Modifier.testTag("chat-model-option:${provider.id}/${model.id}"),
-                    maxLines = 1, labelColor = modelColor, onEditModel = {
+                BrowseTile(name, provider, model, active == route, Modifier.testTag("chat-model-option:${provider.id}/${model.id}"),
+                    onEdit = {
                         val page = picker.page
                         if (interactive && (page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Search)) {
                             savedRoom = room

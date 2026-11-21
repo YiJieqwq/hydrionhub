@@ -1,0 +1,11 @@
+<resources>
+    <string name="browse_outputs">Output</string>
+    <string name="browse_tools">Tools</string>
+    <string name="browse_reasoning">Reasoning</string>
+    <string name="browse_text">Text</string>
+    <string name="browse_image">Image</string>
+    <string name="browse_audio">Audio</string>
+    <string name="browse_video">Video</string>
+    <string name="browse_pdf">PDF</string>
+    <string name="browse_context">Context window: %1$d tokens</string>
+</resources>
