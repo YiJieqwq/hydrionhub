@@ -40,7 +40,7 @@ internal fun WorkspaceDrawer(
 ) {
     val chat = mode == Mode.Chat
     BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
-        val width = if (chat) minOf(maxWidth * 0.75f, 348.dp)
+        val width = if (chat) minOf(maxWidth * 0.80f, 348.dp)
             else (LocalConfiguration.current.screenWidthDp.dp - 44.dp).coerceIn(220.dp, 348.dp)
         val widthPx = with(LocalDensity.current) { width.roundToPx() }
         val visible by remember(drawer, widthPx) { derivedStateOf {

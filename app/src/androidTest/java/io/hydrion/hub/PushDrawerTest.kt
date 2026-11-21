@@ -30,6 +30,40 @@ class PushDrawerTest {
 
     private fun node(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode()
 
+    @Test fun headerAndFooterStayOnSingleRowsInRegularAndNarrowDrawers() {
+        val width = mutableStateOf(320.dp)
+        screen.runOnUiThread { screen.activity.setContent {
+            MaterialTheme {
+                ConversationDrawer(width.value, MaterialTheme.colorScheme.surface, emptyList(), "",
+                    assistants = listOf(LocalAssistant.Default), assistantId = LocalAssistant.Default.id,
+                    assistantsReady = true, onSelectAssistant = {}, onRenameAssistant = { _, _ -> false },
+                    onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = {}, onDelete = {})
+            }
+        } }
+        val search = screen.onNode(hasContentDescription(screen.activity.getString(R.string.drawer_search)) and hasSetTextAction())
+        val history = screen.onNodeWithContentDescription(screen.activity.getString(R.string.drawer_history))
+        val density = screen.activity.resources.displayMetrics.density
+        val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        for (drawerWidth in listOf(320.dp, 196.dp)) {
+            screen.runOnIdle { width.value = drawerWidth }
+            val sheet = node("drawer-sheet").boundsInRoot
+            val chat = node("drawer-new-chat").boundsInRoot
+            val avatar = node("drawer-settings").boundsInRoot
+            assertEquals(search.fetchSemanticsNode().boundsInRoot.center.y,
+                history.fetchSemanticsNode().boundsInRoot.center.y, 1f)
+            assertEquals(chat.center.y, avatar.center.y, 1f)
+            val gap = if (rtl) chat.left - avatar.right else avatar.left - chat.right
+            assertTrue(gap >= 8f * density - 1f)
+            assertEquals(48f * density, avatar.width, 1f)
+            assertTrue(chat.width >= 48f * density - 1f)
+            if (drawerWidth == 320.dp) {
+                assertTrue(chat.width >= 113f * density - 1f)
+                assertEquals(32f * density, if (rtl) sheet.right - chat.right else chat.left - sheet.left, 1f)
+                assertEquals(25f * density, if (rtl) avatar.left - sheet.left else sheet.right - avatar.right, 1f)
+            }
+        }
+    }
+
     @Test fun swipingTheEmptyFieldSwitchesScopeWithoutClosingTheDrawerAndHistoryReturnsToIt() {
         fun field(res: Int) = screen.onNode(hasContentDescription(screen.activity.getString(res)) and hasSetTextAction())
         screen.onNodeWithContentDescription("打开侧栏").performClick()
@@ -139,7 +173,7 @@ class PushDrawerTest {
             assertEquals(width, open.size.width)
             assertEquals(sheet.size.width.toFloat(), sign * (openX - origin.x), 1f)
             val cap = 348f * screen.activity.resources.displayMetrics.density
-            assertEquals(minOf(width * .75f, cap), sheet.size.width.toFloat(), 1f)
+            assertEquals(minOf(width * .80f, cap), sheet.size.width.toFloat(), 1f)
             val closeLabel = screen.activity.getString(androidx.compose.ui.R.string.close_drawer)
             screen.onNode(hasContentDescription(closeLabel) and hasClickAction()).assertIsDisplayed()
             screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction()).assertDoesNotExist()

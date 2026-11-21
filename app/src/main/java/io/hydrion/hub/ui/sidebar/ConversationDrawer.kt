@@ -148,7 +148,7 @@ internal fun ConversationDrawer(
         drawerContainerColor = containerColor, drawerContentColor = colors.onSurface,
     ) {
         Column(Modifier.fillMaxSize().imePadding()) {
-            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 4.dp),
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 10.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 DrawerSearch(query, onQuery = { query = it; submitted = null }, modifier = Modifier.weight(1f),
                     global = global, onToggleScope = toggleScope, onSubmit = {
@@ -159,7 +159,7 @@ internal fun ConversationDrawer(
                     Icon(Icons.Outlined.History, stringResource(R.string.drawer_history), Modifier.size(21.dp))
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+            Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 16.dp, top = 2.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
                     .combinedClickable(enabled = assistantsReady, role = Role.Button,
@@ -220,30 +220,37 @@ internal fun ConversationDrawer(
                     }
                 }
             }
-            DrawerFooter(onNew, onSettings)
+            DrawerFooter(width, onNew, onSettings)
         }
     }
 }
 
 @Composable
-private fun DrawerFooter(onNew: () -> Unit, onSettings: () -> Unit) {
+private fun DrawerFooter(width: Dp, onNew: () -> Unit, onSettings: () -> Unit) {
     val context = LocalContext.current
     val store = remember(context) { LocalProfileStore.shared(context) }
     val profile by store.profile.collectAsState()
     val colors = MaterialTheme.colorScheme
     val newChat = stringResource(R.string.drawer_new)
     val settings = stringResource(R.string.drawer_settings)
-    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Row(Modifier.clip(CircleShape).background(colors.primary)
+    // Make room for both buttons and the gap before using the wider outer margins.
+    val chatWidth = 113.dp
+    val avatarSize = 48.dp
+    val gap = 8.dp
+    val compact = width < 32.dp + chatWidth + gap + avatarSize + 25.dp
+    Row(Modifier.fillMaxWidth().padding(start = if (compact) 16.dp else 32.dp,
+        end = if (compact) 16.dp else 25.dp, top = 6.dp, bottom = 14.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(gap)) {
+        Row(Modifier.weight(1f).wrapContentWidth(Alignment.Start).widthIn(min = chatWidth)
+            .clip(CircleShape).background(colors.primary)
             .clickable(role = Role.Button, onClickLabel = newChat, onClick = onNew).testTag("drawer-new-chat")
             .heightIn(min = 48.dp).padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Edit, null, Modifier.size(19.dp), tint = colors.onPrimary)
             Text(stringResource(R.string.drawer_chat), color = colors.onPrimary, fontSize = 15.sp,
                 fontWeight = FontWeight.Medium, maxLines = 1)
         }
-        Box(Modifier.size(48.dp).border(HubStyle.SettingsOutline, CircleShape).clip(CircleShape).background(colors.surfaceContainerHigh)
+        Box(Modifier.size(avatarSize).border(HubStyle.SettingsOutline, CircleShape).clip(CircleShape).background(colors.surfaceContainerHigh)
             .testTag("drawer-settings").clickable(role = Role.Button, onClick = onSettings)
             .semantics { contentDescription = settings }, contentAlignment = Alignment.Center) {
             ProfileAvatar(profile, Modifier.size(32.dp))
