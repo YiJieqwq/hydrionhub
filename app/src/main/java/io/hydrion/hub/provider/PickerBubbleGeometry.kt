@@ -7,6 +7,12 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.toRect
 
+internal fun PickerSpace.panelRect(height: Int): Rect {
+    val h = height.coerceIn(0, maxHeight)
+    val y = if (above) edgeY - h else edgeY
+    return Rect(left.toFloat(), y.toFloat(), (left + width).toFloat(), (y + h).toFloat())
+}
+
 internal enum class PickerBubbleFace(val weights: Offset) {
     Label(Offset.Zero),
     Effort(Offset(1f, 0f)),
@@ -45,6 +51,10 @@ internal data class BrowseEffortLeg(
 /** Both endpoints are measured before toolbar travel. Translate the complete interpolated rectangle once. */
 internal fun translatedPickerBounds(label: Rect, effort: Rect, options: Rect, weights: Offset, travelX: Int): Rect =
     pickerBubbleBounds(label, effort, options, weights).translate(travelX.toFloat(), 0f)
+
+/** Keep the live panel's sliding controls outside the editor, even when split screen consumes the gap. */
+internal fun pickerContentShiftY(shift: Float, panel: Rect, composer: IntRect, above: Boolean): Float =
+    if (above) minOf(shift, composer.top - panel.bottom) else maxOf(shift, composer.bottom - panel.top)
 
 /** Arguments use viewport coordinates. A missing or entirely clipped label starts as a point. */
 internal fun pickerBubbleLabel(

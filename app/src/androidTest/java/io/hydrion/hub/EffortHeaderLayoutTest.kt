@@ -49,7 +49,6 @@ class EffortHeaderLayoutTest {
         val model = ProviderModel("test", "DeepSeek V4.1 Flash", listOf(
             Capability("effort", "Effort", listOf("Low", "Max")), Capability("speed", "Speed", listOf("Standard", "Fast"))))
         var selected = 0
-        var backed = 0
         var fastTapped = 0
         val speed = mutableStateOf(ChatSpeedControls())
         val modelName = mutableStateOf(model.name)
@@ -58,7 +57,7 @@ class EffortHeaderLayoutTest {
                 CompositionLocalProvider(LocalLayoutDirection provides direction.value) {
                     MaterialTheme(colorScheme = darkColorScheme()) {
                         Box(Modifier.width(width.value).background(Color.Black).testTag("test-header")) {
-                            ChatModelControls(model.copy(name = modelName.value), emptyMap(), speed.value, { backed++ }, { selected++ },
+                            ChatModelControls(model.copy(name = modelName.value), emptyMap(), speed.value, { selected++ },
                                 { _, _ -> fastTapped++ }, {}, {})
                         }
                     }
@@ -85,8 +84,11 @@ class EffortHeaderLayoutTest {
                 val glyph = bounds("chat-model-fast-glyph")
                 val dp = screen.activity.resources.displayMetrics.density
                 val towardStart = if (layout == LayoutDirection.Ltr) -1 else 1
-                val offset = if (widthDp >= 96) 7 else 3
-                assertEquals(fast.center.x + towardStart * offset * dp, glyph.center.x, 1.5f)
+                screen.onNodeWithTag("chat-effort-back", useUnmergedTree = true).assertDoesNotExist()
+                val startGap = if (layout == LayoutDirection.Ltr) fast.left - card.left else card.right - fast.right
+                assertEquals("Fast occupies the top leading slot", 0f, startGap, 1f)
+                assertEquals(card.top, fast.top, 1f)
+                assertEquals(fast.center.x + towardStart * 3f * dp, glyph.center.x, 1.5f)
                 assertEquals(fast.center.y, glyph.center.y, 1f)
                 assertTrue(select.contains(arrow.center) || arrow.top >= fast.bottom)
                 if (widthDp == 288) {
@@ -110,28 +112,24 @@ class EffortHeaderLayoutTest {
                         abs((nameInk.first() - titleInk.last()) - (railTop - nameInk.last())) <= 3)
 
                 }
-                val buttons = listOf(bounds("chat-effort-back"), bounds("chat-model-fast"), bounds("chat-model-reset"))
-                if (widthDp >= 144) {
-                    assertEquals(buttons.first().center.y, buttons[1].center.y, 1f)
-                    assertEquals(buttons.first().center.y, buttons[2].center.y, 1f)
-                }
+                val reset = bounds("chat-model-reset")
+                val buttons = listOf(fast, reset)
+                if (widthDp >= 96) assertEquals(fast.center.y, reset.center.y, 1f)
+                else assertTrue("In a narrow card the two targets wrap without overlap", fast.bottom <= reset.top)
                 if (widthDp == 288) {
                     fun tap(point: Offset) {
                         screen.onNodeWithTag("test-header").performTouchInput { click(point - card.topLeft) }
                         screen.waitForIdle()
                     }
                     val oldSelection = selected
-                    val oldBack = backed
                     val oldFast = fastTapped
                     tap(arrow.center)
-                    tap(buttons.first().center)
                     tap(fast.center)
                     assertEquals(oldSelection + 1, selected)
                     assertEquals(oldFast, fastTapped)
                     screen.runOnIdle { speed.value = ChatSpeedControls("Fast", "Standard", null) }
                     tap(fast.center)
                     assertEquals(oldSelection + 1, selected)
-                    assertEquals(oldBack + 1, backed)
                     assertEquals(oldFast + 1, fastTapped)
                     val longName = "A provider-specific model identifier with very long display name and descenders"
                     screen.runOnIdle { modelName.value = longName }

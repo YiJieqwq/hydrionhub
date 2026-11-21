@@ -96,15 +96,6 @@ class ChatModelSearchTest {
         control("search-field").assertDoesNotExist()
     }
 
-    private fun tapBackArrow(tag: String) {
-        val button = screen.onNodeWithTag(tag).assertIsDisplayed().assertHasClickAction()
-        val node = button.fetchSemanticsNode()
-        val minimum = 48f * screen.activity.resources.displayMetrics.density - 1f
-        assertTrue("Back needs a 48dp target", node.boundsInRoot.width >= minimum && node.boundsInRoot.height >= minimum)
-        assertTrue(node.config[SemanticsProperties.ContentDescription].any { it.isNotBlank() })
-        button.performTouchInput { click(center) }
-    }
-
     private fun enterModels(): SemanticsNodeInteraction {
         val keyboardWasOpen = imeIsVisible()
         control("select").performTouchInput { click(center) }
@@ -226,7 +217,7 @@ class ChatModelSearchTest {
             // The capsule's back arrow ends the whole model selection; re-entry starts empty.
             assertImeStays(false) { enterModels() }
             assertImeStays(false) { control("list-back").performTouchInput { click(center) } }
-            assertImeStays(false) { tapBackArrow("chat-effort-back") }
+            assertImeStays(false) { control("trigger").performTouchInput { click(center) } }
             control("card").assertDoesNotExist()
             editor.assertTextEquals(draft)
             assertEquals(parked, capsule())
@@ -235,7 +226,7 @@ class ChatModelSearchTest {
         }
 
     @OptIn(ExperimentalTestApi::class)
-    @Test fun listArrowEndsActiveSearchAndEffortArrowClosesWithKeyboardOpen() =
+    @Test fun listArrowRestoresEffortAndTriggerClosesItWithKeyboardOpen() =
         withProviders(includeAttachment = true) { vm, _, _ ->
             val draft = "first line\nsecond line"
             val selection = TextRange(2, 8)
@@ -256,7 +247,7 @@ class ChatModelSearchTest {
 
             enterModels()  // A new selection starts with an empty query.
             assertImeStays(true) { control("list-back").performTouchInput { click(center) } }
-            assertImeStays(true) { tapBackArrow("chat-effort-back") }
+            assertImeStays(true) { control("trigger").performTouchInput { click(center) } }
             control("card").assertDoesNotExist()
             editor.assertIsFocused().assertTextEquals(draft)
             assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])

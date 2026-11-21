@@ -1,7 +1,6 @@
 <resources>
     <string name="chat_picker_no_models">请在设置中启用聊天供应商并添加模型。</string>
     <string name="chat_picker_close">关闭模型选择器</string>
-    <string name="chat_picker_back_to_message">返回消息输入框</string>
     <string name="chat_picker_back_to_controls">返回推理档位选择器</string>
     <string name="chat_picker_provider">供应商</string>
     <string name="chat_picker_models">模型</string>

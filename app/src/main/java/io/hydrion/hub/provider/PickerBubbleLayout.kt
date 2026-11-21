@@ -57,12 +57,6 @@ private data class BubbleTargets(
     fun bounds(weights: Offset) = translatedPickerBounds(label, effort, list, weights, travelX)
 }
 
-private fun PickerSpace.panelRect(height: Int): Rect {
-    val h = height.coerceIn(0, maxHeight)
-    val y = if (above) edgeY - h else edgeY
-    return Rect(left.toFloat(), y.toFloat(), (left + width).toFloat(), (y + h).toFloat())
-}
-
 // Text keeps its native scale. Only the shell grows; old and new controls slide across its edge.
 private fun contentTravel(face: PickerBubbleFace, w: Offset, distance: Float): Float =
     if (face == PickerBubbleFace.Effort) (1f - w.x - 2f * w.y) * distance else (1f - w.y) * distance
@@ -147,7 +141,8 @@ internal fun PickerBubbleLayout(
                 if (face == other || alpha <= 0f || ink.size == IntSize.Zero) return
                 ink.alpha = alpha
                 val travel = contentTravel(other, w, 14.dp.toPx())
-                translate(end.left + scene.travelX + travel, end.top + travel) { drawLayer(ink) }
+                val travelY = pickerContentShiftY(travel, end, scene.composer, scene.above)
+                translate(end.left + scene.travelX + travel, end.top + travelY) { drawLayer(ink) }
             }
             if ((face != PickerBubbleFace.Effort && w.x > 0f) || (face != PickerBubbleFace.List && w.y > 0f)) {
                 val radius = bubbleRadius(rect, 14.dp.toPx(), w.x + w.y)
@@ -179,8 +174,7 @@ internal fun PickerBubbleLayout(
         val label = if (localBar != null) measuredLabel?.translate(IntOffset(-travel, 0))
             else origin?.let { picker.modelLabelBounds?.translate(-it) }
         val trigger = if (localBar == null) origin?.let { picker.triggerBounds?.translate(-it) } else null
-        val effort = pickerSpace(anchor, viewport, layoutDirection, reasoning = true,
-            modelLabel = label, modelRowFraction = picker.modelRowFraction)
+        val effort = pickerSpace(anchor, viewport, layoutDirection, reasoning = true)
         val list = pickerSpace(anchor, viewport, layoutDirection)
         val space = if (face == PickerBubbleFace.Effort) effort else list
         val live = children.getOrNull(2)?.measure(
@@ -207,10 +201,10 @@ internal fun PickerBubbleLayout(
                     val w = weights()
                     val shift = contentTravel(face, w, 14.dp.toPx())
                     translationX = shift
-                    translationY = shift
+                    translationY = pickerContentShiftY(shift, panel, scene.composer, scene.above)
                     alpha = if (hideForReturn) 0f else if (face == PickerBubbleFace.Effort) w.x else w.y
                     val rect = scene.bounds(w)
-                    shape = BubbleClip(rect.translate(-panel.left - scene.travelX - shift, -panel.top - shift),
+                    shape = BubbleClip(rect.translate(-panel.left - scene.travelX - shift, -panel.top - translationY),
                         bubbleRadius(rect, 14.dp.toPx(), w.x + w.y))
                     clip = true
                 }
@@ -268,11 +262,9 @@ private fun BubbleSurface(
         val y = rect.top.roundToInt()
         val shell = children.first().measure(Constraints.fixed((rect.right.roundToInt() - x).coerceAtLeast(0),
             (rect.bottom.roundToInt() - y).coerceAtLeast(0)))
-        // The effort card sits in front of the editor: its visible controls AND its empty
-        // surface own taps. The list still clears the composer during its flight.
+        // The painted shell travels to the model label. Only its area outside the composer takes taps.
         val hitY = if (scene.above) y else maxOf(y, scene.composer.bottom)
-        val protectedTop = if (face == PickerBubbleFace.Effort) scene.label.top.roundToInt() else scene.composer.top
-        val hitEnd = if (scene.above) minOf(y + shell.height, protectedTop) else y + shell.height
+        val hitEnd = if (scene.above) minOf(y + shell.height, scene.composer.top) else y + shell.height
         val hit = children.getOrNull(1)?.measure(Constraints.fixed(shell.width, (hitEnd - hitY).coerceAtLeast(0)))
         val cover = w.x + w.y
         val radius = bubbleRadius(rect, 14.dp.toPx(), cover)

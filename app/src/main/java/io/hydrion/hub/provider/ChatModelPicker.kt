@@ -13,10 +13,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -52,7 +50,6 @@ internal class ChatModelPickerState {
     var optionKey by mutableStateOf("")
         private set
     var composerBounds by mutableStateOf<IntRect?>(null)
-    var modelRowFraction by mutableFloatStateOf(0f)
     var editorBounds by mutableStateOf<IntRect?>(null)
     var editorTextBounds by mutableStateOf<IntRect?>(null)
     var triggerBounds by mutableStateOf<IntRect?>(null)
@@ -123,6 +120,9 @@ internal class ChatModelPickerState {
     fun providers() { show(Page.Providers) }
     fun options(cap: Capability) { optionKey = cap.key; show(Page.Options) }
     fun dismiss() { show(null) }
+    fun dismissEffort() {
+        if (page == Page.Controls) dismiss()
+    }
     fun systemBack() {
         if (page == Page.Options) open() else dismiss()
     }
@@ -152,7 +152,7 @@ internal fun ChatModelPicker(
     val colors = MaterialTheme.colorScheme
     val dark = colors.onSurface.luminance() > colors.surface.luminance()
 
-    // The reasoning card allows editing beneath it; Options only passes touches to the text row.
+    // Let the draft field handle caret placement and taps. Options passes through only its text row.
     val accessibility = if (paused || browsePageInFront) Modifier.clearAndSetSemantics {} else Modifier
     var origin by remember { mutableStateOf<IntOffset?>(null) }
     Box(modifier.then(accessibility).windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))) {
@@ -176,12 +176,8 @@ internal fun ChatModelPicker(
             paneTitle = select,
         ) {
             if (entry == null) {
-                Row {
-                    PickerBackButton(stringResource(R.string.chat_picker_back_to_message), picker::dismiss,
-                        Modifier.testTag("chat-effort-back"))
-                    Text(stringResource(R.string.chat_picker_no_models), Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodyMedium)
-                }
+                Text(stringResource(R.string.chat_picker_no_models), Modifier.padding(12.dp),
+                    style = MaterialTheme.typography.bodyMedium)
             } else {
                 val (model, provider) = entry
                 val values = catalog.parameters(model, provider)
@@ -200,7 +196,7 @@ internal fun ChatModelPicker(
                     else -> key(entry.route) {
                         Column(Modifier.verticalScroll(rememberScrollState()).testTag("chat-model-card")) {
                             val speeds = remember(model, provider, values) { model.chatSpeedControls(provider, values) }
-                            ChatModelControls(model, values, speeds = speeds, onClose = picker::dismiss, onModels = { picker.models(provider.id, startSearching = true) },
+                            ChatModelControls(model, values, speeds = speeds, onModels = { picker.models(provider.id, startSearching = true) },
                                 onChoose = { capability, choice ->
                                     // Back or a profile change can arrive while the rail still owns a pointer.
                                     if (picker.page == ChatModelPickerState.Page.Controls &&
@@ -227,9 +223,8 @@ internal val ChatPickerEasing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
 internal data class PickerSpace(val left: Int, val edgeY: Int, val width: Int, val maxHeight: Int, val above: Boolean)
 
 private val PickerGap = 11.5.dp
-private val EffortLabelGap = 6.dp
 private val PickerMargin = 12.dp
-// A visible model option and the independent search button can share this height.
+// Reserve room for the scrollable effort or capability controls above the editor.
 private val PickerMinListHeight = 104.dp
 
 internal fun Density.pickerComposerMaxHeight(available: Int, safeTop: Int, editorAndToolbar: Int): Int {
@@ -239,43 +234,26 @@ internal fun Density.pickerComposerMaxHeight(available: Int, safeTop: Int, edito
 
 internal fun Density.pickerSpace(
     composer: IntRect, viewport: IntSize, direction: LayoutDirection, reasoning: Boolean = false,
-    modelLabel: IntRect? = null, modelRowFraction: Float = 1f,
 ): PickerSpace {
     val sideMargin = minOf(PickerMargin.roundToPx(), viewport.width / 2)
     val preferredWidth = if (reasoning) 288.dp.roundToPx()
         else (viewport.width * 0.6f).roundToInt().coerceIn(240.dp.roundToPx(), 248.dp.roundToPx())
     val width = minOf(preferredWidth, viewport.width - 2 * sideMargin)
     val endAligned = if (direction == LayoutDirection.Ltr) composer.right - width else composer.left
-    val label = if (reasoning) modelLabel?.intersect(composer)
-        ?.intersect(IntRect(0, 0, viewport.width, viewport.height))?.takeUnless { it.isEmpty } else null
-    val fraction = if (label == null) 0f else modelRowFraction.coerceIn(0f, 1f)
-    // The row reveals from the capsule. On its final folded frame the label is absent
-    // and the selector is already at the same end-aligned, above-capsule fallback.
-    val desiredLeft = if (label == null) endAligned.toFloat() else
-        endAligned + (label.center.x - width / 2 - endAligned) * fraction
-    val left = desiredLeft.roundToInt().coerceIn(sideMargin, viewport.width - sideMargin - width)
-    val anchorTop = composer.top + ((label?.top ?: composer.top) - composer.top) * fraction
-    val above = anchorTop.roundToInt().coerceIn(0, viewport.height)
+    val left = endAligned.coerceIn(sideMargin, viewport.width - sideMargin - width)
+    val above = composer.top.coerceIn(0, viewport.height)
     val below = viewport.height - composer.bottom.coerceIn(0, viewport.height)
     val minimum = PickerMinListHeight.roundToPx()
-    val gap = (PickerGap.toPx() + (EffortLabelGap.toPx() - PickerGap.toPx()) * fraction).roundToInt()
+    val gap = PickerGap.roundToPx()
     val margin = PickerMargin.roundToPx()
     val placeAbove = above >= minimum + gap + margin || above >= below
     val room = if (placeAbove) above else below
-    // Give up decorative space first in split screen while keeping the anchor reachable.
+    // Give up decorative space first in split screen. The card stays clear of the editor.
     val spare = (room - minimum).coerceAtLeast(0)
     val actualGap = minOf(gap, spare)
     val maxHeight = room - actualGap - minOf(margin, spare - actualGap)
     val edge = if (placeAbove) above - actualGap else viewport.height - below + actualGap
     return PickerSpace(left, edge, width, maxHeight, placeAbove)
-}
-
-@Composable
-internal fun PickerBackButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    IconButton(onClick = onClick, modifier = modifier.size(48.dp).focusProperties { canFocus = false }) {
-        Icon(Icons.AutoMirrored.Outlined.ArrowBack, label, Modifier.size(19.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
 }
 
 @Composable

@@ -96,6 +96,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.onImeAction
@@ -303,14 +304,18 @@ internal fun HubComposer(
         return draftSession.value && !editingQuery && tools?.active != true && conversation.id == state.current.id &&
             conversation.mode == state.current.mode && chatPicker?.modelListNavigation != true
     }
+    fun updateDraft(updated: TextFieldValue) {
+        fieldValue = updated
+        if (updated.text != vm.state.value.draft.text) {
+            vm.setDraft(updated.text)
+            chatPicker?.dismissEffort()
+        }
+    }
     val dictate = if (chat) rememberChatDictation(
         conversationId = state.current.id,
         enabled = allowImeReturn && !forceReturnFolded && !editingQuery && !toolsRequested,
         readDraft = { fieldValue.takeIf { acceptsDraftInput() && it.text == vm.state.value.draft.text } },
-        onDraft = { updated ->
-            fieldValue = updated
-            vm.setDraft(updated.text)
-        },
+        onDraft = ::updateDraft,
     ) else null
     ComposerImeReturnEffect(
         controller = imeReturn,
@@ -370,15 +375,16 @@ internal fun HubComposer(
     // until landing; when opening from an already folded composer the picker uses its fallback.
     var hadModelRow by remember(chatPicker) { mutableStateOf(false) }
     SideEffect {
-        chatPicker?.modelRowFraction = chatToolbar
         if (modelSearch == null || chatToolbar > 0f) hadModelRow = chatToolbar > 0f
     }
     val toolbar = chatToolbar * (1f - pageProgress)
     val returning = modelEditorBridge?.returning != null
     val overlay: Any? = if (chatPicker == null || forceReturnFolded || returning || !allowImeReturn) null
         else chatPicker.page ?: tools?.takeIf { it.targetOpen }
-    val textLine = Modifier.testTag("composer-editable-text").dismissOnEditorDoubleTap(
+    val effortAtEditor = overlay == ChatModelPickerState.Page.Controls && !editingQuery
+    val editorTap = Modifier.dismissOnEditorTap(
         owner = overlay,
+        onSingleTap = if (effortAtEditor) ({ if (acceptsDraftInput()) chatPicker?.dismissEffort() }) else null,
         onFirstDown = {
             val liveText = vm.state.value.draft.text
             if (fieldValue.text == liveText) fieldValue else fieldValue.copy(text = liveText, composition = null)
@@ -524,8 +530,7 @@ internal fun HubComposer(
                                             toolEditor.query = updated.singleLineQuery()
                                         }
                                     } else if (acceptsDraftInput()) {
-                                        fieldValue = updated
-                                        if (updated.text != vm.state.value.draft.text) vm.setDraft(updated.text)
+                                        updateDraft(updated)
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth().padding(
@@ -546,6 +551,13 @@ internal fun HubComposer(
                                     .then(draftFocusModifier)
                                     .semantics {
                                         contentDescription = if (editingQuery) inputHint else "消息输入框"
+                                        if (effortAtEditor) onClick {
+                                            if (!acceptsDraftInput()) return@onClick false
+                                            chatPicker?.dismissEffort()
+                                            if (!focused) editorFocus.requestFocus()
+                                            if (!imeActive && !hardwareKeyboardOnly) keyboard?.show()
+                                            true
+                                        }
                                         if (visibleModelQuery) onImeAction(ImeAction.Search) {
                                             modelSearch?.submitSearch()
                                             true
@@ -563,6 +575,7 @@ internal fun HubComposer(
                                 decorationBox = { editor ->
                                     Box(Modifier.fillMaxWidth()
                                         .trackPickerEditor(chatPicker)
+                                        .then(if (effortAtEditor) editorTap else Modifier)
                                         .layout { content, limits ->
                                             val field = content.measure(limits)
                                             // Switching to a blank query must not drop the old draft's wrapped lines in one frame.
@@ -579,7 +592,8 @@ internal fun HubComposer(
                                         .padding(top = textTop, bottom = TextBottom),
                                         contentAlignment = Alignment.CenterStart) {
                                         val visibleTextLine = if (!forceReturnFolded && chatPicker != null)
-                                            textLine else Modifier
+                                            Modifier.testTag("composer-editable-text").then(if (effortAtEditor) Modifier else editorTap)
+                                        else Modifier
                                         Box(Modifier.fillMaxWidth().trackPickerEditor(chatPicker, textOnly = true)
                                             .then(visibleTextLine), contentAlignment = Alignment.CenterStart) {
                                             if (shown.text.isEmpty()) {

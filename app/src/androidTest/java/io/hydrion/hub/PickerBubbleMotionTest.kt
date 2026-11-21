@@ -143,7 +143,7 @@ class PickerBubbleMotionTest {
                     val p = progress.floatValue
                     val travel = (-80 * p).toInt()
                     val ime = (20 * p).toInt()
-                    val picker = remember { ChatModelPickerState().apply { modelRowFraction = 1f } }
+                    val picker = remember { ChatModelPickerState() }
                     CompositionLocalProvider(
                         LocalPickerComposerBounds provides capsule.translate(IntOffset(0, -ime)),
                         LocalPickerModelLabelBounds provides neutralLabel.translate(IntOffset(travel, -ime)),

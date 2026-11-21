@@ -76,7 +76,6 @@ internal fun ChatModelControls(
     model: ProviderModel,
     values: Map<String, String>,
     speeds: ChatSpeedControls,
-    onClose: () -> Unit,
     onModels: () -> Unit,
     onChoose: (Capability, String) -> Unit,
     onOptions: (Capability) -> Unit,
@@ -109,34 +108,24 @@ internal fun ChatModelControls(
     Column(Modifier.fillMaxWidth()) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val buttonWidth = 48.dp
-            // Two leading buttons need a matching inset at the trailing side of the text.
-            // Move the labels below the buttons if this would leave less than one touch target.
-            val splitHeader = maxWidth < buttonWidth * 5
-            val buttonsPerRow = (maxWidth / buttonWidth).toInt().coerceIn(1, 3)
-            val buttonRows = 2 / buttonsPerRow + 1
-            PickerBackButton(stringResource(R.string.chat_picker_back_to_message), onClose,
-                Modifier.align(Alignment.TopStart).width(buttonWidth).testTag("chat-effort-back"))
+            val splitHeader = maxWidth < buttonWidth * 3
+            val resetTop = if (maxWidth < buttonWidth * 2) buttonWidth else 0.dp
             val fastTint = when {
                 palette.isPeak && dark -> Color(0xFFC39BFF)
                 palette.isPeak -> Color(0xFF9B48EB)
                 dark -> Color(0xFF7AAAFF)
                 else -> Color(0xFF3988F6)
             }
-            FastButton(speeds.fast, speeds.off, speeds.selected, buttonWidth, fastTint, if (buttonsPerRow > 1) (-7).dp else (-3).dp,
-                Modifier.align(Alignment.TopStart).offset(
-                    x = if (buttonsPerRow > 1) buttonWidth else 0.dp,
-                    y = if (buttonsPerRow > 1) 0.dp else buttonWidth,
-                )) {
+            FastButton(speeds.fast, speeds.off, speeds.selected, buttonWidth, fastTint, Modifier.align(Alignment.TopStart)) {
                 speed?.let { cap -> onChoose(cap, it) }
             }
-            val startInset = if (splitHeader) 0.dp else buttonWidth * 2
-            val endInset = if (splitHeader) 0.dp else buttonWidth
+            val sideInset = if (splitHeader) 0.dp else buttonWidth
             EffortHeaderLabels(
                 title = if (effort != null && shown != null) chatOptionLabel(effort, shown) else selectLabel,
-                modelName = model.name, titleTint = titleTint, cardWidth = maxWidth, startInset = startInset,
+                modelName = model.name, titleTint = titleTint, cardWidth = maxWidth, startInset = sideInset,
                 besideButtons = !splitHeader, hasRail = effort != null && level != null,
                 modifier = Modifier.fillMaxWidth().padding(
-                    start = startInset, end = endInset, top = if (splitHeader) buttonWidth * buttonRows else 0.dp,
+                    start = sideInset, end = sideInset, top = if (splitHeader) resetTop + buttonWidth else 0.dp,
                 ).then(keepEditorFocus).testTag("chat-model-select")
                     .clickable(role = Role.Button, onClickLabel = selectLabel, onClick = onModels),
             )
@@ -144,10 +133,10 @@ internal fun ChatModelControls(
                 // The name can extend beneath the side buttons. Extend its touch surface only
                 // below their 48dp targets; the central button remains the sole accessibility action.
                 EffortHeaderSideTouches(Modifier.matchParentSize().padding(top = buttonWidth),
-                    startInset, endInset, onModels)
+                    sideInset, onModels)
             }
             val resetLabel = stringResource(R.string.chat_controls_reset)
-            Box(Modifier.align(Alignment.TopEnd).offset(y = buttonWidth * (buttonRows - 1)).then(keepEditorFocus).width(buttonWidth).height(48.dp).testTag("chat-model-reset")
+            Box(Modifier.align(Alignment.TopEnd).offset(y = resetTop).then(keepEditorFocus).width(buttonWidth).height(48.dp).testTag("chat-model-reset")
                 .semantics { contentDescription = resetLabel }
                 .clickable(role = Role.Button, onClick = onReset), contentAlignment = Alignment.Center) {
                 EffortToolGlyph(resetGlyph, Modifier.offset(x = 3.dp), tint = { colors.onSurfaceVariant })
@@ -186,7 +175,7 @@ internal fun orderedEffortLevels(choices: List<String>, declared: List<String>):
 }
 
 @Composable
-private fun FastButton(tier: String?, off: String?, selected: String?, width: Dp, activeTint: Color, glyphOffset: Dp,
+private fun FastButton(tier: String?, off: String?, selected: String?, width: Dp, activeTint: Color,
     modifier: Modifier, onChange: (String) -> Unit) {
     val enabled = tier != null && off != null
     val active = tier != null && selected == tier
@@ -211,7 +200,7 @@ private fun FastButton(tier: String?, off: String?, selected: String?, width: Dp
         .toggleable(active, enabled = enabled, role = Role.Switch) { on ->
             (if (on) tier else off)?.let(onChange)
         }, contentAlignment = Alignment.Center) {
-        EffortToolGlyph(boltGlyph, Modifier.offset(x = glyphOffset).testTag("chat-model-fast-glyph"), tint = { tint.value }, fill = { fill.value })
+        EffortToolGlyph(boltGlyph, Modifier.offset(x = (-3).dp).testTag("chat-model-fast-glyph"), tint = { tint.value }, fill = { fill.value })
     }
 }
 

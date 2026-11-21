@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.motionEventSpy
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -41,11 +42,16 @@ internal class EditorTapSequence(
         if (time - start.time >= longPress || (position - start.position).getDistance() > touchSlop) cancel()
     }
 
-    fun end(time: Long, position: Offset): TextFieldValue? {
+    private fun completedTap(time: Long, position: Offset): Tap? {
         move(time, position)
-        val start = down ?: return null
+        return down.also { down = null }
+    }
+
+    fun endSingle(time: Long, position: Offset): Boolean = completedTap(time, position) != null
+
+    fun end(time: Long, position: Offset): TextFieldValue? {
+        val start = completedTap(time, position) ?: return null
         val first = previous
-        down = null
         if (first != null && start.time - first.time in minInterval..maxInterval &&
             (first.position - start.position).getDistance() <= doubleTapSlop &&
             first.draft.text == start.draft.text
@@ -66,12 +72,14 @@ internal class EditorTapSequence(
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-internal fun Modifier.dismissOnEditorDoubleTap(
+internal fun Modifier.dismissOnEditorTap(
     owner: Any?,
+    onSingleTap: (() -> Unit)?,
     onFirstDown: () -> TextFieldValue,
     onDoubleTap: (TextFieldValue) -> Unit,
 ): Modifier {
     if (owner == null) return this
+    val singleTap by rememberUpdatedState(onSingleTap)
     val draft by rememberUpdatedState(onFirstDown)
     val dismiss by rememberUpdatedState(onDoubleTap)
     var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
@@ -92,7 +100,9 @@ internal fun Modifier.dismissOnEditorDoubleTap(
         awaitEachGesture {
             val first = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
             val start = windowPosition(first.position)
-            if (first.isConsumed || multiplePointers || currentEvent.changes.size != 1 || first.type != PointerType.Touch || start == null) {
+            val primaryPointer = first.type == PointerType.Touch || singleTap != null &&
+                (first.type == PointerType.Stylus || first.type == PointerType.Mouse && currentEvent.buttons.isPrimaryPressed)
+            if (first.isConsumed || multiplePointers || currentEvent.changes.size != 1 || !primaryPointer || start == null) {
                 taps.cancel()
                 return@awaitEachGesture
             }
@@ -111,10 +121,16 @@ internal fun Modifier.dismissOnEditorDoubleTap(
                 if (change.pressed) {
                     taps.move(change.uptimeMillis, point)
                 } else {
-                    val saved = taps.end(change.uptimeMillis, point)
-                    if (saved != null && saved.text == draft().text) {
-                        change.consume()
-                        dismiss(saved)
+                    val onTap = singleTap
+                    if (onTap != null) {
+                        // Observe the release; BasicTextField still places the caret and handles the IME.
+                        if (taps.endSingle(change.uptimeMillis, point)) onTap()
+                    } else {
+                        val saved = taps.end(change.uptimeMillis, point)
+                        if (saved != null && saved.text == draft().text) {
+                            change.consume()
+                            dismiss(saved)
+                        }
                     }
                     break
                 }

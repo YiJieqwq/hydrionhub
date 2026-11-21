@@ -1,10 +1,13 @@
 package io.hydrion.hub.provider
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.toRect
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,68 +18,74 @@ class EffortLabelAnchorTest {
     private val bar = IntRect(18, 610, 602, 774)
     private val label = IntRect(320, 728, 424, 750)
 
-    private fun panel(text: IntRect?, barBounds: IntRect = bar, fraction: Float = 1f,
-        direction: LayoutDirection = LayoutDirection.Ltr, area: IntSize = viewport) =
-        density.pickerSpace(barBounds, area, direction, reasoning = true, modelLabel = text, modelRowFraction = fraction)
+    private fun panel(composer: IntRect, area: IntSize = viewport, direction: LayoutDirection = LayoutDirection.Ltr): Rect =
+        density.pickerSpace(composer, area, direction, reasoning = true).panelRect(110)
 
-    @Test fun multilineAndAttachmentsCanExtendBehindTheEffortCardWithoutMovingItsModelAnchor() {
-        val result = panel(label)
-        assertTrue(result.above && result.edgeY > bar.top)
-        assertEquals(label.top - 6, result.edgeY)
-        assertEquals(label.center.x, result.left + result.width / 2)
-        assertEquals(result, panel(label, bar.copy(top = 430)))
-    }
-
-    @Test fun keyboardAndModelNameChangesUseTheNewRectInTheSameSample() {
-        val original = panel(label)
-        for (rise in listOf(1, 14, 42, 91, 160, 88, 42, 0)) {
-            val shift = IntOffset(0, -rise)
-            val moved = panel(label.translate(shift), bar.translate(shift), area = IntSize(viewport.width, viewport.height - rise))
-            assertEquals(original.left, moved.left)
-            assertEquals(original.edgeY - rise, moved.edgeY)
+    @Test fun differentLabelWidthsAndTheMissingLabelChangeOnlyTheSourceOfTheBubble() {
+        val card = panel(bar)
+        assertEquals((bar.top - 12).toFloat(), card.bottom, 0f)
+        assertEquals(bar.right.toFloat(), card.right, 0f)
+        for (ink in listOf(label, label.copy(left = label.left - 100), null)) {
+            val source = pickerBubbleLabel(ink, null, bar, viewport)
+            if (ink != null) assertEquals(ink.toRect(), source)
+            val positions = (0..8).map { step ->
+                pickerBubbleBounds(source, card, Rect.Zero, Offset(step / 8f, 0f))
+            }
+            assertEquals(source, positions.first())
+            assertEquals(card, positions.last())
+            assertTrue(positions.zipWithNext().all { (a, b) -> b.bottom < a.bottom && b.width >= a.width })
+            val reverse = (8 downTo 0).map { step ->
+                pickerBubbleBounds(source, card, Rect.Zero, Offset(step / 8f, 0f))
+            }
+            assertEquals(positions.reversed(), reverse)
         }
-        val wider = panel(label.copy(left = label.left - 100))
-        assertEquals(original.left - 50, wider.left)
     }
 
-    @Test fun measuredTextMirrorsNaturallyAndOffscreenCentersClampToTheSafeMargin() {
-        val ltr = panel(label)
-        val mirror = IntRect(viewport.width - label.right, label.top, viewport.width - label.left, label.bottom)
-        val rtl = panel(mirror, direction = LayoutDirection.Rtl,
-            barBounds = IntRect(viewport.width - bar.right, bar.top, viewport.width - bar.left, bar.bottom))
-        assertEquals(viewport.width - ltr.left - ltr.width, rtl.left)
-        assertEquals(ltr.edgeY, rtl.edgeY)
-        assertEquals(12, panel(label.copy(left = 19, right = 45), direction = LayoutDirection.Rtl).left)
-        val right = panel(label.copy(left = 575, right = 593))
-        assertEquals(viewport.width - 12, right.left + right.width)
+    @Test fun attachmentsLiftTheLandingWhileTheLabelCanStayInTheSameToolbarRow() {
+        val tallBar = bar.copy(top = bar.top - 170)
+        assertEquals(pickerBubbleLabel(label, null, bar, viewport), pickerBubbleLabel(label, null, tallBar, viewport))
+        assertEquals(panel(bar).translate(0f, -170f), panel(tallBar))
+        assertTrue(panel(tallBar).bottom < tallBar.top)
     }
 
-    @Test fun collapsingAndReversingMeetTheSameFoldedFallbackWhenTheLabelDisappears() {
-        for (direction in LayoutDirection.entries) {
-            val folded = panel(null, direction = direction)
-            val expanded = panel(label, direction = direction)
-            assertEquals(folded, panel(label, fraction = 0f, direction = direction))
-            assertEquals(folded, panel(label.translate(IntOffset(-1000, 0)), direction = direction))
-            for (sample in listOf(1f, .75f, .5f, .25f, 0f, .25f, .5f, 1f)) {
-                val current = panel(label, fraction = sample, direction = direction)
-                assertEquals(folded.left + (expanded.left - folded.left) * sample, current.left.toFloat(), 1f)
-                assertEquals(folded.edgeY + (expanded.edgeY - folded.edgeY) * sample, current.edgeY.toFloat(), 1f)
+    @Test fun aMovingKeyboardUpdatesTheWholeFlightAndItsLandingInTheSameFrame() {
+        val original = panel(bar)
+        for (rise in listOf(0, 14, 42, 91, 160, 88, 42, 0)) {
+            val shift = IntOffset(0, -rise)
+            val area = IntSize(viewport.width, viewport.height - rise)
+            val movedBar = bar.translate(shift)
+            val moved = panel(movedBar, area)
+            val source = pickerBubbleLabel(label.translate(shift), null, movedBar, area)
+            assertEquals(original.translate(0f, -rise.toFloat()), moved)
+            for (coverage in listOf(0f, .25f, .5f, .75f, 1f)) {
+                val weights = Offset(coverage, 0f)
+                assertEquals(
+                    pickerBubbleBounds(label.toRect(), original, Rect.Zero, weights).translate(0f, -rise.toFloat()),
+                    pickerBubbleBounds(source, moved, Rect.Zero, weights),
+                )
             }
         }
     }
 
-    @Test fun tightWindowsKeepTheCardAndItsHitAreaInsideTheSafeViewport() {
-        for (width in listOf(80, 160, 280, 480))
-            for (height in listOf(64, 110, 245))
-                for (direction in LayoutDirection.entries) {
-                    val area = IntSize(width, height)
-                    val capsule = IntRect(3, height / 4, width - 3, height - 2)
-                    val text = IntRect(width / 4, height / 2, width * 3 / 4, height * 3 / 4)
-                    val result = panel(text, capsule, direction = direction, area = area)
-                    val top = if (result.above) result.edgeY - result.maxHeight else result.edgeY
-                    assertTrue(result.left >= 0 && result.left + result.width <= width)
-                    assertTrue(top >= 0 && top + result.maxHeight <= height)
-                    assertTrue(if (result.above) result.edgeY <= text.top else result.edgeY >= capsule.bottom)
-                }
+    @Test fun slidingControlsStayOutsideTheEditorEvenWhenTheGapIsZero() {
+        val touchingAbove = panel(bar).translate(0f, 12f)
+        val below = Rect(314f, 782f, 602f, 892f)
+        for (shift in listOf(-14f, -9f, 0f, 9f, 14f)) {
+            val aboveShift = pickerContentShiftY(shift, touchingAbove, bar, above = true)
+            val belowShift = pickerContentShiftY(shift, below, bar, above = false)
+            assertEquals(minOf(0f, shift), aboveShift, 0f)
+            assertEquals(maxOf(-8f, shift), belowShift, 0f)
+        }
+    }
+
+    @Test fun tightWindowsKeepTheRestingPanelOutsideTheActualEditorInEitherDirection() {
+        for (width in listOf(0, 9, 42, 170, 640)) for (height in listOf(0, 64, 110, 245))
+            for (direction in LayoutDirection.entries) {
+                val area = IntSize(width, height)
+                val capsule = IntRect(0, height / 4, width, height)
+                val card = panel(capsule, area, direction)
+                assertTrue(card.left >= 0f && card.right <= width && card.top >= 0f && card.bottom <= height)
+                assertTrue(card.bottom <= capsule.top || card.top >= capsule.bottom)
+            }
     }
 }

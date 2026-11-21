@@ -48,7 +48,7 @@ private fun rememberInkPaint(style: TextStyle): Paint {
     }
 }
 
-/** The labels share one action. A long name gets the card width below the two leading buttons. */
+/** The labels share one action. A long name gets the card width below the side buttons. */
 @Composable
 internal fun EffortHeaderLabels(
     title: String, modelName: String, titleTint: Color, cardWidth: Dp, startInset: Dp,
@@ -76,7 +76,8 @@ internal fun EffortHeaderLabels(
         val inlineWidth = (fullWidth - 2 * startInset.roundToPx()).coerceAtLeast(0)
         val arrow = parts[2].measure(Constraints())
         val gap = 3.dp.roundToPx()
-        val wideLine = besideButtons && parts[1].maxIntrinsicWidth(Constraints.Infinity) > inlineWidth
+        val inlineNameWidth = inlineWidth - 2 * (arrow.width + gap)
+        val wideLine = besideButtons && parts[1].maxIntrinsicWidth(Constraints.Infinity) > inlineNameWidth
         val nameWidth = if (wideLine || !besideButtons) (fullWidth - 2 * (arrow.width + gap)).coerceAtLeast(0)
             else inlineWidth
         val heading = parts[0].measure(Constraints(maxWidth = inlineWidth))
@@ -113,14 +114,14 @@ internal fun EffortHeaderLabels(
 }
 
 @Composable
-internal fun EffortHeaderSideTouches(modifier: Modifier, start: Dp, end: Dp, onModels: () -> Unit) {
+internal fun EffortHeaderSideTouches(modifier: Modifier, sideInset: Dp, onModels: () -> Unit) {
     val action = rememberUpdatedState(onModels)
     val touch = Modifier.fillMaxHeight().pointerInput(Unit) { detectTapGestures { action.value() } }
     CompositionLocalProvider(LocalViewConfiguration provides exactPickerHitBounds()) {
         Row(modifier) {
-            Spacer(touch.width(start))
+            Spacer(touch.width(sideInset))
             Spacer(Modifier.weight(1f))
-            Spacer(touch.width(end))
+            Spacer(touch.width(sideInset))
         }
     }
 }

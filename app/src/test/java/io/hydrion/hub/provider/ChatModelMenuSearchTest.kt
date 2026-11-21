@@ -14,6 +14,22 @@ class ChatModelMenuSearchTest {
     private val second = ProviderModel("local-02", "常用模型")
     private val choices = listOf(first, second)
 
+    @Test fun draftEditDismissalOnlyClosesEffortAndLeavesModelSearchIntact() {
+        val picker = ChatModelPickerState()
+        picker.open()
+        picker.dismissEffort()
+        assertEquals(null, picker.page)
+
+        picker.open()
+        picker.models("provider", startSearching = true)
+        val query = TextFieldValue("model", selection = TextRange(1, 3))
+        picker.updateSearchQuery(query)
+        picker.dismissEffort()
+        assertEquals(ChatModelPickerState.Page.Search, picker.page)
+        assertEquals(query, picker.searchQuery)
+        assertEquals("provider", picker.browsedProviderId)
+    }
+
     @Test fun editorReturnKeepsTheQueryAndConsumesItsScrollSnapshotOnce() {
         val picker = ChatModelPickerState()
         val query = TextFieldValue("  Atlas  ", selection = TextRange(5, 2))

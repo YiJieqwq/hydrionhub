@@ -4,7 +4,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EditorDoubleTapTest {
@@ -16,6 +18,21 @@ class EditorDoubleTapTest {
     private fun EditorTapSequence.firstTap() {
         begin(100, origin, original)
         assertNull(end(120, origin))
+    }
+
+    @Test fun effortTapCompletesOnFirstReleaseButNotAfterDragLongPressOrCancel() {
+        val taps = sequence()
+        taps.begin(100, origin, original)
+        assertTrue(taps.endSingle(120, origin))
+        assertFalse(taps.endSingle(121, origin))
+        taps.begin(200, origin, original)
+        taps.move(210, origin + Offset(15f, 0f))
+        assertFalse(taps.endSingle(220, origin))
+        taps.begin(300, origin, original)
+        assertFalse(taps.endSingle(800, origin))
+        taps.begin(900, origin, original)
+        taps.cancel()
+        assertFalse(taps.endSingle(920, origin))
     }
 
     @Test fun onlyCompletedSecondTapReturnsFirstSelectionAndCannotFireAgainOnThirdTap() {
