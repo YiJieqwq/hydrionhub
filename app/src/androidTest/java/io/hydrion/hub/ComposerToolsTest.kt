@@ -98,33 +98,39 @@ class ComposerToolsTest {
 
     private fun assertToolbarSlots(mode: Mode) {
         val add = screen.onNodeWithContentDescription("添加附件").assertIsEnabled().assertHasClickAction()
-        val tools = screen.onNodeWithContentDescription("打开工具箱")
-        val terminal = screen.onNodeWithContentDescription("工作区终端").assertIsNotEnabled().assertHasNoClickAction()
-        val ordered = listOf(add, tools, terminal)
+        val tools = screen.onNodeWithContentDescription("打开工具箱").assertIsEnabled().assertHasClickAction()
+        val terminal = screen.onNodeWithContentDescription("工作区终端")
+        val ordered = if (mode == Mode.Image) {
+            listOf(add, tools, terminal.assertIsNotEnabled().assertHasNoClickAction())
+        } else {
+            terminal.assertDoesNotExist()
+            listOf(add, tools)
+        }
         val density = screen.activity.resources.displayMetrics.density
         val direction = if (screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL) -1 else 1
         val targets = ordered.map { it.fetchSemanticsNode().boundsInRoot }
         val glyphs = ordered.mapIndexed { index, node ->
             val image = node.captureToImage().asAndroidBitmap()
-            // All three glyph colors have a red channel above the dark composer surface.
+            // Each glyph has a red channel above the dark composer surface.
             val columns = (0 until image.width).filter { x ->
                 (image.height / 4 until 3 * image.height / 4).any { y -> Color.red(image.getPixel(x, y)) > 140 }
             }
             targets[index].left + (columns.first() + columns.last() + 1) / 2f
         }
-        for (index in 1..2) {
+        for (index in 1 until ordered.size) {
             val before = targets[index - 1]
             val after = targets[index]
             assertEquals("$mode target width", 42f * density, after.width, 1f)
             assertEquals("$mode target spacing", 42f * density, direction * (after.center.x - before.center.x), 1f)
             assertEquals("$mode visible icon spacing", 39f * density, direction * (glyphs[index] - glyphs[index - 1]), 2f)
         }
-        val terminalImage = terminal.captureToImage().asAndroidBitmap()
-        val shift = -6f
-        val terminalInk = if (mode == Mode.Chat) ExpectedChatToolInk else Color.WHITE
-        terminalImage.assertStroke("terminal upper chevron", terminalInk, shift, 3.5f, 6.5f)
-        terminalImage.assertStroke("terminal lower chevron", terminalInk, shift, 3.5f, 11.5f)
-        terminalImage.assertStroke("terminal underline", terminalInk, shift, 13f, 14f)
+        if (mode == Mode.Image) {
+            val terminalImage = terminal.captureToImage().asAndroidBitmap()
+            val shift = -6f
+            terminalImage.assertStroke("terminal upper chevron", Color.WHITE, shift, 3.5f, 6.5f)
+            terminalImage.assertStroke("terminal lower chevron", Color.WHITE, shift, 3.5f, 11.5f)
+            terminalImage.assertStroke("terminal underline", Color.WHITE, shift, 13f, 14f)
+        }
     }
 
     @Test fun imageComposerKeepsTheSecondSlotAndItsKeyboardToSheetHandoff() {
@@ -243,7 +249,6 @@ class ComposerToolsTest {
             assertToolbarSlots(Mode.Chat)
             screen.onNodeWithContentDescription("添加附件").assertGlyphGray("添加附件", 255)
             tools.assertToolInk(enabled = true, mode = Mode.Chat)
-            screen.onNodeWithContentDescription("工作区终端").performTouchInput { click(center) }
             page.assertDoesNotExist()
 
             withStableIme(false) {
@@ -592,7 +597,7 @@ class ComposerToolsTest {
                 screen.onNodeWithText(attachment.name).assertIsDisplayed()
                 screen.onNodeWithTag("chat-composer-send").assertIsEnabled()
                 screen.onNodeWithTag("chat-model-trigger").assertHasClickAction()
-                screen.onNodeWithContentDescription("工作区终端").assertIsNotEnabled().assertHasNoClickAction()
+                screen.onNodeWithContentDescription("工作区终端").assertDoesNotExist()
                 tools.performTouchInput { click(center) }
                 assertQuery("")
                 action("back").performTouchInput { click(center) }
@@ -627,18 +632,40 @@ internal val ExpectedChatToolInk = Color.rgb(0xB6, 0xC4, 0xFF)
 internal fun SemanticsNodeInteraction.assertToolInk(enabled: Boolean, mode: Mode = Mode.Chat) {
     if (enabled) assertIsEnabled() else assertIsNotEnabled()
     val bitmap = captureToImage().asAndroidBitmap()
-    val shift = -3f
-    val ink = when {
-        mode == Mode.Chat -> ExpectedChatToolInk
-        enabled -> Color.WHITE
-        else -> Color.rgb(175, 175, 175)
+    if (mode == Mode.Chat) {
+        bitmap.assertCloudTerminalInk()
+        return
     }
+    val shift = -3f
+    val ink = if (enabled) Color.WHITE else Color.rgb(175, 175, 175)
     for ((y, thumb) in listOf(3.5f to 11.5f, 9f to 5.5f, 14.5f to 10.5f)) {
         bitmap.assertStroke("tool track at $y, left", ink, shift, 2f, y)
         bitmap.assertStroke("tool track at $y, right", ink, shift, 15.5f, y)
         bitmap.assertStroke("tool thumb above $y", ink, shift, thumb, y - 1.6f)
         bitmap.assertStroke("tool thumb below $y", ink, shift, thumb, y + 1.6f)
     }
+}
+
+private fun Bitmap.assertCloudTerminalInk() {
+    var hasStrokeColor = false
+    val rows = (0 until height).map { y ->
+        (0 until width).filter { x ->
+            val color = getPixel(x, y)
+            if (abs(Color.red(color) - Color.red(ExpectedChatToolInk)) <= 5 &&
+                abs(Color.green(color) - Color.green(ExpectedChatToolInk)) <= 5 &&
+                abs(Color.blue(color) - Color.blue(ExpectedChatToolInk)) <= 5) hasStrokeColor = true
+            // Keep antialiased blue strokes distinct from the neutral composer background.
+            Color.blue(color) - Color.red(color) > 30
+        }
+    }.dropWhile { it.isEmpty() }.dropLastWhile { it.isEmpty() }
+    assertTrue("The chat tool must have a #B6C4FF stroke core", hasStrokeColor)
+    fun runs(xs: List<Int>) = if (xs.isEmpty()) 0 else 1 + xs.zipWithNext().count { (a, b) -> b > a + 1 }
+    assertTrue("The cloud outline must leave an open interior", rows.any { xs ->
+        runs(xs) == 2 && xs.last() - xs.first() + 1 - xs.size > width * .15f
+    })
+    val middle = rows.subList(rows.size / 3, (rows.size * 3 + 3) / 4)
+    assertTrue("A middle scanline should cross the cloud sides, prompt and underscore separately",
+        middle.any { runs(it) >= 4 })
 }
 
 // Sample small regions of the glyph in its own 42dp control. The window contains the

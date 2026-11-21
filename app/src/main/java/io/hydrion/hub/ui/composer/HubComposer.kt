@@ -91,6 +91,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -213,10 +214,6 @@ internal fun HubComposer(
     val glyphAccent = if (darkComposer) Color.White else colors.onSurface
     val glyphLine = if (darkComposer) Color.White else colors.onSurfaceVariant
     val chat = state.current.mode == Mode.Chat
-    val toolTrack = if (chat) ChatToolInk else if (darkComposer && !toolsAvailable) ComposerSecondary else glyphLine
-    val toolThumb = if (chat || !toolsAvailable) toolTrack else glyphAccent
-    // The terminal is a disabled placeholder until a real smart-terminal state exists.
-    val terminalInk = chatTerminalInk(smartTerminalEnabled = false)
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
@@ -626,16 +623,25 @@ internal fun HubComposer(
                                         }
                                     }
                                 }, enabled = interactive && canOpenTools) {
-                                    ToolGlyph(toolTrack, toolThumb,
-                                        Modifier.offset(x = -ToolbarGlyphGapReduction))
+                                    val glyph = Modifier.offset(x = -ToolbarGlyphGapReduction)
+                                    if (chat) {
+                                        Icon(
+                                            painterResource(R.drawable.ic_chat_toolbox), contentDescription = null,
+                                            modifier = glyph.size(ComposerGlyphSize), tint = ChatToolInk,
+                                        )
+                                    } else {
+                                        val track = if (darkComposer && !toolsAvailable) ComposerSecondary else glyphLine
+                                        ToolGlyph(track, if (toolsAvailable) glyphAccent else track, glyph)
+                                    }
                                 }
-                                Box(Modifier.width(ToolbarActionSlot).height(48.dp).clearAndSetSemantics {
-                                    contentDescription = "工作区终端"
-                                    role = Role.Button
-                                    disabled()
-                                }, contentAlignment = Alignment.Center) {
-                                    TerminalGlyph(if (chat) terminalInk else glyphAccent, if (chat) terminalInk else glyphLine,
-                                        Modifier.offset(x = -ToolbarGlyphGapReduction * 2))
+                                if (!chat) {
+                                    Box(Modifier.width(ToolbarActionSlot).height(48.dp).clearAndSetSemantics {
+                                        contentDescription = "工作区终端"
+                                        role = Role.Button
+                                        disabled()
+                                    }, contentAlignment = Alignment.Center) {
+                                        TerminalGlyph(glyphAccent, glyphLine, Modifier.offset(x = -ToolbarGlyphGapReduction * 2))
+                                    }
                                 }
                             }
                             Box(Modifier.weight(1f).then(reveal), contentAlignment = Alignment.CenterEnd) {

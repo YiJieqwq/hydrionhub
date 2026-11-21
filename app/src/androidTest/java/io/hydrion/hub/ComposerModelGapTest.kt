@@ -54,7 +54,6 @@ class ComposerModelGapTest {
         val bright: (Int) -> Boolean = { maxOf(Color.red(it), Color.green(it), Color.blue(it)) >= 145 }
         val plus = ink(node("chat-composer-attach"), bright)
         val tools = ink(screen.onNodeWithContentDescription("打开工具箱"), bright)
-        val terminal = ink(screen.onNodeWithContentDescription("工作区终端"), bright)
         val labelTag = hasTestTag("chat-model-source-label")
         val name = screen.onNode(hasText(model.name) and hasAnyAncestor(labelTag), useUnmergedTree = true)
         val layouts = mutableListOf<TextLayoutResult>()
@@ -77,7 +76,6 @@ class ComposerModelGapTest {
         val tolerance = 2f * density + 1f
         assertEquals("Visible model-to-send gap", 22f * density, measured, tolerance)
         assertEquals("Compared to attachment/tool ink", gap(plus, tools).toFloat(), measured, tolerance)
-        assertEquals("Compared to tool/terminal ink", gap(tools, terminal).toFloat(), measured, tolerance)
         return paintedDisk
     }
 
