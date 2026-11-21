@@ -250,7 +250,8 @@ internal fun HubComposer(
     val imeReturn = remember(state.current.id, state.current.mode, toolEditor, modelSearch) { ComposerImeReturn() }
     val editorFocus = remember { FocusRequester() }
     val draft = state.draft
-    var fieldValue by remember(state.current.id, state.current.mode) {
+    // An unsent conversation shares its draft and insertion point between Chat and Image.
+    var fieldValue by remember(state.current.id) {
         mutableStateOf(TextFieldValue(draft.text))
     }
     val editorValue = if (fieldValue.text == draft.text) fieldValue else fieldValue.copy(text = draft.text, composition = null)

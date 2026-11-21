@@ -40,7 +40,6 @@ import io.hydrion.hub.provider.ChatModelPickerBack
 import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.provider.ChatPickerEasing
 import io.hydrion.hub.provider.ConfigureSheet
-import io.hydrion.hub.provider.ChatTriggerLabel
 import io.hydrion.hub.provider.chatTriggerLabel
 import io.hydrion.hub.provider.chatSpeedControls
 import io.hydrion.hub.provider.chatProtocol
@@ -148,8 +147,15 @@ private fun Workspace(vm: HubViewModel) {
     }
 
     fun closeDrawer() { scope.launch { drawer.close() } }
+    fun leaveDrawer(action: () -> Unit) {
+        focus.clearFocus()
+        // Switching modes can change the sheet width and replace its active drag anchors.
+        scope.launch {
+            drawer.close()
+            action()
+        }
+    }
     fun newChat() {
-        closeDrawer()
         focus.clearFocus()
         vm.newConversation()
     }
@@ -176,8 +182,8 @@ private fun Workspace(vm: HubViewModel) {
                     containerColor = if (current.mode == Mode.Chat) MaterialTheme.colorScheme.background
                         else MaterialTheme.colorScheme.surfaceContainerLow,
                     history = if (visible) state.history else emptyList(),
-                    currentId = current.id, onNew = ::newChat,
-                    onOpen = { vm.openConversation(it); focus.clearFocus(); closeDrawer() },
+                    currentId = current.id, onNew = { leaveDrawer(vm::newConversation) },
+                    onOpen = { id -> leaveDrawer { vm.openConversation(id) } },
                     onSettings = { closeDrawer(); settings = true },
                     onRename = { renameId = it }, onPin = vm::togglePin, onDelete = { deleteId = it }
                 )
@@ -210,9 +216,10 @@ private fun Workspace(vm: HubViewModel) {
                         Column(composerReveal.windowInsetsPadding(bottomBars.only(WindowInsetsSides.Bottom))) {
                             key(current.id) {
                                 errors[current.id]?.let { detail -> ComposerError(detail) { vm.clearError(current.id) } }
-                                val chipLabel = if (current.mode == Mode.Chat)
-                                    catalog.chatTriggerLabel(selectedEntry, selection.label)
-                                else ChatTriggerLabel(selection.label)
+                                // Keep the editor at the same composition position in both modes.
+                                val chipLabel = catalog.chatTriggerLabel(
+                                    selectedEntry.takeIf { current.mode == Mode.Chat }, selection.label,
+                                )
                                 HubComposer(vm, state, chipLabel, selection.available,
                                     fast = remember(selectedEntry, selection.parameters) {
                                         selectedEntry?.let { (model, provider) ->

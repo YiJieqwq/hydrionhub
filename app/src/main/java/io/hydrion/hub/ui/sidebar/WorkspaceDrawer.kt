@@ -3,7 +3,7 @@ package io.hydrion.hub.ui.sidebar
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.DismissibleNavigationDrawer
+import androidx.compose.material3.DrawerDefaults
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ModalNavigationDrawer
@@ -14,6 +14,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -23,8 +24,10 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.model.Mode
+import kotlin.math.roundToInt
 
 @Composable
 internal fun WorkspaceDrawer(
@@ -33,33 +36,38 @@ internal fun WorkspaceDrawer(
     drawerContent: @Composable (width: Dp, visible: Boolean) -> Unit,
     content: @Composable () -> Unit
 ) {
-    // Mode can change while editing an empty conversation. Move the same workspace between hosts.
-    val workspace = remember { movableContentOf<@Composable () -> Unit> { it() } }
+    val chat = mode == Mode.Chat
     BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
-        val width = if (mode == Mode.Chat) minOf(maxWidth * 0.75f, 348.dp)
+        val width = if (chat) minOf(maxWidth * 0.75f, 348.dp)
             else (LocalConfiguration.current.screenWidthDp.dp - 44.dp).coerceIn(220.dp, 348.dp)
         val widthPx = with(LocalDensity.current) { width.roundToPx() }
         val visible by remember(drawer, widthPx) { derivedStateOf {
             drawer.isOpen || drawer.targetValue == DrawerValue.Open || drawer.currentOffset > -widthPx + 1f
         } }
-        if (mode == Mode.Image) {
-            ModalNavigationDrawer(drawerState = drawer, drawerContent = { drawerContent(width, visible) }) {
-                workspace(content)
-            }
-        } else {
-            // Material measures the body at full width and places it at the moving edge of the sheet.
-            DismissibleNavigationDrawer(drawerState = drawer, gesturesEnabled = gesturesEnabled, drawerContent = {
-                DrawerPane(disabled = !visible) { drawerContent(width, visible) }
-            }) {
-                Box(Modifier.fillMaxSize().testTag("drawer-workspace")) {
-                    val drawerActive = drawer.isOpen || drawer.targetValue == DrawerValue.Open
-                    DrawerPane(disabled = drawerActive || workspaceCovered, modifier = Modifier.fillMaxSize()) { workspace(content) }
-                    if (drawerActive) {
-                        // This target moves with the body. Only the exposed strip is inside the viewport.
-                        Box(Modifier.matchParentSize().clickable(
-                            interactionSource = null, indication = null, role = Role.Button, onClick = onClose
-                        ).semantics { contentDescription = "关闭侧栏" })
-                    }
+        // Keep the focused editor attached when the mode changes. Only Chat's body
+        // follows the sheet; Image keeps Material's usual overlay and scrim.
+        ModalNavigationDrawer(drawerState = drawer, gesturesEnabled = !chat || gesturesEnabled,
+            scrimColor = if (chat) Color.Transparent else DrawerDefaults.scrimColor,
+            drawerContent = { DrawerPane(disabled = chat && !visible) { drawerContent(width, visible) } },
+        ) {
+            Box(Modifier.fillMaxSize().offset {
+                val offset = drawer.currentOffset
+                val reveal = when {
+                    !chat -> 0
+                    offset.isFinite() -> (widthPx + offset.roundToInt()).coerceIn(0, widthPx)
+                    drawer.isOpen -> widthPx
+                    else -> 0
+                }
+                IntOffset(reveal, 0)
+            }.testTag("drawer-workspace")) {
+                val opening = drawer.targetValue == DrawerValue.Open
+                DrawerPane(disabled = chat && (drawer.isOpen || opening || workspaceCovered),
+                    modifier = Modifier.fillMaxSize(), content = content)
+                if (chat && opening && !drawer.isOpen) {
+                    // Material's dismiss action takes over when the open anchor is reached.
+                    Box(Modifier.matchParentSize().clickable(
+                        interactionSource = null, indication = null, role = Role.Button, onClick = onClose
+                    ).semantics { contentDescription = "关闭侧栏" })
                 }
             }
         }

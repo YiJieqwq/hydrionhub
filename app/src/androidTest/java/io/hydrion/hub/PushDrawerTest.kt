@@ -88,7 +88,8 @@ class PushDrawerTest {
             assertEquals(sheet.size.width.toFloat(), sign * (openX - origin.x), 1f)
             val cap = 348f * screen.activity.resources.displayMetrics.density
             assertEquals(minOf(width * .75f, cap), sheet.size.width.toFloat(), 1f)
-            screen.onNode(hasContentDescription("关闭侧栏") and hasClickAction()).assertIsDisplayed()
+            val closeLabel = screen.activity.getString(androidx.compose.ui.R.string.close_drawer)
+            screen.onNode(hasContentDescription(closeLabel) and hasClickAction()).assertIsDisplayed()
             screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction()).assertDoesNotExist()
             val translatedX = (sampleX + openX - origin.x).roundToInt()
             if (translatedX in 0 until width) {
