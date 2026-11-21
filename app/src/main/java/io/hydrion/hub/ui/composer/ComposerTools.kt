@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -121,17 +124,17 @@ private fun ChatToolGroups(
     val imageMatches = matchingToolChoices(query, imageTitle, image) { it.label }
     val count = listOf(search, imageTool).count { it != Disabled }
     val countLabel = stringResource(R.string.chat_tools_enabled_count, count)
-    Box(Modifier.fillMaxWidth().padding(bottom = 12.dp), contentAlignment = Alignment.Center) {
-        Text(stringResource(R.string.chat_tools_title), Modifier.testTag("chat-tools-title"),
-            style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Text("$count / 2", Modifier.align(Alignment.CenterEnd).padding(end = 8.dp).testTag("chat-tools-count")
+    Box(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+        Text(stringResource(R.string.chat_tools_title), Modifier.padding(horizontal = 42.dp).testTag("chat-tools-title"),
+            style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+        Text("$count / 2", Modifier.align(Alignment.CenterEnd).testTag("chat-tools-count")
             .clearAndSetSemantics { contentDescription = countLabel },
             style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
     }
+    Spacer(Modifier.height(4.dp))
     ToolGroup("web", webTitle, web, webMatches, search, initiallyOpen = true,
         filtering = query.isNotEmpty(), onSelect = onSearch)
-    if (webMatches.isNotEmpty() && imageMatches.isNotEmpty())
-        HorizontalDivider(Modifier.padding(horizontal = 8.dp), color = colors.outlineVariant)
+    if (webMatches.isNotEmpty() && imageMatches.isNotEmpty()) Spacer(Modifier.height(14.dp))
     ToolGroup("image", imageTitle, image, imageMatches, imageTool, initiallyOpen = false,
         filtering = query.isNotEmpty(), onSelect = onImageTool)
     if (webMatches.isEmpty() && imageMatches.isEmpty()) {
@@ -189,27 +192,32 @@ private fun ToolGroup(
     Row(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).testTag("chat-tools-group:$id").then(toggle)
             .semantics { stateDescription = describeState }
-            .heightIn(min = 52.dp).padding(horizontal = 8.dp),
+            .heightIn(min = 44.dp).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Icon(if (showChoices) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, null,
-            Modifier.size(20.dp), tint = colors.onSurfaceVariant)
+        Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+            Icon(if (showChoices) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, null,
+                Modifier.size(16.dp), tint = colors.onSurfaceVariant)
+        }
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        Text(choices.find { it.value == selected }?.label ?: selected, Modifier.weight(1.25f), style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.End, color = colors.onSurfaceVariant)
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            Text(choices.find { it.value == selected }?.label ?: selected, Modifier.widthIn(max = 160.dp),
+                style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.End, color = colors.onSurfaceVariant)
+        }
     }
     AnimatedVisibility(showChoices) {
-        Column(Modifier.fillMaxWidth().selectableGroup().padding(bottom = 6.dp)) {
+        Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             matches.forEach { choice ->
                 val checked = selected == choice.value
                 Row(
                     Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).then(keepEditorFocus)
                         .testTag("chat-tools-option:$id:${choice.value}")
                         .selectable(selected = checked, role = Role.RadioButton, onClick = { onSelect(choice.value) })
-                        .heightIn(min = 46.dp).padding(start = 20.dp, end = 10.dp),
+                        .heightIn(min = 48.dp).padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Icon(choice.icon(), null, Modifier.size(20.dp),
                         tint = if (choice.value == Disabled) colors.onSurface.copy(alpha = .38f) else colors.onSurfaceVariant)
