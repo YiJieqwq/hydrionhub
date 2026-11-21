@@ -1,0 +1,16 @@
+<resources>
+    <string name="search_searxng">SearXNG</string>
+    <string name="search_use_searxng">Use the SearXNG API</string>
+    <string name="search_searxng_note">Enter an HTTPS instance address with JSON search enabled. Save the provider to search it manually.</string>
+    <string name="search_manual">Search this provider</string>
+    <string name="search_manual_notice">Searching sends the words you enter here to %1$s. This instance may use external search engines.</string>
+    <string name="search_manual_query">Search terms</string>
+    <string name="search_manual_submit">Search</string>
+    <string name="search_manual_cancel">Cancel search</string>
+    <string name="search_manual_invalid">Check the provider address and search terms.</string>
+    <string name="search_manual_format">This provider did not return SearXNG JSON results.</string>
+    <string name="search_manual_http">Search failed (HTTP %1$d). Check that the instance allows JSON search.</string>
+    <string name="search_manual_limit">The search response exceeded the size limit.</string>
+    <string name="search_manual_network">Could not reach the search provider.</string>
+    <string name="search_manual_empty">No results.</string>
+</resources>

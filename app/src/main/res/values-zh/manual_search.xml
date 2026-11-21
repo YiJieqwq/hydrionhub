@@ -1,0 +1,16 @@
+<resources>
+    <string name="search_searxng">SearXNG</string>
+    <string name="search_use_searxng">使用 SearXNG 接口</string>
+    <string name="search_searxng_note">填写已启用 JSON 搜索的实例 HTTPS 地址。保存后即可手动搜索。</string>
+    <string name="search_manual">使用该供应商搜索</string>
+    <string name="search_manual_notice">点按搜索会将这里输入的关键词发送给 %1$s。该实例可能使用外部搜索引擎。</string>
+    <string name="search_manual_query">搜索关键词</string>
+    <string name="search_manual_submit">搜索</string>
+    <string name="search_manual_cancel">取消搜索</string>
+    <string name="search_manual_invalid">请检查供应商地址和搜索关键词。</string>
+    <string name="search_manual_format">该供应商未返回 SearXNG JSON 搜索结果。</string>
+    <string name="search_manual_http">搜索失败（HTTP %1$d）。请检查实例是否允许 JSON 搜索。</string>
+    <string name="search_manual_limit">搜索响应已超过大小限制。</string>
+    <string name="search_manual_network">无法连接搜索供应商。</string>
+    <string name="search_manual_empty">没有搜索结果。</string>
+</resources>

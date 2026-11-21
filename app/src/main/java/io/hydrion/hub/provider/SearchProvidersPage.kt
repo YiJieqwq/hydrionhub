@@ -51,7 +51,7 @@ internal fun SearchProvidersPage(store: WebSearchStore, onBack: () -> Unit) {
                         HorizontalDivider(thickness = .6.dp)
                         ModelSettingsRow(endpoint.name, { editId = endpoint.id }, {
                             Icon(painterResource(R.drawable.lucide_earth), null, Modifier.size(22.dp))
-                        }) { StatusBadge(stringResource(R.string.search_not_connected), MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }) { StatusBadge(stringResource(if (endpoint.adapter == SearchAdapter.Searxng) R.string.search_searxng else R.string.search_not_connected), MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
                 }
                 Text(stringResource(R.string.search_local_note), Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -66,16 +66,25 @@ private fun SearchEndpointEditor(original: SearchEndpoint?, id: String, store: W
     var name by rememberSaveable { mutableStateOf(original?.name.orEmpty()) }
     // Keep an unvalidated address out of the Android saved-instance bundle.
     var url by remember { mutableStateOf(original?.url.orEmpty()) }
+    var searxng by rememberSaveable { mutableStateOf(original == null || original.adapter == SearchAdapter.Searxng) }
+    val adapter = if (searxng) SearchAdapter.Searxng else SearchAdapter.None
+    var testing by rememberSaveable { mutableStateOf(false) }
+    val dirty = name != original?.name.orEmpty() || url != original?.url.orEmpty() ||
+        searxng != (original == null || original.adapter == SearchAdapter.Searxng)
+    if (testing && original?.adapter == SearchAdapter.Searxng && !dirty) {
+        ManualWebSearchPage(original) { testing = false }
+        return
+    }
     var invalid by remember { mutableStateOf(false) }
     var discard by rememberSaveable { mutableStateOf(false) }
     var delete by rememberSaveable { mutableStateOf(false) }
-    val back = { if (name != original?.name.orEmpty() || url != original?.url.orEmpty()) discard = true else close() }
+    val back = { if (dirty) discard = true else close() }
     BackHandler(onBack = back)
     ModelSettingsFrame(stringResource(if (original == null) R.string.model_settings_add_provider else R.string.search_edit_provider),
         back, action = {
             if (original != null) IconButton({ delete = true }) { Icon(Icons.Outlined.Delete, stringResource(R.string.drawer_delete)) }
             IconButton({
-                if (store.save(SearchEndpoint(id, name, url))) close() else invalid = true
+                if (store.save(SearchEndpoint(id, name, url, adapter))) close() else invalid = true
             }) { Icon(Icons.Outlined.Check, stringResource(R.string.settings_save)) }
         }) {
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -88,7 +97,16 @@ private fun SearchEndpointEditor(original: SearchEndpoint?, id: String, store: W
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                             label = { Text(stringResource(R.string.search_endpoint)) }, placeholder = { Text("https://") })
                         if (invalid) Text(stringResource(R.string.search_invalid), color = MaterialTheme.colorScheme.error)
-                        Text(stringResource(R.string.search_endpoint_note), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.fillMaxWidth().toggleable(searxng, role = Role.Switch, onValueChange = { searxng = it })
+                            .heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(stringResource(R.string.search_use_searxng), Modifier.weight(1f))
+                            Switch(searxng, onCheckedChange = null)
+                        }
+                        Text(stringResource(if (searxng) R.string.search_searxng_note else R.string.search_endpoint_note),
+                            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (original?.adapter == SearchAdapter.Searxng && !dirty) {
+                            OutlinedButton({ testing = true }) { Text(stringResource(R.string.search_manual)) }
+                        }
                     }
                 }
             }
