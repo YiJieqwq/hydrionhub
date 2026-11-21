@@ -203,7 +203,6 @@ class SettingsSearchTest {
             "登录账户" to R.string.settings_signed_in_accounts,
             "signed-in accounts" to R.string.settings_signed_in_accounts,
             "containers" to R.string.settings_environments,
-            "Skill" to R.string.settings_skill,
         )
         for ((query, id) in previews) {
             search().performTextReplacement(query)
@@ -213,6 +212,7 @@ class SettingsSearchTest {
         for ((query, id) in listOf(
             "记忆" to R.string.settings_memory,
             "mCp" to R.string.settings_mcp,
+            "Skill" to R.string.settings_skill,
             "默认模型" to R.string.settings_defaults, "web search" to R.string.settings_web_search)) {
             search().performTextReplacement(query)
             screen.onNodeWithText(screen.activity.getString(id)).assertIsDisplayed().assertHasClickAction()

@@ -57,6 +57,7 @@ fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
             detail == SettingsEntry.Defaults -> DefaultModelsPage(store, catalog, goBack)
             detail == SettingsEntry.Search -> SearchProvidersPage(viewModel<io.hydrion.hub.model.HubViewModel>().webSearch, goBack)
             detail == SettingsEntry.Mcp -> io.hydrion.hub.ui.settings.McpSettings(viewModel(), goBack)
+            detail == SettingsEntry.Skills -> io.hydrion.hub.ui.settings.SkillSettings(viewModel(), goBack)
             detail == SettingsEntry.Memory -> io.hydrion.hub.ui.settings.MemorySettings(viewModel(), goBack)
             detail == SettingsEntry.Assistants -> io.hydrion.hub.ui.settings.AssistantSettings(viewModel(), goBack)
             detail == SettingsEntry.Backup -> io.hydrion.hub.ui.settings.BackupSettings(viewModel(), goBack)

@@ -1,0 +1,17 @@
+<resources>
+    <string name="skill_paste">粘贴 SKILL.md</string>
+    <string name="skill_file">选择文件</string>
+    <string name="skill_help">导入包含 name 和 description 的 UTF-8 格式 SKILL.md（最多 64 KiB）。指令可在本机阅读。</string>
+    <string name="skill_invalid">无法导入。请检查文件大小、UTF-8 编码以及 name 和 description 字段。</string>
+    <string name="skill_review">审阅</string>
+    <string name="skill_import">导入</string>
+    <string name="skill_replace">替换并重置授权</string>
+    <string name="skill_replace_note">替换后将关闭该 Skill，并清除原有授权。</string>
+    <string name="skill_trust">信任此版本</string>
+    <string name="skill_revoke">撤销信任</string>
+    <string name="skill_available">对当前助手启用</string>
+    <string name="skill_read">阅读指令</string>
+    <string name="skill_remove">从当前助手移除此 Skill？</string>
+    <string name="skill_empty">此助手暂无 Skill</string>
+    <string name="skill_done">完成</string>
+</resources>

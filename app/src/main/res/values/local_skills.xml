@@ -1,0 +1,17 @@
+<resources>
+    <string name="skill_paste">Paste SKILL.md</string>
+    <string name="skill_file">Choose a file</string>
+    <string name="skill_help">Import a UTF-8 SKILL.md with name and description fields (up to 64 KiB). Instructions are read locally.</string>
+    <string name="skill_invalid">Could not import this file. Check its size, UTF-8 encoding, and name and description fields.</string>
+    <string name="skill_review">Review</string>
+    <string name="skill_import">Import</string>
+    <string name="skill_replace">Replace and reset trust</string>
+    <string name="skill_replace_note">Replacing this version turns the Skill off and clears its approval.</string>
+    <string name="skill_trust">Trust this version</string>
+    <string name="skill_revoke">Revoke trust</string>
+    <string name="skill_available">Available to this assistant</string>
+    <string name="skill_read">Read instructions</string>
+    <string name="skill_remove">Remove this Skill from this assistant?</string>
+    <string name="skill_empty">No Skills for this assistant</string>
+    <string name="skill_done">Done</string>
+</resources>
