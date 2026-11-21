@@ -23,7 +23,7 @@ class MessageStyleSettingsTest {
         val previous = store.style.value
         try {
             screen.onNodeWithContentDescription("打开侧栏").performClick()
-            screen.onNodeWithText("设置").performClick()
+            screen.onNodeWithTag("drawer-settings").performClick()
             control("消息样式").performScrollTo().performClick()
             control("重置").performClick()
             control("纯色").assertIsSelected()

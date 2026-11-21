@@ -1,13 +1,18 @@
 package io.hydrion.hub.ui.sidebar
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,32 +20,64 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import io.hydrion.hub.R
 import io.hydrion.hub.model.Conversation
-import io.hydrion.hub.model.Mode
-import io.hydrion.hub.ui.theme.capsuleEdge
 import io.hydrion.hub.ui.theme.IonMark
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-private fun day(time: Long): LocalDate = Instant.ofEpochMilli(time).atZone(ZoneId.systemDefault()).toLocalDate()
+// A null date identifies the pinned section. Dates provide stable keys across language changes.
+internal data class HistorySection(val date: LocalDate?, val rows: List<Conversation>) {
+    val key = date?.toString() ?: "pinned"
+}
 
-private fun dateLabel(date: LocalDate): String {
+internal fun historySections(history: List<Conversation>, query: String): List<HistorySection> {
+    val term = query.trim()
+    val zone = ZoneId.systemDefault()
+    val (pinned, dated) = history.filter { item ->
+        term.isEmpty() || item.title.contains(term, ignoreCase = true) || item.messages.any {
+            it.text.contains(term, ignoreCase = true) || it.prompt.contains(term, ignoreCase = true)
+        }
+    }.sortedByDescending { it.updatedAt }.partition { it.pinned }
+    return buildList {
+        if (pinned.isNotEmpty()) add(HistorySection(null, pinned))
+        dated.groupBy { Instant.ofEpochMilli(it.updatedAt).atZone(zone).toLocalDate() }
+            .forEach { (date, rows) -> add(HistorySection(date, rows)) }
+    }
+}
+
+@Composable
+private fun sectionLabel(date: LocalDate?): String {
     val today = LocalDate.now()
     return when (date) {
-        today -> "今天"
-        today.minusDays(1) -> "昨天"
-        else -> date.format(DateTimeFormatter.ofPattern(if (today.year == date.year) "M月d日" else "yyyy年M月d日"))
+        null -> stringResource(R.string.drawer_pinned)
+        today -> stringResource(R.string.drawer_today)
+        today.minusDays(1) -> stringResource(R.string.drawer_yesterday)
+        else -> {
+            val pattern = stringResource(if (today.year == date.year) R.string.drawer_date_short else R.string.drawer_date_full)
+            date.format(DateTimeFormatter.ofPattern(pattern, LocalConfiguration.current.locales[0]))
+        }
     }
 }
 
@@ -51,103 +88,148 @@ internal fun ConversationDrawer(
     onRename: (String) -> Unit, onPin: (String) -> Unit, onDelete: (String) -> Unit
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    val results = remember(history, query) {
-        val term = query.trim()
-        history.filter { c -> term.isEmpty() || c.title.contains(term, true) ||
-            c.messages.any { it.text.contains(term, true) || it.prompt.contains(term, true) }
-        }.sortedByDescending { it.updatedAt }
+    val sections = remember(history, query) { historySections(history, query) }
+    var collapsed by rememberSaveable(query) { mutableStateOf(arrayListOf<String>()) }
+    val scroll = rememberLazyListState()
+    var historyMenu by remember { mutableStateOf(false) }
+    var jumpTo by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(jumpTo) {
+        val key = jumpTo ?: return@LaunchedEffect
+        val index = sections.indexOfFirst { it.key == key }
+        if (index >= 0) {
+            val header = sections.take(index).sumOf { 1 + if (it.key in collapsed) 0 else it.rows.size }
+            scroll.scrollToItem(header)
+        }
+        jumpTo = null
     }
-    val pinned = results.filter { it.pinned }
-    val groups = results.filterNot { it.pinned }.groupBy { day(it.updatedAt) }
+
     val colors = MaterialTheme.colorScheme
     ModalDrawerSheet(
-        modifier = Modifier.width(width).testTag("drawer-sheet"),
-        drawerContainerColor = containerColor,
-        drawerShape = MaterialTheme.shapes.large.copy(topStart = androidx.compose.foundation.shape.CornerSize(0.dp),
-            bottomStart = androidx.compose.foundation.shape.CornerSize(0.dp))
+        modifier = Modifier.width(width).testTag("drawer-sheet"), drawerShape = RectangleShape,
+        drawerContainerColor = containerColor, drawerContentColor = colors.onSurface,
     ) {
-        Column(Modifier.fillMaxHeight().padding(horizontal = 14.dp)) {
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                IonMark(40.dp)
-                Text("HydrionHub", Modifier.weight(1f).padding(start = 10.dp).offset(y = 1.5.dp),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Medium)
-                IconButton(onClick = onNew) { Icon(Icons.Outlined.Edit, "新建会话") }
-            }
-            Row(
-                Modifier.fillMaxWidth().capsuleEdge().clip(CircleShape).background(colors.surfaceContainerHigh).heightIn(min = 44.dp)
-                    .padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Outlined.Search, null, Modifier.size(19.dp), tint = colors.onSurfaceVariant)
-                BasicTextField(
-                    value = query, onValueChange = { query = it }, singleLine = true,
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp).semantics { contentDescription = "搜索会话" },
-                    cursorBrush = SolidColor(colors.primary), textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
-                    decorationBox = { inner -> Box { if (query.isEmpty()) Text("搜索会话", color = colors.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium); inner() } }
-                )
-                if (query.isNotEmpty()) IconButton(onClick = { query = "" }, modifier = Modifier.size(34.dp)) {
-                    Icon(Icons.Outlined.Close, "清除搜索", Modifier.size(17.dp))
-                }
-            }
-            LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(vertical = 12.dp)) {
-                if (results.isEmpty()) {
-                    item { Text(if (query.isBlank()) "暂无历史会话" else "没有匹配的会话",
-                        Modifier.padding(horizontal = 10.dp, vertical = 18.dp),
-                        style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant) }
-                }
-                if (pinned.isNotEmpty()) {
-                    item(key = "pinned") { GroupLabel("置顶会话") }
-                    items(pinned, key = { it.id }) { conversation ->
-                        DrawerRow(conversation, currentId, onOpen, onRename, onPin, onDelete)
+        Column(Modifier.fillMaxSize().imePadding()) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                DrawerSearch(query, { query = it }, Modifier.weight(1f))
+                Box {
+                    IconButton({ historyMenu = true }, enabled = sections.isNotEmpty()) {
+                        Icon(Icons.Outlined.History, stringResource(R.string.drawer_history), Modifier.size(21.dp))
                     }
-                }
-                groups.forEach { (date, conversations) ->
-                    item(key = "date-$date") { GroupLabel(dateLabel(date)) }
-                    items(conversations, key = { it.id }) { conversation ->
-                        DrawerRow(conversation, currentId, onOpen, onRename, onPin, onDelete)
+                    DropdownMenu(historyMenu, { historyMenu = false }) {
+                        sections.forEach { group ->
+                            DropdownMenuItem(text = { Text(sectionLabel(group.date)) }, onClick = {
+                                historyMenu = false
+                                collapsed = ArrayList(collapsed - group.key)
+                                jumpTo = group.key
+                            })
+                        }
                     }
                 }
             }
-            HorizontalDivider(color = colors.outlineVariant)
-            Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClick = onSettings)
-                .heightIn(min = 58.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Settings, null, Modifier.size(20.dp))
-                Text("设置", Modifier.weight(1f).padding(start = 12.dp))
-                Icon(Icons.Outlined.ChevronRight, null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                IonMark(32.dp)
+                Text("HydrionHub", Modifier.weight(1f).padding(start = 16.dp), fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                IconButton(onNew, Modifier.testTag("drawer-new")) {
+                    Icon(Icons.Outlined.Edit, stringResource(R.string.drawer_new), Modifier.size(20.dp))
+                }
+            }
+
+            LazyColumn(Modifier.fillMaxWidth().weight(1f), state = scroll,
+                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 12.dp)) {
+                if (sections.isEmpty()) item {
+                    Text(stringResource(if (query.isBlank()) R.string.drawer_empty else R.string.drawer_no_matches),
+                        Modifier.padding(14.dp), fontSize = 14.sp, color = colors.onSurfaceVariant)
+                }
+                sections.forEach { group ->
+                    val open = group.key !in collapsed
+                    item(key = "group-${group.key}") {
+                        SectionHeading(sectionLabel(group.date), open) {
+                            collapsed = ArrayList(if (open) collapsed + group.key else collapsed - group.key)
+                        }
+                    }
+                    if (open) items(group.rows, key = { it.id }) { item ->
+                        DrawerConversation(item, currentId == item.id, onOpen, onRename, onPin, onDelete)
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(36.dp).background(colors.surfaceContainerHigh, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.PersonOutline, null, Modifier.size(21.dp))
+                }
+                Text(stringResource(R.string.drawer_you), Modifier.weight(1f).padding(start = 18.dp),
+                    fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                IconButton(onSettings, Modifier.testTag("drawer-settings")) {
+                    Icon(Icons.Outlined.Settings, stringResource(R.string.drawer_settings), Modifier.size(22.dp))
+                }
             }
         }
     }
 }
 
 @Composable
-private fun GroupLabel(label: String) {
-    Text(label, Modifier.padding(start = 10.dp, top = 17.dp, bottom = 6.dp),
-        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun DrawerSearch(query: String, onQuery: (String) -> Unit, modifier: Modifier) {
+    val colors = MaterialTheme.colorScheme
+    val hint = stringResource(R.string.drawer_search)
+    BasicTextField(value = query, onValueChange = onQuery, singleLine = true,
+        modifier = modifier.clip(RoundedCornerShape(16.dp)).background(colors.surfaceContainerHigh)
+            .heightIn(min = 44.dp).semantics { contentDescription = hint },
+        textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
+        cursorBrush = SolidColor(colors.primary),
+        decorationBox = { field ->
+            Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+                Box(Modifier.weight(1f).padding(horizontal = 8.dp), contentAlignment = Alignment.CenterStart) {
+                    if (query.isEmpty()) Text(hint, Modifier.align(Alignment.Center), color = colors.onSurfaceVariant,
+                        fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    field()
+                }
+                if (query.isNotEmpty()) IconButton({ onQuery("") }, Modifier.size(44.dp)) {
+                    Icon(Icons.Outlined.Close, stringResource(R.string.drawer_clear_search), Modifier.size(17.dp))
+                } else Spacer(Modifier.width(22.dp))
+            }
+        })
 }
 
 @Composable
-private fun DrawerRow(
-    item: Conversation, currentId: String, onOpen: (String) -> Unit,
+private fun SectionHeading(label: String, open: Boolean, toggle: () -> Unit) {
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val angle by animateFloatAsState(if (open) (if (rtl) -90f else 90f) else 0f, label = "section-chevron")
+    val state = stringResource(if (open) R.string.drawer_expanded else R.string.drawer_collapsed)
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClick = toggle)
+        .semantics { stateDescription = state }.heightIn(min = 40.dp).padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(16.dp).rotate(angle),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, Modifier.padding(start = 8.dp), fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun DrawerConversation(
+    item: Conversation, current: Boolean, onOpen: (String) -> Unit,
     onRename: (String) -> Unit, onPin: (String) -> Unit, onDelete: (String) -> Unit
 ) {
     var menu by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
-        .background(if (item.id == currentId) colors.surfaceContainerHigh else colors.surfaceContainerLow)
-        .clickable { onOpen(item.id) }.padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(if (item.mode == Mode.Chat) Icons.Outlined.ChatBubbleOutline else Icons.Outlined.Image,
-            item.mode.name, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
-        Text(item.title, Modifier.weight(1f).padding(start = 10.dp), maxLines = 1,
-            overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-        Box {
-            IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreHoriz, "管理 ${item.title}", Modifier.size(19.dp)) }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text(if (item.pinned) "取消置顶" else "置顶") },
-                    onClick = { menu = false; onPin(item.id) })
-                DropdownMenuItem(text = { Text("重命名") }, onClick = { menu = false; onRename(item.id) })
-                DropdownMenuItem(text = { Text("删除") }, onClick = { menu = false; onDelete(item.id) })
-            }
+    val manage = stringResource(R.string.drawer_manage, item.title)
+    Box(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(if (current) colors.primary.copy(alpha = .12f) else Color.Transparent)
+            .combinedClickable(onLongClickLabel = manage, onLongClick = { menu = true }, onClick = { onOpen(item.id) })
+            .semantics { selected = current; contentDescription = item.mode.name }
+            .heightIn(min = 44.dp).padding(start = 14.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp)
+        }
+        DropdownMenu(menu, { menu = false }) {
+            DropdownMenuItem(text = { Text(stringResource(if (item.pinned) R.string.drawer_unpin else R.string.drawer_pin)) },
+                onClick = { menu = false; onPin(item.id) })
+            DropdownMenuItem(text = { Text(stringResource(R.string.drawer_rename)) }, onClick = { menu = false; onRename(item.id) })
+            DropdownMenuItem(text = { Text(stringResource(R.string.drawer_delete)) }, onClick = { menu = false; onDelete(item.id) })
         }
     }
 }

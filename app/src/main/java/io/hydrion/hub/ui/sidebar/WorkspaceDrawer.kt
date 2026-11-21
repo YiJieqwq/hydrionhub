@@ -14,7 +14,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.res.stringResource
+import io.hydrion.hub.R
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -47,7 +49,7 @@ internal fun WorkspaceDrawer(
         // Keep the focused editor attached when the mode changes. Only Chat's body
         // follows the sheet; Image keeps Material's usual overlay and scrim.
         ModalNavigationDrawer(drawerState = drawer, gesturesEnabled = !chat || gesturesEnabled,
-            scrimColor = if (chat) Color.Transparent else DrawerDefaults.scrimColor,
+            scrimColor = if (chat) MaterialTheme.colorScheme.onSurface.copy(alpha = .12f) else DrawerDefaults.scrimColor,
             drawerContent = { DrawerPane(disabled = chat && !visible) { drawerContent(width, visible) } },
         ) {
             Box(Modifier.fillMaxSize().offset {
@@ -65,9 +67,10 @@ internal fun WorkspaceDrawer(
                     modifier = Modifier.fillMaxSize(), content = content)
                 if (chat && opening && !drawer.isOpen) {
                     // Material's dismiss action takes over when the open anchor is reached.
+                    val closeLabel = stringResource(R.string.drawer_dismiss)
                     Box(Modifier.matchParentSize().clickable(
                         interactionSource = null, indication = null, role = Role.Button, onClick = onClose
-                    ).semantics { contentDescription = "关闭侧栏" })
+                    ).semantics { contentDescription = closeLabel })
                 }
             }
         }

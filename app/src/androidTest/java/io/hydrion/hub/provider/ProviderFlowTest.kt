@@ -28,7 +28,7 @@ class ProviderFlowTest {
 
     @Test fun saveAcrossTabsAndDiscardSubsequentEdits() {
         screen.onNodeWithContentDescription("打开侧栏").performClick()
-        screen.onNodeWithText("设置").performClick()
+        screen.onNodeWithTag("drawer-settings").performClick()
         screen.onNodeWithText("聊天模型").performClick()
         screen.onNodeWithText("聊天模型供应商").assertIsDisplayed()
         screen.onNodeWithContentDescription("添加供应商").performClick()

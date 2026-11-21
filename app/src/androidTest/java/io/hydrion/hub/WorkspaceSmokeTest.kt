@@ -8,7 +8,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.hasAnySibling
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
@@ -68,10 +70,10 @@ class WorkspaceSmokeTest {
         screen.onAllNodes(hasText("上下文", substring = true)).assertCountEquals(0)
         screen.onAllNodes(modeTab("Image")).assertCountEquals(0)
         screen.onNodeWithContentDescription("打开侧栏").performClick()
-        screen.onNodeWithContentDescription("管理 " + prompt).performClick()
-        screen.onNodeWithText("置顶").performClick()
-        screen.onNodeWithText("置顶会话").assertIsDisplayed()
-        screen.onNode(hasContentDescription("新建会话") and hasAnySibling(hasText("HydrionHub"))).performClick()
+        screen.onNode(hasText(prompt) and hasContentDescription("Chat") and hasClickAction()).performTouchInput { longClick() }
+        screen.onNodeWithText(screen.activity.getString(R.string.drawer_pin)).performClick()
+        screen.onNodeWithText(screen.activity.getString(R.string.drawer_pinned)).assertIsDisplayed()
+        screen.onNodeWithTag("drawer-new").performClick()
         screen.onNode(modeTab("Chat")).assertIsSelected()
         screen.onNodeWithText(prompt).assertDoesNotExist()
         screen.onNodeWithContentDescription("打开侧栏").performClick()
@@ -96,7 +98,7 @@ class WorkspaceSmokeTest {
         screen.onNodeWithContentDescription("移除 参考图").performClick()
         screen.onNodeWithContentDescription("发送消息").assertIsNotEnabled()
         screen.onNodeWithContentDescription("打开侧栏").performClick()
-        screen.onNode(hasContentDescription("新建会话") and hasAnySibling(hasText("HydrionHub"))).performClick()
+        screen.onNodeWithTag("drawer-new").performClick()
         screen.onNode(modeTab("Image")).performClick()
         screen.onNode(hasText(prompt) and hasClickAction()).assertIsDisplayed().performClick()
         deleteCurrentConversation()

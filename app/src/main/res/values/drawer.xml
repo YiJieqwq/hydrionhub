@@ -1,0 +1,23 @@
+<resources>
+    <string name="drawer_search">Search conversations</string>
+    <string name="drawer_clear_search">Clear search</string>
+    <string name="drawer_history">Browse history by date</string>
+    <string name="drawer_new">New conversation</string>
+    <string name="drawer_settings">Settings</string>
+    <string name="drawer_you">You</string>
+    <string name="drawer_today">Today</string>
+    <string name="drawer_yesterday">Yesterday</string>
+    <string name="drawer_date_short">MMM d</string>
+    <string name="drawer_date_full">MMM d, yyyy</string>
+    <string name="drawer_pinned">Pinned conversations</string>
+    <string name="drawer_manage">Manage %1$s</string>
+    <string name="drawer_pin">Pin</string>
+    <string name="drawer_unpin">Unpin</string>
+    <string name="drawer_rename">Rename</string>
+    <string name="drawer_delete">Delete</string>
+    <string name="drawer_empty">No conversations yet</string>
+    <string name="drawer_no_matches">No matching conversations</string>
+    <string name="drawer_expanded">Expanded</string>
+    <string name="drawer_collapsed">Collapsed</string>
+    <string name="drawer_dismiss">Close sidebar</string>
+</resources>

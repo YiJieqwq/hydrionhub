@@ -80,7 +80,7 @@ class PushDrawerTest {
                 }
             }
 
-            screen.onNodeWithText("设置").assertIsDisplayed()
+            screen.onNodeWithTag("drawer-settings").assertIsDisplayed()
             val sheet = node("drawer-sheet")
             val open = node("drawer-workspace")
             val openX = open.positionInRoot.x
@@ -93,8 +93,11 @@ class PushDrawerTest {
             screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction()).assertDoesNotExist()
             val translatedX = (sampleX + openX - origin.x).roundToInt()
             if (translatedX in 0 until width) {
-                assertEquals("Exposed chat keeps its original color", originalPixel,
-                    root.captureToImage().asAndroidBitmap().getPixel(translatedX, sampleY))
+                val tinted = root.captureToImage().asAndroidBitmap().getPixel(translatedX, sampleY)
+                val expected = androidx.core.graphics.ColorUtils.blendARGB(originalPixel, 0xFFF5F5F5.toInt(), .12f)
+                for (shift in listOf(0, 8, 16)) {
+                    assertEquals((expected ushr shift and 255).toFloat(), (tinted ushr shift and 255).toFloat(), 2f)
+                }
             }
             screen.onNodeWithText("HydrionHub").performTouchInput { click(center) }
             assertEquals(openX, node("drawer-workspace").positionInRoot.x, 1f)

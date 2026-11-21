@@ -31,7 +31,7 @@ class ModelEditorFlowTest {
 
     @Test fun editsThreePagesThenCommitsModelAndProviderSeparately() {
         ui.onNodeWithContentDescription("打开侧栏").performClick()
-        ui.onNodeWithText("设置").performClick()
+        ui.onNodeWithTag("drawer-settings").performClick()
         ui.onNodeWithText("聊天模型").performClick()
         ui.onNodeWithContentDescription("添加供应商").performClick()
         ui.onNodeWithContentDescription("供应商名称").performTextReplacement(providerName)
