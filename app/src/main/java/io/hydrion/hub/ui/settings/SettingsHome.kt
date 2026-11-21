@@ -56,7 +56,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.first
 
-internal enum class SettingsEntry { About, Language, Image, Style, Data, Backup, Assistants, Defaults, Search }
+internal enum class SettingsEntry { About, Language, Image, Style, Data, Backup, Assistants, Defaults, Search, Memory }
 
 private data class SettingsRow(
     val label: Int,
@@ -83,7 +83,7 @@ private val settingsGroups = listOf(
             "联网搜索配置 网络搜索提供商 网络搜索供应商 web search providers", SettingsEntry.Search),
     ),
     R.string.settings_tools to listOf(
-        SettingsRow(R.string.settings_memory, R.drawable.lucide_brain, "记忆 memory"),
+        SettingsRow(R.string.settings_memory, R.drawable.lucide_brain, "记忆 memory", SettingsEntry.Memory),
         SettingsRow(R.string.settings_environments, R.drawable.lucide_folder_code, "容器与环境 containers and environments"),
         SettingsRow(R.string.settings_mcp, R.drawable.lucide_terminal, "MCP model context protocol"),
         SettingsRow(R.string.settings_skill, R.drawable.lucide_wand_sparkles, "Skill 技能"),

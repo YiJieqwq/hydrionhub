@@ -1,0 +1,21 @@
+<resources>
+    <string name="feature_unavailable">无法在本机读取或保存这些设置。</string>
+    <string name="feature_reload">重新加载</string>
+    <string name="feature_assistant">助手 · %1$s</string>
+    <string name="memory_enable">启用本地记忆</string>
+    <string name="memory_explain">仅在本机保存和检索这位助手的记忆。关闭后保留条目。不会从聊天历史自动提取或发送给模型。</string>
+    <string name="memory_active">使用中</string>
+    <string name="memory_archived">已归档</string>
+    <string name="memory_add">添加记忆</string>
+    <string name="memory_query">检索记忆</string>
+    <string name="memory_empty">没有匹配的记忆</string>
+    <string name="memory_edit">编辑记忆</string>
+    <string name="memory_text">记忆内容</string>
+    <string name="memory_archive">归档</string>
+    <string name="memory_restore">恢复</string>
+    <string name="memory_delete_confirm">从此助手删除这条记忆？</string>
+    <string name="memory_type_identity">身份</string>
+    <string name="memory_type_workflow">工作方式</string>
+    <string name="memory_type_voice">表达风格</string>
+    <string name="memory_type_instruction">指令</string>
+</resources>

@@ -1,0 +1,21 @@
+<resources>
+    <string name="feature_unavailable">Could not read or save these settings on this device.</string>
+    <string name="feature_reload">Reload</string>
+    <string name="feature_assistant">Assistant · %1$s</string>
+    <string name="memory_enable">Enable local memory</string>
+    <string name="memory_explain">Save and search notes for this assistant on this device. Turning memory off keeps the notes. Chat history and model requests are separate.</string>
+    <string name="memory_active">Active</string>
+    <string name="memory_archived">Archived</string>
+    <string name="memory_add">Add memory</string>
+    <string name="memory_query">Search notes</string>
+    <string name="memory_empty">No matching notes</string>
+    <string name="memory_edit">Edit memory</string>
+    <string name="memory_text">Note</string>
+    <string name="memory_archive">Archive</string>
+    <string name="memory_restore">Restore</string>
+    <string name="memory_delete_confirm">Delete this note from this assistant?</string>
+    <string name="memory_type_identity">Identity</string>
+    <string name="memory_type_workflow">Workflow</string>
+    <string name="memory_type_voice">Voice</string>
+    <string name="memory_type_instruction">Instruction</string>
+</resources>
