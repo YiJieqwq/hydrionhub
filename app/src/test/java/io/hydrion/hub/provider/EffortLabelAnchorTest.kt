@@ -21,6 +21,17 @@ class EffortLabelAnchorTest {
     private fun panel(composer: IntRect, area: IntSize = viewport, direction: LayoutDirection = LayoutDirection.Ltr): Rect =
         density.pickerSpace(composer, area, direction, reasoning = true).panelRect(110)
 
+    @Test fun modelRowUsesTheMeasuredTitleStartUntilItsChevronReachesTheEnd() {
+        // The 0.1.19 emulator measured a 96px Hydrion, a 6px gap and a 28px chevron.
+        val hydrionRow = 96 + 6 + 28
+        val availableEnd = 599
+        for (titleStart in listOf(349, 374)) { // Centered Medium and High on the same card.
+            assertEquals(titleStart, effortModelRowStart(titleStart, hydrionRow, availableEnd))
+            assertEquals(titleStart, effortModelRowStart(titleStart, 40, availableEnd))
+        }
+        assertEquals(availableEnd - 260, effortModelRowStart(374, 260, availableEnd))
+    }
+
     @Test fun differentLabelWidthsAndTheMissingLabelChangeOnlyTheSourceOfTheBubble() {
         val card = panel(bar)
         assertEquals((bar.top - 12).toFloat(), card.bottom, 0f)

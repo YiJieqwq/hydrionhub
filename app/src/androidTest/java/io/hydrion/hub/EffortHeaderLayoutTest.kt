@@ -43,7 +43,7 @@ import org.junit.runner.RunWith
 class EffortHeaderLayoutTest {
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
 
-    @Test fun bothLabelsStayOnTheCardCenterlineWithIndependentButtons() {
+    @Test fun modelRowFollowsTheCenteredTitleWithinTheAvailableWidth() {
         val width = mutableStateOf(288.dp)
         val direction = mutableStateOf(LayoutDirection.Ltr)
         val model = ProviderModel("test", "DeepSeek V4.1 Flash", listOf(
@@ -77,7 +77,16 @@ class EffortHeaderLayoutTest {
                 val name = bounds("chat-model-name")
                 val arrow = bounds("chat-model-name-chevron")
                 assertEquals(card.center.x, title.center.x, 1f)
-                assertEquals(card.center.x, name.center.x, 1f)
+                val ltr = layout == LayoutDirection.Ltr
+                val aligned = abs(if (ltr) title.left - name.left else title.right - name.right) <= 1f
+                if (!aligned) {
+                    val end = if (ltr) arrow.right else arrow.left
+                    val cardEnd = if (ltr) card.right else card.left
+                    val centerButton = bounds("chat-model-select")
+                    val buttonEnd = if (ltr) centerButton.right else centerButton.left
+                    assertTrue("Only shift the model to keep its arrow inside the row",
+                        abs(end - cardEnd) <= 1f || abs(end - buttonEnd) <= 1f)
+                }
                 assertTrue(if (layout == LayoutDirection.Ltr) arrow.left >= name.right else arrow.right <= name.left)
                 val select = bounds("chat-model-select")
                 val fast = bounds("chat-model-fast")

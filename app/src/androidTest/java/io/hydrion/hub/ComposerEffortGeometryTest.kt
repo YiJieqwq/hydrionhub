@@ -77,7 +77,7 @@ class ComposerEffortGeometryTest {
         }
     }
 
-    @Test fun changingEffortKeepsComposerNameAndPickerRowInPlace() {
+    @Test fun changingEffortKeepsTheTitleCenteredAndTheModelRowOnItsBaseline() {
         // Exercise the descender in High even when the emulator runs in Chinese.
         screen.activityRule.scenario.onActivity { activity ->
             val config = Configuration(activity.resources.configuration).apply { setLocale(Locale.ENGLISH) }
@@ -143,7 +143,6 @@ class ComposerEffortGeometryTest {
                 tag("chat-model-name"), tag("chat-model-name-chevron"), tag("chat-model-effort")).map { it.fetchSemanticsNode().boundsInRoot }
             val expected = boxes()
             val card = tag("chat-model-card").fetchSemanticsNode().boundsInRoot
-            assertEquals(card.center.x, expected[3].center.x, 1f)
             val rtl = screen.activity.resources.configuration.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL
             val arrowGap = if (rtl) expected[3].left - expected[4].right else expected[4].left - expected[3].right
             val density = tag("chat-model-name").fetchSemanticsNode().layoutInfo.density.density
@@ -152,7 +151,17 @@ class ComposerEffortGeometryTest {
                 tag("chat-model-effort").performSemanticsAction(SemanticsActions.SetProgress) { it(index.toFloat()) }
                 tag("chat-model-effort-title").assertTextEquals(choices[index])
                 screen.runOnIdle { assertEquals(choices[index], vm.providers.selection(Mode.Chat).parameters["effort"]) }
-                assertEquals("Composer name, adjacent actions, popup name, chevron and rail keep their bounds", expected, boxes())
+                val actual = boxes()
+                val title = tag("chat-model-effort-title").fetchSemanticsNode().boundsInRoot
+                assertEquals(card.center.x, title.center.x, 1f)
+                assertEquals(if (rtl) title.right else title.left, if (rtl) actual[3].right else actual[3].left, 1f)
+                assertEquals(expected.take(3), actual.take(3)) // Composer name, mic and send.
+                assertEquals(expected[5], actual[5]) // Rail.
+                for (i in 3..4) {
+                    assertEquals(expected[i].top, actual[i].top, 0f)
+                    assertEquals(expected[i].size, actual[i].size)
+                }
+                assertEquals(arrowGap, if (rtl) actual[3].left - actual[4].right else actual[4].left - actual[3].right, 1f)
             }
         }
     }
