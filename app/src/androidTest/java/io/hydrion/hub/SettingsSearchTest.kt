@@ -1,6 +1,10 @@
 package io.hydrion.hub
 
 import android.graphics.Color
+import android.os.ParcelFileDescriptor
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.geometry.Offset
 import kotlin.math.roundToInt
@@ -75,11 +79,55 @@ class SettingsSearchTest {
         val y = bounds.center.y.roundToInt()
         val density = screen.activity.resources.displayMetrics.density
         val line = Color.rgb(79, 79, 79)
-        assertEquals(line, image.getPixel(x, y))
-        assertEquals(Color.rgb(48, 48, 48), image.getPixel(x + (6 * density).roundToInt(), y))
+        val thickness = kotlin.math.ceil(density).toInt()
+        val fill = Color.rgb(48, 48, 48)
         val edge = bounds.bottom.roundToInt()
-        assertTrue("Group separators use the same solid color as the perimeter",
-            (edge - 1..edge + 1).any { image.getPixel(bounds.center.x.roundToInt(), it) == line })
+        val center = bounds.center.x.roundToInt()
+        for (i in 0 until thickness) {
+            assertEquals(line, image.getPixel(x + i, y))
+            assertEquals(line, image.getPixel(center, edge - 1 - i))
+        }
+        assertEquals(fill, image.getPixel(x + thickness, y))
+        assertEquals(fill, image.getPixel(center, edge - 1 - thickness))
+        assertEquals(fill, image.getPixel(center, edge))
+        assertEquals(54f * density, bounds.height, 1f)
+    }
+
+    @Test fun systemKeyboardDismissalFoldsSearchAndPreservesTheUnfilteredProfilePosition() {
+        openSettings()
+        val profile = screen.onNodeWithTag("settings-profile")
+        val initial = profile.assertIsDisplayed().fetchSemanticsNode().boundsInRoot.top
+        val density = screen.activity.resources.displayMetrics.density
+        fun keyboardVisible() = screen.runOnUiThread {
+            ViewCompat.getRootWindowInsets(screen.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        }
+        fun closeKeyboard() {
+            val shell = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("input keyevent KEYCODE_BACK")
+            ParcelFileDescriptor.AutoCloseInputStream(shell).use { it.readBytes() }
+            screen.waitUntil(10_000) { !keyboardVisible() }
+        }
+        repeat(2) {
+            val field = search().fetchSemanticsNode().boundsInRoot
+            val list = scrollingList().fetchSemanticsNode().boundsInRoot
+            assertEquals(34f * density, field.left - list.left, 1f)
+            assertEquals(34f * density, list.right - field.right, 1f)
+            search().performClick()
+            screen.waitUntil(10_000) { keyboardVisible() }
+            search().assertIsFocused().assertHeightIsEqualTo(48.dp)
+            assertEquals(initial, profile.assertIsDisplayed().fetchSemanticsNode().boundsInRoot.top, 1f)
+            closeKeyboard()
+            assertSearchClosed()
+        }
+        search().performClick()
+        screen.waitUntil(10_000) { keyboardVisible() }
+        search().performTextReplacement("image")
+        closeKeyboard()
+        search().assertIsNotFocused().assertTextContains("image")
+        profile.assertDoesNotExist()
+        search().performClick()
+        screen.onNodeWithContentDescription(screen.activity.getString(R.string.settings_end_search)).performClick()
+        assertSearchClosed()
+        profile.assertIsDisplayed()
     }
 
     @Test fun focusedSearchFloatsOverTheListWithAnOpenScrollableGap() {

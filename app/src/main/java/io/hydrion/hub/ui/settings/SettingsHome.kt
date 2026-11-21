@@ -1,11 +1,11 @@
 package io.hydrion.hub.ui.settings
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,12 +18,14 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
@@ -32,6 +34,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import io.hydrion.hub.R
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -46,6 +49,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 import io.hydrion.hub.ui.theme.HubStyle
+import io.hydrion.hub.ui.messages.ChatEdgeBrushes
+import io.hydrion.hub.ui.messages.ChatEdgeFade
+import io.hydrion.hub.ui.messages.chatFadeBands
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.first
 
 internal enum class SettingsEntry { About, Language, Image, Style, Data, Backup, Assistants, Defaults, Search }
 
@@ -86,33 +95,45 @@ private val settingsGroups = listOf(
     ),
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SettingsHome(
     search: String, onSearch: (String) -> Unit,
     onOpen: (SettingsEntry) -> Unit, onBack: () -> Unit,
     signedInAccounts: List<SignedInAccountUsage> = emptyList(),
 ) {
-    var searching by rememberSaveable { mutableStateOf(search.isNotBlank()) }
+    var editing by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val active = searching || search.isNotEmpty()
+    val density = LocalDensity.current
+    val ime = WindowInsets.ime
+    val nav = WindowInsets.navigationBars
+    val imeVisible = rememberUpdatedState(WindowInsets.isImeVisible)
+    val query = search.trim()
     val hideKeyboard = {
-        keyboard?.hide()
         focus.clearFocus(force = true)
+        keyboard?.hide()
+        Unit
     }
     val leaveSearch = {
         onSearch("")
-        searching = false
         hideKeyboard()
     }
     val open: (SettingsEntry) -> Unit = { entry ->
-        searching = search.isNotBlank()
         hideKeyboard()
         onOpen(entry)
     }
-    BackHandler(enabled = active, onBack = leaveSearch)
-    val groups = remember(search) {
-        val words = search.trim().split(Regex("\\s+")).filter(String::isNotEmpty)
+    LaunchedEffect(editing) {
+        if (editing) {
+            // Ignore the initial hidden frame while the field waits for its keyboard.
+            snapshotFlow { imeVisible.value || ime.getBottom(density) > nav.getBottom(density) }
+                .awaitSettingsKeyboardDismissal()
+            focus.clearFocus()
+        }
+    }
+    BackHandler(enabled = editing || query.isNotEmpty(), onBack = leaveSearch)
+    val groups = remember(query) {
+        val words = query.split(Regex("\\s+")).filter(String::isNotEmpty)
         settingsGroups.mapNotNull { (section, entries) ->
             val matches = entries.filter { entry ->
                 // About is always accessible in the top bar. Include it among explicitly matched results.
@@ -123,38 +144,64 @@ internal fun SettingsHome(
         }
     }
     val scroll = rememberScrollState()
-    LaunchedEffect(search) { scroll.scrollTo(0) }
-    Column(Modifier.fillMaxSize().background(Color.Black)
-        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
-        .navigationBarsPadding().imePadding()) {
-        SettingsHeader(onBack = { if (active) leaveSearch() else onBack() }, onInfo = { open(SettingsEntry.About) })
-        Scaffold(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            containerColor = Color.Transparent,
-            bottomBar = {
-                SearchDock(search, active, onSearch, onFocus = { searching = true },
-                    onSubmit = hideKeyboard, onClose = leaveSearch, modifier = Modifier.fillMaxWidth())
+    LaunchedEffect(query) { scroll.scrollTo(0) }
+    val background = MaterialTheme.colorScheme.background
+    val brushes = remember(background) { ChatEdgeBrushes(background) }
+    val dockBottom = if (editing) 12.dp else 14.5.dp
+    Scaffold(
+        modifier = Modifier.fillMaxSize().background(background)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .navigationBarsPadding().imePadding(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        containerColor = background,
+        topBar = {
+            SettingsHeader(onBack = { if (editing || query.isNotEmpty()) leaveSearch() else onBack() },
+                onInfo = { open(SettingsEntry.About) })
+        },
+        bottomBar = {
+            SearchDock(search, editing, dockBottom, onSearch, onFocus = { focused ->
+                editing = focused
+                if (!focused && search.isNotEmpty() && query.isEmpty()) onSearch("")
             },
-        ) { dockPadding ->
-            Box(Modifier.fillMaxSize()) {
-                Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(dockPadding).padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (!active) SettingsProfile(signedInAccounts)
-                    groups.forEach { (title, entries) ->
-                        SettingsGroup(stringResource(title), entries, open)
-                    }
-                    if (groups.isEmpty()) {
-                        Text(stringResource(R.string.settings_no_matches), Modifier.fillMaxWidth().padding(vertical = 20.dp),
-                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Spacer(Modifier.height(16.dp))
-                }
-                if (scroll.canScrollForward) {
-                    Spacer(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(16.dp).background(
-                        Brush.verticalGradient(listOf(Color.Transparent, HubStyle.Background))))
-                }
+                onSubmit = hideKeyboard, onClose = leaveSearch, modifier = Modifier.fillMaxWidth())
+        },
+    ) { bars ->
+        Column(Modifier.fillMaxSize().settingsFades(bars, dockBottom, brushes, scroll)
+            .verticalScroll(scroll).padding(bars).padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (query.isEmpty()) SettingsProfile(signedInAccounts)
+            groups.forEach { (title, entries) -> SettingsGroup(stringResource(title), entries, open) }
+            if (groups.isEmpty()) {
+                Text(stringResource(R.string.settings_no_matches), Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+internal suspend fun Flow<Boolean>.awaitSettingsKeyboardDismissal() {
+    dropWhile { !it }.first { !it }
+}
+
+private val DockTopPadding = 4.dp
+
+private fun Modifier.settingsFades(
+    bars: PaddingValues, dockBottom: Dp, brushes: ChatEdgeBrushes, scroll: ScrollState,
+) = drawWithCache {
+    val dockHeight = bars.calculateBottomPadding().toPx()
+    val bands = chatFadeBands(size.height, bars.calculateTopPadding().toPx(), dockHeight,
+        size.height - dockHeight + DockTopPadding.toPx(), size.height - dockBottom.roundToPx(), density)
+    val reveal = ChatEdgeFade.ScrollRevealDp.dp.toPx()
+    onDrawWithContent {
+        drawContent()
+        if (bands.topLength > 0f && scroll.canScrollBackward) {
+            drawRect(brushes.top(bands), size = Size(size.width, bands.topLength),
+                alpha = (scroll.value / reveal).coerceIn(0f, 1f))
+        }
+        if (bands.bottomLength > 0f && scroll.canScrollForward) {
+            drawRect(brushes.bottom(bands, size.height), Offset(0f, size.height - bands.bottomLength),
+                Size(size.width, bands.bottomLength), alpha = ((scroll.maxValue - scroll.value) / reveal).coerceIn(0f, 1f))
         }
     }
 }
@@ -163,9 +210,9 @@ private val SettingsButtonSize = 48.dp
 
 @Composable
 private fun SettingsHeader(onBack: () -> Unit, onInfo: () -> Unit) {
-    Box(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp).heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp).heightIn(min = 48.dp), contentAlignment = Alignment.Center) {
         Text(stringResource(R.string.settings_title), Modifier.padding(horizontal = 68.dp, vertical = 4.dp),
-            fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+            fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
         Row(Modifier.widthIn(max = ChatHeaderLayout.MaxWidth).fillMaxWidth().padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween) {
             HeaderButton(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.settings_back), onBack, "settings-back-circle")
@@ -184,13 +231,24 @@ private fun HeaderButton(icon: ImageVector, description: String, onClick: () -> 
     }
 }
 
-private fun Modifier.searchCapsule() =
-    border(HubStyle.SettingsOutline, CircleShape).clip(CircleShape).background(HubStyle.Raised)
+@Composable
+private fun Modifier.searchCapsule(): Modifier {
+    val colors = MaterialTheme.colorScheme
+    val dark = colors.onSurface.luminance() > colors.surface.luminance()
+    return border(HubStyle.SettingsOutline.width, if (dark) HubStyle.ComposerBorder else colors.outlineVariant, CircleShape)
+        .clip(CircleShape).background(if (dark) HubStyle.Raised else colors.surfaceContainerHigh)
+}
+
+@Composable
+private fun searchInk(): Color {
+    val colors = MaterialTheme.colorScheme
+    return if (colors.onSurface.luminance() > colors.surface.luminance()) Color.White else colors.onSurface
+}
 
 @Composable
 private fun RoundButton(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     IconButton(onClick = onClick, modifier = modifier.size(48.dp).searchCapsule()) {
-        Icon(icon, description, Modifier.size(22.dp), tint = Color.White)
+        Icon(icon, description, Modifier.size(22.dp), tint = searchInk())
     }
 }
 
@@ -203,10 +261,11 @@ private fun SettingsGroup(
     val dark = colors.onSurface.luminance() > colors.surface.luminance()
     val fill = if (dark) HubStyle.Raised else colors.surfaceContainerHigh
     val line = if (dark) HubStyle.ComposerBorder else colors.outlineVariant
+    val stroke = HubStyle.SettingsOutline.width
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, Modifier.padding(start = 12.dp, top = 6.dp), fontSize = 13.sp, lineHeight = 18.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
-        Column(Modifier.fillMaxWidth().border(HubStyle.SettingsOutline.width, line, shape).clip(shape).background(fill)) {
+        Column(Modifier.fillMaxWidth().border(stroke, line, shape).clip(shape).background(fill)) {
             entries.forEachIndexed { index, entry ->
                 val destination = entry.destination
                 val interaction = if (destination == null) {
@@ -215,7 +274,11 @@ private fun SettingsGroup(
                     Modifier.clickable(role = Role.Button) { onOpen(destination) }
                 }
                 val ink = if (destination == null) colors.onSurfaceVariant else if (dark) Color.White else colors.onSurface
-                Row(Modifier.fillMaxWidth().then(interaction)
+                val separator = if (index == entries.lastIndex) Modifier else Modifier.drawBehind {
+                    val px = kotlin.math.ceil(stroke.toPx()).coerceAtMost(size.height)
+                    drawRect(line, Offset(0f, size.height - px), Size(size.width, px))
+                }
+                Row(Modifier.fillMaxWidth().then(separator).then(interaction)
                     .heightIn(min = 54.dp).padding(start = 18.dp, end = 16.dp, top = 7.dp, bottom = 7.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     Icon(painterResource(entry.icon), null, Modifier.size(20.dp), tint = ink)
@@ -226,7 +289,6 @@ private fun SettingsGroup(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                if (index != entries.lastIndex) HorizontalDivider(thickness = Dp.Hairline, color = line)
             }
         }
     }
@@ -234,21 +296,23 @@ private fun SettingsGroup(
 
 @Composable
 private fun SearchDock(
-    search: String, active: Boolean, onSearch: (String) -> Unit, onFocus: () -> Unit,
+    search: String, active: Boolean, bottomGap: Dp, onSearch: (String) -> Unit, onFocus: (Boolean) -> Unit,
     onSubmit: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier
 ) {
     val hint = stringResource(R.string.settings_search)
-    Row(modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 10.dp),
+    val ink = searchInk()
+    val side = if (active) 12.dp else 34.dp
+    Row(modifier.padding(start = side, end = side, top = DockTopPadding, bottom = bottomGap),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         BasicTextField(value = search, onValueChange = onSearch, singleLine = true,
-            modifier = Modifier.weight(1f).searchCapsule()
-                .onFocusChanged { if (it.isFocused) onFocus() }.semantics { contentDescription = hint },
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
-            cursorBrush = SolidColor(Color.White), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            modifier = Modifier.weight(1f).height(SettingsButtonSize).searchCapsule()
+                .onFocusChanged { onFocus(it.isFocused) }.semantics { contentDescription = hint },
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = ink),
+            cursorBrush = SolidColor(ink), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { onSubmit() }), decorationBox = { inner ->
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+                Row(Modifier.fillMaxSize().padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Search, null, Modifier.size(21.dp), tint = Color.White)
+                    Icon(Icons.Outlined.Search, null, Modifier.size(21.dp), tint = ink)
                     Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                         if (search.isEmpty()) Text(hint, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodyLarge)
@@ -256,7 +320,7 @@ private fun SearchDock(
                     }
                 }
             })
-        AnimatedVisibility(visible = active) {
+        if (active) {
             RoundButton(Icons.Outlined.Close, stringResource(R.string.settings_end_search), onClose)
         }
     }
