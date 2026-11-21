@@ -303,6 +303,15 @@ internal fun HubComposer(
         return draftSession.value && !editingQuery && tools?.active != true && conversation.id == state.current.id &&
             conversation.mode == state.current.mode && chatPicker?.modelListNavigation != true
     }
+    val dictate = if (chat) rememberChatDictation(
+        conversationId = state.current.id,
+        enabled = allowImeReturn && !forceReturnFolded && !editingQuery && !toolsRequested,
+        readDraft = { fieldValue.takeIf { acceptsDraftInput() && it.text == vm.state.value.draft.text } },
+        onDraft = { updated ->
+            fieldValue = updated
+            vm.setDraft(updated.text)
+        },
+    ) else null
     ComposerImeReturnEffect(
         controller = imeReturn,
         enabled = allowImeReturn && !toolsRequested && !hardwareKeyboardOnly && !editingQuery,
@@ -658,12 +667,7 @@ internal fun HubComposer(
                                     }
                                     Modifier.testTag("chat-model-trigger").then(bounds)
                                 }
-                                // The former chevron and its gap contribute 17 dp to the trigger’s hit area.
-                                // At 39dp between glyph centers the leading icons leave about 22dp of visible space.
-                                // Subtract the space already inside the send slot; keep the trigger's total padding.
-                                val sendSlotGap = (ToolbarActionSlot - HubStyle.ComposerActionDiameter) / 2 -
-                                    (if (active) 0.dp else SendFaceInset)
-                                val labelEndPadding = if (chatPicker != null) 22.dp - sendSlotGap else 4.dp
+                                val labelEndPadding = if (chat) 16.dp else 4.dp
                                 val actionLabel = if (chatPicker != null) stringResource(R.string.chat_controls_select_model)
                                     else "配置模型"
                                 val closePickerLabel = stringResource(R.string.chat_picker_close)
@@ -679,48 +683,62 @@ internal fun HubComposer(
                                     }
                                     Modifier.width(width)
                                 } else Modifier
-                                Row(
-                                    trailing.then(trigger).then(if (pickerOpen) Modifier else Modifier.clip(CircleShape)).semantics {
-                                        contentDescription = if (pickerOpen) closePickerLabel else actionLabel
-                                        stateDescription = modelLabel.text
-                                    }.clickable(interactionSource = presses,
-                                        indication = if (chatPicker == null) LocalIndication.current else null,
-                                        enabled = interactive, role = Role.Button) {
-                                        cancelPendingTools()
-                                        if (pickerOpen) chatPicker?.dismiss()
-                                        else if (chatPicker != null) chatPicker.open() else {
-                                            collapse()
-                                            onConfigure()
-                                        }
-                                    }.heightIn(min = 44.dp).then(triggerWidth)
-                                        .padding(start = 25.dp - labelEndPadding, end = labelEndPadding),
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.End),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    if (fast) {
-                                        if (pickerOpen) Spacer(Modifier.size(15.dp))
-                                        else Icon(Icons.Outlined.Bolt, "快速", Modifier.size(15.dp), tint = colors.onSurface)
-                                    }
-                                    Box(Modifier.weight(1f, fill = false)) {
-                                        if (chatPicker != null) {
-                                            // The initial highlight hands its shape and color to the moving shell.
-                                            // Keep the open label's press feedback on its measured text.
-                                            val feedback = if (pickerOpen) Modifier.indication(presses, ripple(bounded = false))
-                                            else {
-                                                val pressed = presses.collectIsPressedAsState()
-                                                Modifier.drawBehind { if (pressed.value) drawRect(colors.pickerBubbleHighlight) }
+                                Row(trailing, verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        Modifier.weight(1f, fill = false).then(trigger).then(if (pickerOpen) Modifier else Modifier.clip(CircleShape)).semantics {
+                                            contentDescription = if (pickerOpen) closePickerLabel else actionLabel
+                                            stateDescription = modelLabel.text
+                                        }.clickable(interactionSource = presses,
+                                            indication = if (chatPicker == null) LocalIndication.current else null,
+                                            enabled = interactive, role = Role.Button) {
+                                            cancelPendingTools()
+                                            if (pickerOpen) chatPicker?.dismiss()
+                                            else if (chatPicker != null) chatPicker.open() else {
+                                                collapse()
+                                                onConfigure()
                                             }
-                                            Spacer(Modifier.matchParentSize().clip(CircleShape).then(feedback))
+                                        }.heightIn(min = 44.dp).then(triggerWidth)
+                                            .padding(start = 25.dp - labelEndPadding, end = labelEndPadding),
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.End),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        if (fast) {
+                                            if (pickerOpen) Spacer(Modifier.size(15.dp))
+                                            else Icon(Icons.Outlined.Bolt, "快速", Modifier.size(15.dp), tint = colors.onSurface)
                                         }
-                                        val textBounds = if (interactive && chatPicker != null)
-                                            Modifier.testTag("chat-model-source-label").onGloballyPositioned {
-                                                modelText.label = it
-                                                modelText.record(chatPicker)
-                                            } else Modifier
-                                        if (chatPicker != null) ChatTriggerText(modelLabel, darkComposer, labelStyle, modelWordGap,
-                                            Modifier.pickerModelLabelBounds().then(textBounds))
-                                        else Text(modelLabel.name, style = labelStyle, color = colors.onSurface,
-                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Box(Modifier.weight(1f, fill = false)) {
+                                            if (chatPicker != null) {
+                                                // The initial highlight hands its shape and color to the moving shell.
+                                                // Keep the open label's press feedback on its measured text.
+                                                val feedback = if (pickerOpen) Modifier.indication(presses, ripple(bounded = false))
+                                                else {
+                                                    val pressed = presses.collectIsPressedAsState()
+                                                    Modifier.drawBehind { if (pressed.value) drawRect(colors.pickerBubbleHighlight) }
+                                                }
+                                                Spacer(Modifier.matchParentSize().clip(CircleShape).then(feedback))
+                                            }
+                                            val textBounds = if (interactive && chatPicker != null)
+                                                Modifier.testTag("chat-model-source-label").onGloballyPositioned {
+                                                    modelText.label = it
+                                                    modelText.record(chatPicker)
+                                                } else Modifier
+                                            if (chatPicker != null) ChatTriggerText(modelLabel, darkComposer, labelStyle, modelWordGap,
+                                                Modifier.pickerModelLabelBounds().then(textBounds))
+                                            else Text(modelLabel.name, style = labelStyle, color = colors.onSurface,
+                                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                    if (dictate != null) {
+                                        ComposerIconButton(
+                                            label = stringResource(R.string.chat_dictate),
+                                            onClick = dictate,
+                                            enabled = interactive && allowImeReturn && !returning,
+                                            modifier = Modifier.padding(end = 5.dp).testTag("chat-composer-dictate"),
+                                            slotWidth = 48.dp,
+                                        ) {
+                                            Icon(painterResource(R.drawable.ic_chat_microphone), contentDescription = null,
+                                                modifier = Modifier.size(24.dp), tint = Color.White)
+                                        }
                                     }
                                 }
                             }
@@ -773,8 +791,8 @@ private class ModelLabelMeasurement {
 
 @Composable
 private fun ComposerIconButton(label: String, onClick: () -> Unit, enabled: Boolean = true,
-                               modifier: Modifier = Modifier, glyph: @Composable () -> Unit) {
-    Box(modifier.width(ToolbarActionSlot).height(48.dp).clip(CircleShape)
+                               modifier: Modifier = Modifier, slotWidth: Dp = ToolbarActionSlot, glyph: @Composable () -> Unit) {
+    Box(modifier.width(slotWidth).height(48.dp).clip(CircleShape)
         .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = label }, contentAlignment = Alignment.Center) { glyph() }
 }

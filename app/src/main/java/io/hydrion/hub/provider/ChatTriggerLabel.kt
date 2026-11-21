@@ -48,7 +48,7 @@ internal fun ModelCatalog.chatTriggerLabel(entry: Pair<ProviderModel, Provider>?
 internal fun ChatTriggerText(label: ChatTriggerLabel, dark: Boolean, style: TextStyle, gapPx: Int, modifier: Modifier) {
     val colors = MaterialTheme.colorScheme
     Layout(modifier = modifier, content = {
-        Text(label.name, style = style, color = if (dark) Color(0xFFCDCDCD) else colors.onSurface,
+        Text(label.name, style = style, color = if (dark) Color.White else colors.onSurface,
             textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
         label.effort?.let { effort ->
             val ink = if (label.peak) PeakEffortLabelColor else if (dark) Color(0xFFAFAFAF) else colors.onSurfaceVariant

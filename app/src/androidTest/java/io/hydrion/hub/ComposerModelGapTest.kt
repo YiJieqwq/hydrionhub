@@ -2,8 +2,12 @@ package io.hydrion.hub
 
 import android.graphics.Color
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.SemanticsActions
@@ -11,6 +15,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.model.HubViewModel
@@ -51,15 +56,24 @@ class ComposerModelGapTest {
             assertTrue("No ink at $region", cols.isNotEmpty())
             return cols.first()..cols.last()
         }
-        val bright: (Int) -> Boolean = { maxOf(Color.red(it), Color.green(it), Color.blue(it)) >= 145 }
-        val plus = ink(node("chat-composer-attach"), bright)
-        val tools = ink(screen.onNodeWithContentDescription("打开工具箱"), bright)
         val labelTag = hasTestTag("chat-model-source-label")
         val name = screen.onNode(hasText(model.name) and hasAnyAncestor(labelTag), useUnmergedTree = true)
         val layouts = mutableListOf<TextLayoutResult>()
         name.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         assertEquals("Fixture must exercise actual text truncation", model.id == "long", layouts.single().isLineEllipsized(0))
-        val label = ink(node("chat-model-source-label"), bright)
+        val white: (Int) -> Boolean = { minOf(Color.red(it), Color.green(it), Color.blue(it)) >= 245 }
+        ink(name, white)
+        val label = box(node("chat-model-source-label"))
+        val mic = box(node("chat-composer-dictate").assertIsEnabled().assertHasClickAction())
+        val send = box(node("chat-composer-send"))
+        val tolerance = 1.5f
+        val rtl = direction == LayoutDirection.Rtl
+        assertTrue("Model label stays outside the dictation target", if (rtl) label.left >= mic.right - tolerance
+            else label.right <= mic.left + tolerance)
+        assertTrue("Dictation and send have separate targets", if (rtl) send.right <= mic.left + tolerance
+            else mic.right <= send.left + tolerance)
+        assertTrue("Dictation retains its 48dp target", mic.width >= 48f * density - tolerance &&
+            mic.height >= 48f * density - tolerance)
 
         val face = node("chat-composer-action-face")
         val disk = box(face)
@@ -69,13 +83,11 @@ class ComposerModelGapTest {
         val paintedDisk = ink(face) { it == paint }
         assertEquals("Solid fill must span the send circle", 32f * density, paintedDisk.count().toFloat(), 2f)
 
-        fun gap(a: IntRange, b: IntRange) =
-            if (direction == LayoutDirection.Ltr) b.first - a.last - 1 else a.first - b.last - 1
-        val measured = gap(label, paintedDisk).toFloat()
-        // Final glyph side bearings, filtered antialias pixels and integer rounding can add a few pixels.
-        val tolerance = 2f * density + 1f
-        assertEquals("Visible model-to-send gap", 22f * density, measured, tolerance)
-        assertEquals("Compared to attachment/tool ink", gap(plus, tools).toFloat(), measured, tolerance)
+        val trailingClearance = if (rtl) disk.left else bitmap.width - disk.right
+        assertEquals("Send face stays at its original trailing inset", 9.75f * density, trailingClearance, tolerance)
+        val microphoneToSend = (disk.center.x - mic.center.x) * (if (rtl) -1f else 1f)
+        assertEquals("The mic sits immediately before the unchanged send face", 48.25f * density, microphoneToSend, 2f)
+        assertEquals("Microphone and send share the toolbar center line", disk.center.y, mic.center.y, tolerance)
         return paintedDisk
     }
 
@@ -89,7 +101,11 @@ class ComposerModelGapTest {
         val dir = mutableStateOf(LayoutDirection.Ltr)
         try {
             screen.runOnUiThread { screen.activity.setContent {
-                CompositionLocalProvider(LocalLayoutDirection provides dir.value) { HydrionApp() }
+                CompositionLocalProvider(LocalLayoutDirection provides dir.value) {
+                    Box(Modifier.fillMaxSize()) {
+                        Box(Modifier.widthIn(max = 320.dp)) { HydrionApp() }
+                    }
+                }
             } }
             screen.runOnIdle { vm.providers.save(provider, "", null) }
             for (direction in LayoutDirection.values()) for (model in models) {

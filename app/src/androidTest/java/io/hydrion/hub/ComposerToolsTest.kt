@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.speech.RecognizerIntent
 import android.view.KeyEvent
 import android.view.ViewTreeObserver
 import android.view.View
@@ -124,7 +125,12 @@ class ComposerToolsTest {
             assertEquals("$mode target spacing", 42f * density, direction * (after.center.x - before.center.x), 1f)
             assertEquals("$mode visible icon spacing", 39f * density, direction * (glyphs[index] - glyphs[index - 1]), 2f)
         }
-        if (mode == Mode.Image) {
+        if (mode == Mode.Chat) {
+            val microphone = screen.onNodeWithTag("chat-composer-dictate").assertIsDisplayed().assertIsEnabled()
+                .assertHasClickAction()
+            microphone.assertGlyphGray("chat microphone", 255)
+        } else {
+            screen.onNodeWithTag("chat-composer-dictate").assertDoesNotExist()
             val terminalImage = terminal.captureToImage().asAndroidBitmap()
             val shift = -6f
             terminalImage.assertStroke("terminal upper chevron", Color.WHITE, shift, 3.5f, 6.5f)
@@ -160,6 +166,31 @@ class ComposerToolsTest {
                 vm.setDraft(previous.draft.text)
                 vm.setMode(previous.current.mode)
             }
+        }
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun microphoneInsertsAnInterceptedResultAtTheSelectionWithoutSending() {
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        val before = screen.runOnIdle { vm.state.value }
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val fixture = Intent().putStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS, arrayListOf("dictated"))
+        val monitor = instrumentation.addMonitor(IntentFilter(RecognizerIntent.ACTION_RECOGNIZE_SPEECH),
+            Instrumentation.ActivityResult(Activity.RESULT_OK, fixture), true)
+        try {
+            screen.runOnIdle { vm.setDraft("before replace after") }
+            editor.performTextInputSelection(TextRange(7, 14))
+            screen.onNodeWithTag("chat-composer-dictate").performTouchInput { click(center) }
+            screen.waitUntil(5_000) { vm.state.value.draft.text == "before dictated after" }
+            assertEquals(1, monitor.hits)
+            assertEquals(TextRange(15), editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            screen.runOnIdle {
+                assertEquals(before.draft.attachments, vm.state.value.draft.attachments)
+                assertEquals(before.current.messages, vm.state.value.current.messages)
+            }
+        } finally {
+            instrumentation.removeMonitor(monitor)
+            screen.runOnIdle { vm.setDraft(before.draft.text) }
         }
     }
 
@@ -558,6 +589,7 @@ class ComposerToolsTest {
                 tools.performTouchInput { click(center) }
                 page.assertIsDisplayed()
                 field.assertIsFocused()
+                screen.onNodeWithTag("chat-composer-dictate").assertDoesNotExist()
                 assertQuery("")
                 screen.onNodeWithTag("chat-model-trigger").assertDoesNotExist()
                 screen.onNodeWithContentDescription("工作区终端").assertDoesNotExist()
@@ -596,6 +628,7 @@ class ComposerToolsTest {
                 assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
                 screen.onNodeWithText(attachment.name).assertIsDisplayed()
                 screen.onNodeWithTag("chat-composer-send").assertIsEnabled()
+                screen.onNodeWithTag("chat-composer-dictate").assertIsDisplayed().assertHasClickAction()
                 screen.onNodeWithTag("chat-model-trigger").assertHasClickAction()
                 screen.onNodeWithContentDescription("工作区终端").assertDoesNotExist()
                 tools.performTouchInput { click(center) }
@@ -613,27 +646,30 @@ class ComposerToolsTest {
 
 internal fun SemanticsNodeInteraction.assertGlyphGray(label: String, expectedGray: Int) {
     val image = captureToImage().asAndroidBitmap()
+    // Sub-mdpi strokes can fall entirely between pixel centers.
+    val tolerance = if (fetchSemanticsNode().layoutInfo.density.density < 1f) 30 else 2
     var solidPixels = 0
     var brightest = 0
     for (y in image.height / 4 until 3 * image.height / 4) {
         for (x in image.width / 4 until 3 * image.width / 4) {
             val color = image.getPixel(x, y)
             val channels = listOf(Color.red(color), Color.green(color), Color.blue(color))
-            if (channels.all { abs(it - expectedGray) <= 2 }) solidPixels++
+            if (channels.max() - channels.min() <= 2 && channels.all { abs(it - expectedGray) <= tolerance }) solidPixels++
             brightest = maxOf(brightest, channels.max())
         }
     }
     assertTrue("$label has $solidPixels solid stroke pixels, brightest channel $brightest; expected $expectedGray",
-        solidPixels >= 2 && abs(brightest - expectedGray) <= 2)
+        solidPixels >= 2 && abs(brightest - expectedGray) <= tolerance)
 }
 
-internal val ExpectedChatToolInk = Color.rgb(0xB6, 0xC4, 0xFF)
+internal const val ExpectedChatToolInk = Color.WHITE
 
 internal fun SemanticsNodeInteraction.assertToolInk(enabled: Boolean, mode: Mode = Mode.Chat) {
     if (enabled) assertIsEnabled() else assertIsNotEnabled()
     val bitmap = captureToImage().asAndroidBitmap()
     if (mode == Mode.Chat) {
-        bitmap.assertCloudTerminalInk()
+        assertGlyphGray("chat tool rings", Color.red(ExpectedChatToolInk))
+        bitmap.assertToolRingPositions()
         return
     }
     val shift = -3f
@@ -646,26 +682,20 @@ internal fun SemanticsNodeInteraction.assertToolInk(enabled: Boolean, mode: Mode
     }
 }
 
-private fun Bitmap.assertCloudTerminalInk() {
-    var hasStrokeColor = false
-    val rows = (0 until height).map { y ->
-        (0 until width).filter { x ->
-            val color = getPixel(x, y)
-            if (abs(Color.red(color) - Color.red(ExpectedChatToolInk)) <= 5 &&
-                abs(Color.green(color) - Color.green(ExpectedChatToolInk)) <= 5 &&
-                abs(Color.blue(color) - Color.blue(ExpectedChatToolInk)) <= 5) hasStrokeColor = true
-            // Keep antialiased blue strokes distinct from the neutral composer background.
-            Color.blue(color) - Color.red(color) > 30
-        }
-    }.dropWhile { it.isEmpty() }.dropLastWhile { it.isEmpty() }
-    assertTrue("The chat tool must have a #B6C4FF stroke core", hasStrokeColor)
-    fun runs(xs: List<Int>) = if (xs.isEmpty()) 0 else 1 + xs.zipWithNext().count { (a, b) -> b > a + 1 }
-    assertTrue("The cloud outline must leave an open interior", rows.any { xs ->
-        runs(xs) == 2 && xs.last() - xs.first() + 1 - xs.size > width * .15f
-    })
-    val middle = rows.subList(rows.size / 3, (rows.size * 3 + 3) / 4)
-    assertTrue("A middle scanline should cross the cloud sides, prompt and underscore separately",
-        middle.any { runs(it) >= 4 })
+// The widest row through each rail crosses a dark hole inside its contrasting ring.
+private fun Bitmap.assertToolRingPositions() {
+    fun ringCenter(rows: IntRange): Float {
+        val rail = rows.map { y ->
+            (0 until width).filter { x -> Color.red(getPixel(x, y)) > 145 }
+        }.maxBy { it.size }
+        assertTrue("Each rail should span the glyph", rail.size >= 2 && rail.last() - rail.first() > width * .3f)
+        val (left, right) = rail.zipWithNext().maxBy { (a, b) -> b - a }
+        assertTrue("The rail must leave the ring interior hollow", right - left > 1)
+        return (left + right) / 2f
+    }
+    val topRing = ringCenter(height / 4 until height / 2)
+    val bottomRing = ringCenter(height / 2 until height * 3 / 4)
+    assertTrue("The upper ring sits to the right of the lower ring", topRing > bottomRing + width * .05f)
 }
 
 // Sample small regions of the glyph in its own 42dp control. The window contains the

@@ -121,6 +121,7 @@ class ChatModelSearchTest {
         screen.onAllNodes(inResultsPage and (hasSetTextAction() or hasTestTag("chat-model-list-back")),
             useUnmergedTree = true).assertCountEquals(0)
         send.assertDoesNotExist()
+        screen.onNodeWithTag("chat-composer-dictate").assertDoesNotExist()
         return field
     }
 
@@ -219,6 +220,7 @@ class ChatModelSearchTest {
             editor.assertTextEquals(draft)
             assertComposerHint(null)
             assertAnchored("card")
+            screen.onNodeWithTag("chat-composer-dictate").assertIsDisplayed().assertHasClickAction()
             assertEquals(parked, capsule())
 
             // The capsule's back arrow ends the whole model selection; re-entry starts empty.

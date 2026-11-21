@@ -133,16 +133,19 @@ class ComposerDraftTest {
     fun hidingKeyboardNarrowsComposerButKeepsDraftAndControls() {
         screen.onAllNodes(input).assertCountEquals(1)
         screen.onNodeWithContentDescription("打开工具箱").assertDoesNotExist()
+        screen.onNodeWithTag("chat-composer-dictate").assertDoesNotExist()
         screen.onNode(input).performClick()
         waitFor(input and isFocused())
         screen.onNode(input).performTextInput("继续编辑")
         screen.onNodeWithContentDescription("打开工具箱").assertIsDisplayed()
+        val microphone = screen.onNodeWithTag("chat-composer-dictate").assertIsDisplayed().assertHasClickAction()
         val editingWidth = screen.onNode(input).fetchSemanticsNode().size.width
 
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         waitFor(input and isFocused(), count = 0)
         screen.onAllNodes(input).assertCountEquals(1)
         screen.onNode(input).assertTextContains("继续编辑")
+        microphone.assertIsDisplayed().assertHasClickAction()
         screen.onNodeWithContentDescription("打开工具箱").assertIsDisplayed()
         screen.onNodeWithTag("chat-model-trigger").assertIsDisplayed().assertHasClickAction()
             .assertContentDescriptionContains(screen.activity.getString(R.string.chat_controls_select_model))
