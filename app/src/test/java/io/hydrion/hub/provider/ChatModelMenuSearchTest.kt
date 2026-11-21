@@ -14,6 +14,12 @@ class ChatModelMenuSearchTest {
     private val second = ProviderModel("local-02", "常用模型")
     private val choices = listOf(first, second)
 
+    @Test fun compactWindowBadgeTruncatesToOneDecimalAtEachUnit() {
+        val examples = mapOf(999 to "999", 1000 to "1k", 128_500 to "128.5k", 999_999 to "999.9k",
+            1_000_000 to "1M", 1_048_576 to "1M", 1_299_999 to "1.2M")
+        examples.forEach { (tokens, display) -> assertEquals(display, browseTokenCount(tokens)) }
+    }
+
     @Test fun draftEditDismissalOnlyClosesEffortAndLeavesModelSearchIntact() {
         val picker = ChatModelPickerState()
         picker.open()

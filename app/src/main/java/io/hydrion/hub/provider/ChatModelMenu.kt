@@ -9,8 +9,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -79,9 +77,6 @@ internal fun ChatModelBrowsePage(
             picker.models(browsing.id)
         }
     }
-    val colors = MaterialTheme.colorScheme
-    val dark = colors.onSurface.luminance() > colors.surface.luminance()
-    val headingColor = if (dark) Color(0xFFAFAFAF) else colors.onSurfaceVariant
     val pageInsets = composerPadding + 8.dp
     Box(modifier.fillMaxSize()) {
         key(browsing?.id) {
@@ -94,7 +89,7 @@ internal fun ChatModelBrowsePage(
                 LazyColumn(Modifier.fillMaxSize().testTag("chat-provider-list"),
                     contentPadding = PaddingValues(top = 8.dp, bottom = pageInsets),
                     state = rememberLazyListState(initialFirstVisibleItemIndex = index)) {
-                    item { BrowseHeading(stringResource(R.string.chat_picker_provider), headingColor) }
+                    item { BrowseHeading(stringResource(R.string.chat_picker_provider)) }
                     items(providers, key = { it.id }) { candidate ->
                         val name = if (nameCounts.getValue(candidate.name) > 1)
                             "${candidate.name} · ${candidate.id}" else candidate.name
@@ -106,8 +101,8 @@ internal fun ChatModelBrowsePage(
             } else if (browsing == null) {
                 LazyColumn(Modifier.fillMaxSize().testTag("chat-model-list"),
                     contentPadding = PaddingValues(top = 8.dp, bottom = pageInsets)) {
-                    item { BrowseHeading(stringResource(R.string.chat_picker_provider), headingColor) }
-                    item { BrowseHeading(stringResource(R.string.chat_picker_models), headingColor) }
+                    item { BrowseHeading(stringResource(R.string.chat_picker_provider)) }
+                    item { BrowseHeading(stringResource(R.string.chat_picker_models)) }
                     item { Text(stringResource(R.string.chat_picker_no_models), Modifier.padding(horizontal = 14.dp)) }
                 }
             } else {
@@ -115,7 +110,7 @@ internal fun ChatModelBrowsePage(
                     entries.mapNotNull { (model, provider) -> model.takeIf { provider.id == browsing.id } }
                 }
                 ProviderModelsList(browsing, models, active?.route, picker, query.trim(), pageInsets,
-                    browsingScroll, filteredScroll, dark, interactive, hideForReturn, onEditModel) { next ->
+                    browsingScroll, filteredScroll, interactive, hideForReturn, onEditModel) { next ->
                     if (interactive && picker.modelListNavigation) {
                         val latest = store.catalog.value
                         val route = (next to browsing).route
@@ -137,7 +132,7 @@ internal fun ChatModelBrowsePage(
 private fun ProviderModelsList(
     provider: Provider, models: List<ProviderModel>, active: RemoteModel?, picker: ChatModelPickerState,
     query: String, pageInsets: Dp, browsingScroll: LazyListState, filteredScroll: LazyListState,
-    dark: Boolean, interactive: Boolean, hideForReturn: Boolean,
+    interactive: Boolean, hideForReturn: Boolean,
     onEditModel: (RemoteModel, PickerBrowseSnapshot) -> Unit, onPick: (ProviderModel) -> Unit,
 ) {
     val matches = remember(models, query) { matchingMenuModels(models, query) }
@@ -173,8 +168,6 @@ private fun ProviderModelsList(
         }
         picker.consumeBrowseRestore(restore, provider.id)
     }
-    val colors = MaterialTheme.colorScheme
-    val headingColor = if (dark) Color(0xFFAFAFAF) else colors.onSurfaceVariant
     BoxWithConstraints(Modifier.fillMaxSize().testTag("chat-model-list")) {
         val room = (maxHeight - pageInsets).coerceAtLeast(0.dp)
         // When the IME closes over a visit, keep the old browsing space until restoration.
@@ -185,18 +178,18 @@ private fun ProviderModelsList(
             contentPadding = PaddingValues(top = 8.dp, bottom = maxHeight - heldRoom)) {
             item(key = ProviderRow) {
                 Column {
-                    BrowseHeading(stringResource(R.string.chat_picker_provider), headingColor)
+                    BrowseHeading(stringResource(R.string.chat_picker_provider))
                     BrowseTile(provider.name, provider, null, null, Modifier.testTag("chat-model-provider-trigger")) {
                         if (interactive) picker.providers()
                     }
                 }
             }
-            item(key = ModelsHeading) { BrowseHeading(stringResource(R.string.chat_picker_models), headingColor) }
+            item(key = ModelsHeading) { BrowseHeading(stringResource(R.string.chat_picker_models)) }
             if (matches.isEmpty()) item(key = EmptyRow) {
                 val empty = if (models.isEmpty()) R.string.chat_picker_provider_empty else R.string.chat_picker_search_empty
                 Text(stringResource(empty), Modifier.testTag("chat-model-search-empty")
                     .semantics { liveRegion = LiveRegionMode.Polite }.padding(horizontal = 14.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    style = MaterialTheme.typography.bodySmall, color = browseColors().heading)
             }
             items(matches, key = { modelRowKey(provider.id, it.id) }) { model ->
                 val route = (model to provider).route
