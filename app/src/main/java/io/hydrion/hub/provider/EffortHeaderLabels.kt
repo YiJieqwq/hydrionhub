@@ -54,7 +54,7 @@ private fun rememberInkPaint(style: TextStyle): Paint {
 @Composable
 internal fun EffortHeaderLabels(
     title: String, modelName: String, titleTint: Color, cardWidth: Dp, startInset: Dp,
-    besideButtons: Boolean, modifier: Modifier,
+    besideButtons: Boolean, modifier: Modifier, action: Modifier, onModels: () -> Unit,
 ) {
     val titleStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 22.sp,
         letterSpacing = 0.sp, textAlign = TextAlign.Center)
@@ -76,9 +76,15 @@ internal fun EffortHeaderLabels(
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null,
             Modifier.size(14.dp).testTag("chat-model-name-chevron"), tint = secondary)
+        CompositionLocalProvider(LocalViewConfiguration provides exactPickerHitBounds()) {
+            Spacer(action)
+            val latest = rememberUpdatedState(onModels)
+            // A long label may extend under a side button; only its visible lower strip takes taps.
+            repeat(2) { Spacer(Modifier.pointerInput(Unit) { detectTapGestures { latest.value() } }) }
+        }
     }) { parts, limits ->
         val fullWidth = cardWidth.roundToPx()
-        val centerX = fullWidth / 2 - startInset.roundToPx()
+        val centerX = fullWidth / 2
         val buttonHeight = if (besideButtons) 48.dp.roundToPx() else 0
         val inlineWidth = (fullWidth - 2 * startInset.roundToPx()).coerceAtLeast(0)
         val arrow = parts[2].measure(Constraints())
@@ -108,24 +114,27 @@ internal fun EffortHeaderLabels(
         val lastY = (height - name.height).coerceAtLeast(0)
         val nameY = ((titleBaseline + height + railInset - nameInkSum) / 2f).roundToInt()
             .coerceIn(minOf(minNameY, lastY), lastY)
+        val nameX = centerX - name.width / 2
+        val arrowEnd = nameX + name.width + gap + arrow.width
+        val side = startInset.roundToPx()
+        val minTouch = 48.dp.roundToPx()
+        val gutter = minOf(6.dp.roundToPx(), (fullWidth - minTouch).coerceAtLeast(0) / 2)
+        val pad = 6.dp.roundToPx()
+        val hitStart = minOf(nameX - pad, centerX - minTouch / 2).coerceAtLeast(gutter)
+        val hitEnd = maxOf(arrowEnd + pad, centerX + (minTouch + 1) / 2).coerceAtMost(fullWidth - gutter)
+        val primaryStart = maxOf(hitStart, side)
+        val primaryEnd = minOf(hitEnd, fullWidth - side)
+        val main = parts[3].measure(Constraints.fixed(primaryEnd - primaryStart, height))
+        val lowerHeight = (height - buttonHeight).coerceAtLeast(0)
+        val startWing = parts[4].measure(Constraints.fixed(primaryStart - hitStart, lowerHeight))
+        val endWing = parts[5].measure(Constraints.fixed(hitEnd - primaryEnd, lowerHeight))
         layout(limits.maxWidth, height) {
             heading.placeRelative(centerX - heading.width / 2, titleBaseline - heading[FirstBaseline])
-            val nameX = centerX - name.width / 2
             name.placeRelative(nameX, nameY)
             arrow.placeRelative(nameX + name.width + gap, nameY + (name.height - arrow.height) / 2)
-        }
-    }
-}
-
-@Composable
-internal fun EffortHeaderSideTouches(modifier: Modifier, sideInset: Dp, onModels: () -> Unit) {
-    val action = rememberUpdatedState(onModels)
-    val touch = Modifier.fillMaxHeight().pointerInput(Unit) { detectTapGestures { action.value() } }
-    CompositionLocalProvider(LocalViewConfiguration provides exactPickerHitBounds()) {
-        Row(modifier) {
-            Spacer(touch.width(sideInset))
-            Spacer(Modifier.weight(1f))
-            Spacer(touch.width(sideInset))
+            main.placeRelative(primaryStart, 0)
+            if (startWing.width > 0) startWing.placeRelative(hitStart, buttonHeight)
+            if (endWing.width > 0) endWing.placeRelative(primaryEnd, buttonHeight)
         }
     }
 }

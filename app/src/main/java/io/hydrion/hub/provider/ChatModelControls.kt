@@ -127,17 +127,12 @@ internal fun ChatModelControls(
                 title = if (effort != null && shown != null) chatOptionLabel(effort, shown) else stringResource(R.string.chat_controls_default),
                 modelName = model.name, titleTint = titleTint, cardWidth = maxWidth, startInset = sideInset,
                 besideButtons = !splitHeader,
-                modifier = Modifier.fillMaxWidth().padding(
-                    start = sideInset, end = sideInset, top = if (splitHeader) resetTop + buttonWidth else 0.dp,
-                ).then(keepEditorFocus).testTag("chat-model-select")
+                modifier = Modifier.fillMaxWidth().padding(top = if (splitHeader) resetTop + buttonWidth else 0.dp),
+                action = keepEditorFocus.testTag("chat-model-select")
+                    .semantics { contentDescription = model.name }
                     .clickable(role = Role.Button, onClickLabel = selectLabel, onClick = onModels),
+                onModels = onModels,
             )
-            if (!splitHeader) {
-                // The name can extend beneath the side buttons. Extend its touch surface only
-                // below their 48dp targets; the central button remains the sole accessibility action.
-                EffortHeaderSideTouches(Modifier.matchParentSize().padding(top = buttonWidth),
-                    sideInset, onModels)
-            }
             val resetLabel = stringResource(R.string.chat_controls_reset)
             val resetAction = if (level == null) Modifier.semantics { disabled() }
                 else Modifier.clickable(role = Role.Button, onClick = onReset)

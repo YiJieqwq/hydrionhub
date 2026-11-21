@@ -121,6 +121,14 @@ class EffortHeaderLayoutTest {
                         screen.onNodeWithTag("test-header").performTouchInput { click(point - card.topLeft) }
                         screen.waitForIdle()
                     }
+                    val previousCalls = selected
+                    screen.runOnIdle { modelName.value = "Hydrion" }
+                    val shortHit = bounds("chat-model-select")
+                    val nameY = bounds("chat-model-name").center.y
+                    tap(Offset(shortHit.left - 3 * dp, nameY))
+                    tap(Offset(shortHit.right + 3 * dp, nameY))
+                    assertEquals("Neither side of the short name is a model action", 0, selected - previousCalls)
+                    screen.runOnIdle { modelName.value = model.name }
                     val oldSelection = selected
                     val oldFast = fastTapped
                     tap(arrow.center)
