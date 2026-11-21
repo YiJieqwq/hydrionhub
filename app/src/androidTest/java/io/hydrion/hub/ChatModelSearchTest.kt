@@ -285,25 +285,31 @@ class ChatModelSearchTest {
                 try {
                     exit.performTouchInput { click(center) }
                     clock.advanceTimeByFrame()
-                    clock.advanceTimeBy(ToolsPageTravelMillis / 2L)
-                    val middle = positions()
-                    clock.advanceTimeBy(ToolsPageTravelMillis / 2L - 16L)
-                    val nearEnd = positions()
-                    clock.advanceTimeBy(64)
+                    val frames = mutableListOf<List<Float>>()
+                    repeat(ToolsPageTravelMillis / 16 + 4) {
+                        clock.advanceTimeByFrame()
+                        // At the exact search endpoint the toolbar is measured but intentionally not placed.
+                        if (label.isDisplayed() && mic.isDisplayed()) frames += positions()
+                    }
                     val end = positions()
+                    assertTrue("Sampled the returning toolbar before landing", frames.size >= 5)
                     for (i in end.indices) {
-                        assertTrue("Toolbar approaches its docked anchor", kotlin.math.abs(middle[i] - end[i]) >= kotlin.math.abs(nearEnd[i] - end[i]))
-                        assertEquals("No last-frame lateral handoff", nearEnd[i], end[i], 2f * screen.density.density)
+                        assertTrue("Observed a genuine in-flight position", frames.any { kotlin.math.abs(it[i] - end[i]) > 2f })
+                        assertTrue("Both items travel towards their dock without reversing",
+                            frames.zipWithNext().all { (a, b) ->
+                                kotlin.math.abs(b[i] - end[i]) <= kotlin.math.abs(a[i] - end[i]) + 1f
+                            })
                         assertEquals("Same docked anchor with or without changing model", docked[i], end[i], 1f)
                     }
-                    assertEquals("Name and microphone travel as a group", end[1] - end[0], middle[1] - middle[0], 1.5f)
+                    for (frame in frames) assertEquals("The label and microphone travel together",
+                        end[1] - end[0], frame[1] - frame[0], 1.5f)
                     assertTrue(imeIsVisible())
                 } finally {
                     clock.autoAdvance = true
                 }
                 val expected = if (chooseOther) RemoteModel(second.id, "other-only") else RemoteModel(first.id, "batch-alpha")
                 screen.runOnIdle { assertEquals(expected, vm.providers.catalog.value.active[Mode.Chat]) }
-                if (!chooseOther) control("trigger").performClick()
+                control("trigger").performClick()
             }
         }
 
@@ -525,9 +531,20 @@ class ChatModelSearchTest {
             val savedOffset = rowOffset()
             assertEquals("First visible model should be partly scrolled", -inset, savedOffset, 1f)
             assertTrue(imeIsVisible())
-            row.performTouchInput { longClick(center) }
+            fun formHeight() = screen.onNodeWithTag("chat-model-form", useUnmergedTree = true).fetchSemanticsNode().size.height
+            val openingHeight = try {
+                screen.mainClock.autoAdvance = false
+                row.performTouchInput { longClick(center) }
+                screen.mainClock.advanceTimeByFrame()
+                screen.mainClock.advanceTimeBy(ModelEditorMotionMillis / 5L)
+                formHeight()
+            } finally {
+                screen.mainClock.autoAdvance = true
+            }
             control("editor").assertIsDisplayed()
             screen.waitUntil(15_000) { !imeIsVisible() }
+            assertEquals("The outgoing IME never crops the configuration form's measured viewport",
+                formHeight(), openingHeight)
             // The other provider uses the same local model ID but has external ID "vendor/atlas-v3".
             screen.onNodeWithContentDescription(screen.activity.getString(R.string.model_id)).assertTextContains("atlas/remote-b")
             val active = RemoteModel(first.id, "batch-alpha")
