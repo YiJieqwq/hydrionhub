@@ -1,5 +1,7 @@
 package io.hydrion.hub.runtime
 
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Before
@@ -57,6 +59,50 @@ class ProotEnvironmentTest {
 
     private fun assertReason(reason: ProotPreparation.Reason, actual: ProotPreparation) =
         assertEquals(ProotPreparation.Unavailable(reason), actual)
+
+    private fun compatibleTools() {
+        provision()
+        for (file in listOf(File(nativeDir, "libproot.so"), File(nativeDir, "libproot-loader.so"), File(rootfs, "bin/sh"))) {
+            val header = ByteArray(64)
+            byteArrayOf(0x7f, 0x45, 0x4c, 0x46, 2, 1, 1).copyInto(header)
+            header[16] = 3
+            header[18] = 183.toByte()
+            file.writeBytes(header)
+        }
+    }
+
+    @Test fun launcherProbeRequiresPublisherTrustAndMatchingActualElfFiles() = kotlinx.coroutines.runBlocking {
+        compatibleTools()
+        val probe = ProotLauncherCheck(start = { error("Must not start") })
+        suspend fun inspect(abis: Set<String>, trust: Set<String> = setOf(digest)) =
+            probe.inspect(files, catalog, env.id, trust, abis)
+        assertEquals(ProotCheck.Unavailable(ProotPreparation.Reason.UntrustedRootfs), inspect(setOf("arm64-v8a"), emptySet()))
+        assertEquals(ProotCheck.Outcome.IncompatibleAbi, inspect(setOf("x86_64")))
+        File(rootfs, "bin/sh").writeText("not an executable")
+        assertEquals(ProotCheck.Outcome.IncompatibleAbi, inspect(setOf("arm64-v8a")))
+    }
+
+    @Test fun probeBuildsOnlyVersionRequestAndReapsItsChildOnTimeoutAndCancellation() = kotlinx.coroutines.runBlocking {
+        compatibleTools()
+        val started = kotlinx.coroutines.CompletableDeferred<Process>()
+        fun probe(timer: Long, duration: String) = ProotLauncherCheck(start = { request ->
+            assertEquals(listOf(File(nativeDir, "libproot.so").canonicalPath, "--version"), request.command())
+            assertEquals(nativeDir.canonicalFile, request.directory())
+            assertTrue(request.environment().isEmpty())
+            assertEquals(File("/dev/null"), request.redirectInput().file())
+            assertEquals(File("/dev/null"), request.redirectOutput().file())
+            assertEquals(File("/dev/null"), request.redirectError().file())
+            // A known host test fixture stands in for the launcher. No guest or fixture ELF runs.
+            ProcessBuilder("/bin/sleep", duration).start().also { if (duration == "20") started.complete(it) }
+        }, timeoutMillis = timer)
+        suspend fun run(check: ProotLauncherCheck) = check.inspect(files, catalog, env.id, setOf(digest), setOf("arm64-v8a"))
+        assertEquals(ProotCheck.Outcome.LauncherResponded, run(probe(3000, "0")))
+        assertEquals(ProotCheck.Outcome.TimedOut, run(probe(10, "3")))
+        val job = launch { run(probe(30000, "20")) }
+        val child = kotlinx.coroutines.withTimeout(5000) { started.await() }
+        job.cancelAndJoin()
+        assertFalse(child.isAlive)
+    }
 
     @Test fun rejectsAmbiguousIdsHostPathsAndCwdTraversal() {
         for (bad in listOf("../work", "1-2-3-4-5", env.id.uppercase(), "/data/data/elsewhere")) {

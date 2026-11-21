@@ -37,6 +37,13 @@ internal class ProotEnvironmentStore(context: Context) {
         files.prepare(snapshot, environmentId, trustedRootfsDigests())
     }
 
+    suspend fun checkRuntime(environmentId: String): ProotCheck = withContext(Dispatchers.IO) {
+        val catalog = synchronized(lock) { read() }
+        val abis = if (android.os.Process.is64Bit()) android.os.Build.SUPPORTED_64_BIT_ABIS
+            else android.os.Build.SUPPORTED_32_BIT_ABIS
+        ProotLauncherCheck().inspect(files, catalog, environmentId, trustedRootfsDigests(), abis.toSet())
+    }
+
     suspend fun plan(environmentId: String, command: ProotGuestCommand): ProotPlan = withContext(Dispatchers.IO) {
         val snapshot = synchronized(lock) { read() }
         ProotPlan.Command.inspect(files, snapshot, environmentId, trustedRootfsDigests(), command)

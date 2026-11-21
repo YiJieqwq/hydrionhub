@@ -62,26 +62,26 @@ internal class ProotFiles(private val filesDir: File, private val nativeLibraryD
         require(Files.isDirectory(path, noLinks)) { "请先预置应用专属工作区目录。" }
     }
 
-    private fun imageExecutable(rootfs: Path, guestPath: String): Boolean {
+    private fun imageExecutable(rootfs: Path, guestPath: String): Path? {
         // Guest absolute symlinks are rooted in the guest image, never the Android host.
         val remaining = ArrayDeque(guestPath.removePrefix("/").split('/'))
         val mount = rootfs.resolve("workspace")
         var current = rootfs
         var links = 0
         while (remaining.isNotEmpty()) {
-            if (!Files.isDirectory(current, noLinks)) return false
+            if (!Files.isDirectory(current, noLinks)) return null
             when (val part = remaining.removeFirst()) {
                 "." -> continue
                 ".." -> {
-                    if (current == rootfs) return false
+                    if (current == rootfs) return null
                     current = current.parent
                 }
                 else -> {
                     val next = current.resolve(part)
                     // This directory would be overlaid by the workspace at runtime.
-                    if (next == mount) return false
+                    if (next == mount) return null
                     if (Files.isSymbolicLink(next)) {
-                        if (++links > 40) return false
+                        if (++links > 40) return null
                         val target = Files.readSymbolicLink(next)
                         if (target.isAbsolute) current = rootfs
                         target.map { it.toString() }.asReversed().forEach(remaining::addFirst)
@@ -91,7 +91,7 @@ internal class ProotFiles(private val filesDir: File, private val nativeLibraryD
                 }
             }
         }
-        return Files.isRegularFile(current, noLinks) && Files.isExecutable(current) && Files.size(current) > 0
+        return current.takeIf { Files.isRegularFile(it, noLinks) && Files.isExecutable(it) && Files.size(it) > 0 }
     }
 
     private fun packagedElf(path: Path): Boolean {
@@ -138,7 +138,7 @@ internal class ProotFiles(private val filesDir: File, private val nativeLibraryD
                 !Files.isDirectory(rootfs, noLinks)) return absent(ProotPreparation.Reason.IncompleteRootfs)
             val mount = below(rootfs, "workspace")
             if (!Files.isDirectory(mount, noLinks) || !Files.isDirectory(below(rootfs, "etc"), noLinks) ||
-                !Files.isDirectory(below(rootfs, "usr"), noLinks) || !imageExecutable(rootfs, "/bin/sh")) {
+                !Files.isDirectory(below(rootfs, "usr"), noLinks) || imageExecutable(rootfs, "/bin/sh") == null) {
                 return absent(ProotPreparation.Reason.IncompleteRootfs)
             }
             val work = workspacePath(privateRoot, workspace)
@@ -155,6 +155,35 @@ internal class ProotFiles(private val filesDir: File, private val nativeLibraryD
         }
     }
 
+    /** Check the actual ELF architecture of the package and guest shell without executing image contents. */
+    fun sameSupportedAbi(ready: ProotPreparation.Ready, supported: Set<String>): Boolean {
+        val shell = imageExecutable(ready.rootfs.toPath(), "/bin/sh") ?: return false
+        val launcher = elfAbi(ready.tools.launcher.toPath()) ?: return false
+        return launcher in supported && elfAbi(ready.tools.loader.toPath()) == launcher && elfAbi(shell) == launcher
+    }
+
+    private fun elfAbi(file: Path): String? = Files.newInputStream(file, noLinks).buffered().use { input ->
+        val header = ByteArray(20)
+        var read = 0
+        while (read < header.size) {
+            val n = input.read(header, read, header.size - read)
+            if (n <= 0) return@use null
+            read += n
+        }
+        if (header[0] != 0x7f.toByte() || header[1] != 'E'.code.toByte() || header[2] != 'L'.code.toByte() ||
+            header[3] != 'F'.code.toByte() || header[5] != 1.toByte() || header[6] != 1.toByte() ||
+            header[16].toInt() !in 2..3 || header[17] != 0.toByte()) return@use null
+        val bits = header[4].toInt()
+        when ((header[18].toInt() and 255) or ((header[19].toInt() and 255) shl 8)) {
+            3 -> "x86".takeIf { bits == 1 }
+            40 -> "armeabi-v7a".takeIf { bits == 1 }
+            62 -> "x86_64".takeIf { bits == 2 }
+            183 -> "arm64-v8a".takeIf { bits == 2 }
+            243 -> "riscv64".takeIf { bits == 2 }
+            else -> null
+        }
+    }
+
     /** Filesystem checks specific to planning, immediately after the environment preflight. */
     fun commandProblem(ready: ProotPreparation.Ready, command: ProotGuestCommand): ProotPreparation.Reason? {
         // PRoot uses ':' inside a bind argument to separate the host and guest paths.
@@ -162,7 +191,7 @@ internal class ProotFiles(private val filesDir: File, private val nativeLibraryD
             return ProotPreparation.Reason.UnsafeOrUnreadablePath
         }
         return try {
-            if (imageExecutable(ready.rootfs.toPath(), command.executable)) null
+            if (imageExecutable(ready.rootfs.toPath(), command.executable) != null) null
             else ProotPreparation.Reason.MissingGuestExecutable
         } catch (_: IOException) {
             ProotPreparation.Reason.UnsafeOrUnreadablePath
