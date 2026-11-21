@@ -71,8 +71,8 @@ internal class ConversationSession(
         val emptyThreads = parked.toMutableMap()
         if (!screen.modeLocked) emptyThreads[owner] = screen.current
         val pending = emptyThreads.values.filter { item ->
-            (hasSeveral || includeUnsent || item.id == restoredUnsentId) &&
-                (item.id in drafts || item.id == restoredUnsentId || (hasSeveral && (item.mode != Mode.Chat || item.environmentId != null)))
+            item.environmentId != null || (hasSeveral || includeUnsent || item.id == restoredUnsentId) &&
+                (item.id in drafts || item.id == restoredUnsentId || (hasSeveral && item.mode != Mode.Chat))
         }
         pending.forEach { savedDrafts[it.id] = drafts[it.id] ?: Draft() }
         val resume = if (hasSeveral || includeUnsent) history.filter { lastThreads[it.assistantId] == it.id }

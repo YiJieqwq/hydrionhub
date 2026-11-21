@@ -202,7 +202,6 @@ class SettingsSearchTest {
         val previews = listOf(
             "登录账户" to R.string.settings_signed_in_accounts,
             "signed-in accounts" to R.string.settings_signed_in_accounts,
-            "containers" to R.string.settings_environments,
         )
         for ((query, id) in previews) {
             search().performTextReplacement(query)
@@ -213,6 +212,7 @@ class SettingsSearchTest {
             "记忆" to R.string.settings_memory,
             "mCp" to R.string.settings_mcp,
             "Skill" to R.string.settings_skill,
+            "containers" to R.string.settings_environments,
             "默认模型" to R.string.settings_defaults, "web search" to R.string.settings_web_search)) {
             search().performTextReplacement(query)
             screen.onNodeWithText(screen.activity.getString(id)).assertIsDisplayed().assertHasClickAction()

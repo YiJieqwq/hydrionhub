@@ -1,0 +1,34 @@
+<resources>
+    <string name="container_section">Container</string>
+    <string name="container_environments">Environments</string>
+    <string name="container_add">Register container</string>
+    <string name="container_edit">Container settings</string>
+    <string name="env_add">New environment</string>
+    <string name="env_edit">Environment settings</string>
+    <string name="runtime_name">Name</string>
+    <string name="runtime_expected">Expected rootfs SHA-256 (optional)</string>
+    <string name="runtime_expected_hint">Only publisher-approved images can pass the runtime check.</string>
+    <string name="runtime_digest_invalid">Enter 64 hexadecimal digits.</string>
+    <string name="container_awaiting">Awaiting a trusted root filesystem</string>
+    <string name="container_registered">Image fingerprint registered</string>
+    <string name="env_mount">Workspace mount</string>
+    <string name="env_none">No environments yet</string>
+    <string name="env_empty_hint">Each environment uses its own app-private workspace.</string>
+    <string name="env_register_first">Register a container to create an environment.</string>
+    <string name="env_binding">Use in this chat</string>
+    <string name="env_unbinding">Detach from this chat</string>
+    <string name="env_check">Check runtime</string>
+    <string name="env_loading">Loading environments…</string>
+    <string name="runtime_error">Could not read or save the local configuration.</string>
+    <string name="env_probe_ok">Launcher responded. Guest execution has not been tested.</string>
+    <string name="env_missing_tools">The app does not include the required PRoot binaries.</string>
+    <string name="env_untrusted">No publisher-approved image matches this container.</string>
+    <string name="env_rootfs_invalid">The installed root filesystem is missing or incomplete.</string>
+    <string name="env_workspace_invalid">The workspace or working directory is unavailable.</string>
+    <string name="env_bad_abi">The launcher, loader and guest shell must match the device architecture.</string>
+    <string name="env_probe_error">The launcher did not complete the check.</string>
+    <string name="env_unsafe">The configured files could not be safely accessed.</string>
+    <string name="env_timed_out">Launcher check timed out.</string>
+    <string name="env_cleanup_incomplete">The launcher did not exit within the cleanup deadline.</string>
+    <string name="env_retry">Retry</string>
+</resources>

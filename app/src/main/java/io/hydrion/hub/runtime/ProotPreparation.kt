@@ -128,13 +128,14 @@ internal class ProotFiles(private val filesDir: File, private val nativeLibraryD
             if (!packagedElf(proot) || !packagedElf(loader)) {
                 return absent(ProotPreparation.Reason.RuntimeNotPackaged)
             }
-            if (container.rootfsSha256 !in trustedDigests) return absent(ProotPreparation.Reason.UntrustedRootfs)
+            val digest = container.rootfsSha256
+            if (digest == null || digest !in trustedDigests) return absent(ProotPreparation.Reason.UntrustedRootfs)
             val privateRoot = ownedRoot(filesDir)
             val instance = below(privateRoot, "proot-v1", "containers", container.id)
             val rootfs = below(instance, "rootfs")
             val receipt = below(instance, "installed.sha256")
             // This host-private receipt is reserved for a trusted provisioner after full extraction.
-            if (!receiptMatches(receipt, container.rootfsSha256) ||
+            if (!receiptMatches(receipt, digest) ||
                 !Files.isDirectory(rootfs, noLinks)) return absent(ProotPreparation.Reason.IncompleteRootfs)
             val mount = below(rootfs, "workspace")
             if (!Files.isDirectory(mount, noLinks) || !Files.isDirectory(below(rootfs, "etc"), noLinks) ||

@@ -15,10 +15,14 @@ internal fun isGuestPath(value: String): Boolean =
             part.isNotEmpty() && part != "." && part != ".." && part.none { it == '\\' || it.isISOControl() }
         }
 
-internal data class ProotContainer(val id: String, val rootfsSha256: String) {
+internal fun validRuntimeName(name: String): Boolean =
+    name.isNotBlank() && name.length <= 64 && name == name.trim() && name.none(Char::isISOControl)
+
+internal data class ProotContainer(val id: String, val rootfsSha256: String?, val name: String = "") {
     init {
         require(isRuntimeId(id)) { "容器 ID 须为规范 UUID。" }
-        require(rootfsDigest.matches(rootfsSha256)) { "容器镜像须有有效的 SHA-256 摘要。" }
+        require(name.isEmpty() || validRuntimeName(name))
+        require(rootfsSha256 == null || rootfsDigest.matches(rootfsSha256)) { "容器镜像须有有效的 SHA-256 摘要。" }
     }
 }
 
@@ -30,9 +34,11 @@ internal data class ProotEnvironment(
     val id: String,
     val containerId: String,
     val workspaceId: String = id,
-    val guestCwd: String = "/workspace"
+    val guestCwd: String = "/workspace",
+    val name: String = ""
 ) {
     init {
+        require(name.isEmpty() || validRuntimeName(name))
         require(listOf(id, containerId, workspaceId).all(::isRuntimeId)) { "环境及其引用须为规范 UUID。" }
         require(isGuestPath(guestCwd) && (guestCwd == "/workspace" || guestCwd.startsWith("/workspace/"))) {
             "环境工作目录须位于 /workspace 中。"
@@ -67,15 +73,29 @@ internal data class ProotCatalog(
     fun withEnvironment(environment: ProotEnvironment) =
         if (environment in environments) this else copy(environments = environments + environment)
 
+    fun editContainer(id: String, name: String, digest: String?): ProotCatalog {
+        require(validRuntimeName(name) && containers.any { it.id == id })
+        return copy(containers = containers.map { if (it.id == id) it.copy(name = name, rootfsSha256 = digest) else it })
+    }
+
+    fun renameEnvironment(id: String, name: String): ProotCatalog {
+        require(validRuntimeName(name) && environments.any { it.id == id })
+        return copy(environments = environments.map { if (it.id == id) it.copy(name = name) else it })
+    }
+
     fun toJson(): JSONObject = JSONObject().put("version", 1)
         .put("containers", JSONArray().apply {
-            containers.forEach { put(JSONObject().put("id", it.id).put("rootfsSha256", it.rootfsSha256)) }
+            containers.forEach {
+                put(JSONObject().put("id", it.id).put("name", it.name).apply {
+                    if (it.rootfsSha256 != null) put("rootfsSha256", it.rootfsSha256) else put("awaitingImage", true)
+                })
+            }
         })
         .put("workspaces", JSONArray().apply { workspaces.forEach { put(JSONObject().put("id", it.id)) } })
         .put("environments", JSONArray().apply {
             environments.forEach {
                 put(JSONObject().put("id", it.id).put("containerId", it.containerId)
-                    .put("workspaceId", it.workspaceId).put("guestCwd", it.guestCwd))
+                    .put("workspaceId", it.workspaceId).put("guestCwd", it.guestCwd).put("name", it.name))
             }
         })
 
@@ -88,10 +108,14 @@ internal data class ProotCatalog(
             }
             // Existing configurations may reference several containers. Only new registrations are limited.
             return ProotCatalog(
-                rows("containers") { ProotContainer(it.getString("id"), it.getString("rootfsSha256")) },
+                rows("containers") {
+                    val digest = if (!it.has("rootfsSha256") && it.optBoolean("awaitingImage")) null
+                        else it.getString("rootfsSha256")
+                    ProotContainer(it.getString("id"), digest, it.optString("name"))
+                },
                 rows("workspaces") { ProotWorkspace(it.getString("id")) },
                 rows("environments") { ProotEnvironment(it.getString("id"), it.getString("containerId"),
-                    it.getString("workspaceId"), it.getString("guestCwd")) }
+                    it.getString("workspaceId"), it.getString("guestCwd"), it.optString("name")) }
             )
         }
     }

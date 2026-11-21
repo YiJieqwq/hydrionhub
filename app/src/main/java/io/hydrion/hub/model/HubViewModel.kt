@@ -37,7 +37,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     private var changedDuringLoad = false
     internal val providers = ProviderStore(app)
     internal val webSearch = WebSearchStore(app)
-    private val environments by lazy { ProotEnvironmentStore(app) }
+    internal val environments by lazy { ProotEnvironmentStore(app) }
     private val images = GeneratedImageStore(app)
     private val generation = ImageGenerationRepository(
         ChatGenerationRepository({ providers.catalog.value }, providers::sessionKey, app::responsesImageSources),

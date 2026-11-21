@@ -1,0 +1,34 @@
+<resources>
+    <string name="container_section">容器</string>
+    <string name="container_environments">环境</string>
+    <string name="container_add">登记容器</string>
+    <string name="container_edit">容器设置</string>
+    <string name="env_add">新建环境</string>
+    <string name="env_edit">环境设置</string>
+    <string name="runtime_name">名称</string>
+    <string name="runtime_expected">预期 rootfs SHA-256（可选）</string>
+    <string name="runtime_expected_hint">只有发布者信任的镜像才能通过运行检查。</string>
+    <string name="runtime_digest_invalid">请输入 64 位十六进制摘要。</string>
+    <string name="container_awaiting">等待预置受信任的根文件系统</string>
+    <string name="container_registered">已登记镜像摘要</string>
+    <string name="env_mount">工作区挂载</string>
+    <string name="env_none">暂无环境</string>
+    <string name="env_empty_hint">每个环境使用独立的应用专属工作区。</string>
+    <string name="env_register_first">请先登记容器，再新建环境。</string>
+    <string name="env_binding">在当前会话使用</string>
+    <string name="env_unbinding">解除当前会话绑定</string>
+    <string name="env_check">检查运行条件</string>
+    <string name="env_loading">正在读取环境…</string>
+    <string name="runtime_error">无法读取或保存本机配置。</string>
+    <string name="env_probe_ok">启动器已响应，尚未运行容器内程序。</string>
+    <string name="env_missing_tools">当前应用未配备所需的 PRoot 程序。</string>
+    <string name="env_untrusted">尚无与此容器匹配的发布者受信镜像。</string>
+    <string name="env_rootfs_invalid">未找到完整的已安装根文件系统。</string>
+    <string name="env_workspace_invalid">工作区或工作目录不可用。</string>
+    <string name="env_bad_abi">启动器、加载器和容器 shell 必须匹配设备架构。</string>
+    <string name="env_probe_error">启动器未能完成检查。</string>
+    <string name="env_unsafe">无法安全访问登记的文件。</string>
+    <string name="env_timed_out">启动器检查超时。</string>
+    <string name="env_cleanup_incomplete">启动器未在回收期限内退出。</string>
+    <string name="env_retry">重试</string>
+</resources>

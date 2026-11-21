@@ -10,6 +10,7 @@ import java.io.FileNotFoundException
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.util.UUID
 
 /** App-private configuration only. No external path, command, permission, or mount comes from the catalog. */
 internal class ProotEnvironmentStore(context: Context) {
@@ -17,6 +18,27 @@ internal class ProotEnvironmentStore(context: Context) {
     private val file = File(app.filesDir, "proot-environments-v1.json")
     private val catalogFile = AtomicFile(file)
     private val files = ProotFiles(app.filesDir, app.applicationInfo.nativeLibraryDir?.let(::File))
+
+    suspend fun catalog(): ProotCatalog = withContext(Dispatchers.IO) { synchronized(lock) { read() } }
+
+    suspend fun saveContainer(id: String?, name: String, digest: String?) = update { catalog ->
+        require(validRuntimeName(name))
+        if (id == null) catalog.withContainer(ProotContainer(UUID.randomUUID().toString(), digest, name))
+        else catalog.editContainer(id, name, digest)
+    }
+
+    suspend fun createEnvironment(containerId: String, name: String): Unit = withContext(Dispatchers.IO) {
+        require(validRuntimeName(name))
+        synchronized(lock) {
+            val catalog = read()
+            val workspace = ProotWorkspace(UUID.randomUUID().toString())
+            val environment = ProotEnvironment(UUID.randomUUID().toString(), containerId, workspace.id, name = name)
+            val next = catalog.withWorkspace(workspace).withEnvironment(environment)
+            createManagedWorkspace(app.filesDir, workspace) { write(next) }
+        }
+    }
+
+    suspend fun renameEnvironment(id: String, name: String) = update { it.renameEnvironment(id, name) }
 
     suspend fun getEnvironment(id: String): ProotEnvironment? = withContext(Dispatchers.IO) {
         if (!isRuntimeId(id)) return@withContext null
@@ -79,16 +101,19 @@ internal class ProotEnvironmentStore(context: Context) {
         synchronized(lock) {
             val current = read()
             val next = transform(current)
-            if (next == current) return@synchronized
-            val encoded = next.toJson().toString().toByteArray(Charsets.UTF_8)
-            val output = catalogFile.startWrite()
-            try {
-                output.write(encoded)
-                catalogFile.finishWrite(output)
-            } catch (failure: Throwable) {
-                catalogFile.failWrite(output)
-                throw failure
-            }
+            if (next != current) write(next)
+        }
+    }
+
+    private fun write(next: ProotCatalog) {
+        val encoded = next.toJson().toString().toByteArray(Charsets.UTF_8)
+        val output = catalogFile.startWrite()
+        try {
+            output.write(encoded)
+            catalogFile.finishWrite(output)
+        } catch (failure: Throwable) {
+            catalogFile.failWrite(output)
+            throw failure
         }
     }
 

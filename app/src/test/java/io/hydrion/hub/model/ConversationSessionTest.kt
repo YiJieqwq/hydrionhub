@@ -95,6 +95,10 @@ class ConversationSessionTest {
         val environmentId = newId()
         session.bindEnvironment(draftId, environmentId)
         assertTrue(session.snapshot().history.none { it.id == draftId })
+        val reopened = ConversationSession(this, FakeGenerationRepository {}, {})
+        reopened.restore(decodeWorkspace(encodeWorkspace(session.snapshot())))
+        assertEquals(draftId, reopened.state.value.current.id)
+        assertEquals(environmentId, reopened.state.value.current.environmentId)
 
         session.openConversation(original.id)
         assertEquals(null, session.state.value.current.environmentId)
