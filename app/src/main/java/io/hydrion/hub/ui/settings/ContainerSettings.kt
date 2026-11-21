@@ -191,6 +191,7 @@ private fun RuntimeEditor(isContainer: Boolean, container: ProotContainer?, envi
             OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), enabled = !busy, singleLine = true,
                 label = { Text(stringResource(R.string.runtime_name)) })
             if (isContainer) {
+                UbuntuArchivePicker(!busy) { digest = it }
                 OutlinedTextField(digest, { digest = it }, Modifier.fillMaxWidth(), enabled = !busy, singleLine = true,
                     label = { Text(stringResource(R.string.runtime_expected)) }, isError = !digestValid,
                     supportingText = { Text(stringResource(if (digestValid) R.string.runtime_expected_hint else R.string.runtime_digest_invalid)) })

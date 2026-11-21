@@ -1,0 +1,9 @@
+<resources>
+    <string name="ubuntu_archive_choose">Check a local Ubuntu Base 26.04.1 archive</string>
+    <string name="ubuntu_archive_ok">Matches the published checksum for %1$s. Device ABI matches. Installation is pending.</string>
+    <string name="ubuntu_archive_abi">Matches %1$s, but this device does not advertise the required ABI.</string>
+    <string name="ubuntu_archive_other">This file does not match the published 26.04.1 arm64 or amd64 archives.</string>
+    <string name="ubuntu_archive_large">The file exceeds the 64 MiB verification limit.</string>
+    <string name="ubuntu_archive_error">Could not read the selected local file.</string>
+    <string name="ubuntu_archive_use">Use this expected fingerprint</string>
+</resources>

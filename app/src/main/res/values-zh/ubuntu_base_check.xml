@@ -1,0 +1,9 @@
+<resources>
+    <string name="ubuntu_archive_choose">校验本地 Ubuntu Base 26.04.1 镜像</string>
+    <string name="ubuntu_archive_ok">%1$s 与官方公布的校验值匹配，架构与设备相符。尚未安装。</string>
+    <string name="ubuntu_archive_abi">与 %1$s 的校验值匹配，但此设备未声明支持该架构。</string>
+    <string name="ubuntu_archive_other">此文件与已公布的 26.04.1 arm64 和 amd64 镜像均不匹配。</string>
+    <string name="ubuntu_archive_large">文件超过 64 MiB 校验上限。</string>
+    <string name="ubuntu_archive_error">无法读取选中的本地文件。</string>
+    <string name="ubuntu_archive_use">使用此预期指纹</string>
+</resources>
