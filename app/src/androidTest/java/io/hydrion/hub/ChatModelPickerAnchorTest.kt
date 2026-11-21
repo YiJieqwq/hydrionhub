@@ -1,5 +1,6 @@
 package io.hydrion.hub
 
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.ViewConfiguration
 import androidx.activity.compose.setContent
@@ -22,12 +23,16 @@ import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -47,7 +52,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import io.hydrion.hub.model.HubViewModel
+import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -79,22 +86,42 @@ class ChatModelPickerAnchorTest {
 
     @Test fun effortCardClearsParkedAndKeyboardOpenMultilineDrafts() {
         val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
-        val previous = screen.runOnIdle { vm.state.value.draft.text }
+        val title = "picker-" + UUID.randomUUID().toString().take(8)
+        val draft = "first line\nsecond line\nthird line"
+        val id = screen.runOnIdle {
+            vm.newConversation()
+            vm.setDraft(title)
+            vm.send("Hydrion")
+            vm.stop()
+            vm.setDraft(draft)
+            vm.state.value.current.id
+        }
         try {
-            screen.runOnIdle { vm.setDraft("first line\nsecond line\nthird line") }
-            trigger.performClick()
+            screen.runOnIdle { vm.newConversation() }
+            screen.onNodeWithContentDescription("打开侧栏").performClick()
+            screen.onNode(hasText(title) and hasContentDescription("Chat") and hasClickAction()).performClick()
+            editor.assertIsNotFocused().assertTextEquals(draft)
+            line.performTouchInput { click(center) }
+            screen.waitUntil(15_000) { keyboardVisible() }
+            card.assertDoesNotExist()
+            repeat(2) {
+                trigger.performTouchInput { click(center) }
+                assertAboveComposer()
+                editor.assertIsFocused().assertTextEquals(draft)
+                assertTrue("The model picker must keep the real IME open", keyboardVisible())
+                trigger.performTouchInput { click(center) }
+                card.assertDoesNotExist()
+                assertTrue("Closing the picker must preserve the editing session", keyboardVisible())
+            }
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            screen.waitUntil(15_000) { !keyboardVisible() }
+            trigger.performTouchInput { click(center) }
             assertAboveComposer()
             val density = screen.activity.resources.displayMetrics.density
             val viewport = bounds("chat-picker-viewport")
             assertEquals(minOf(288f * density, viewport.width - 24f * density), bounds("chat-model-card").width, 2f)
-
-            line.performTouchInput { click(center) }
-            screen.waitUntil(15_000) { keyboardVisible() }
-            card.assertDoesNotExist()
-            trigger.performClick()
-            assertAboveComposer()
         } finally {
-            screen.runOnIdle { vm.setDraft(previous) }
+            screen.runOnIdle { vm.deleteConversation(id) }
         }
     }
 

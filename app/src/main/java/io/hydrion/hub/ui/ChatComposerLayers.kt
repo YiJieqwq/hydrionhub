@@ -76,6 +76,8 @@ internal fun ChatComposerLayers(
     val safe = WindowInsets.safeDrawing
     var consumed by remember { mutableStateOf(WindowInsets(0, 0, 0, 0)) }
     SubcomposeLayout(modifier.onConsumedWindowInsetsChanged { consumed = it }) { limits ->
+        // Opening the picker needs a measure pass before placement reads the capsule's alignment lines.
+        val needsAnchor = picker != null && trackPickerAnchor()
         val width = minOf(limits.maxWidth, ChatHeaderLayout.MaxWidth.roundToPx())
         val contentLimits = limits.copy(minWidth = width, maxWidth = width)
         val bar = subcompose(WorkspaceLayer.Composer, composer).single()
@@ -100,7 +102,7 @@ internal fun ChatComposerLayers(
             // Read alignment lines from the finally placed toolbar, including RTL siblings.
             // The picker is measured and placed in this same frame.
             if (picker != null) {
-                val capsule = if (trackPickerAnchor()) bar.capsuleBounds() else null
+                val capsule = if (needsAnchor) bar.capsuleBounds() else null
                 val bounds = capsule?.translate(pickerOffset)
                 val label = capsule?.let { bar.pickerModelLabel()?.translate(pickerOffset) }
                 val modelTravelX = if (capsule != null) bar.pickerModelTravelX() else 0

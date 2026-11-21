@@ -445,10 +445,14 @@ internal fun HubComposer(
     val textTop = lerp(FoldedTextTop, OpenTextTop, toolbar)
     var draftOverflowPx by remember(state.current.id, state.current.mode) { mutableIntStateOf(0) }
     val safeArea = WindowInsets.safeDrawing
-    val pickerRoom = if (!pickerOpen) Modifier else Modifier.layout { measurable, limits ->
-        val keep = (editorMinHeight + controlRowHeight + bottomGap).roundToPx()
-        val height = pickerComposerMaxHeight(limits.maxHeight, safeArea.getTop(this), keep)
-        val composer = measurable.measure(limits.copy(maxHeight = height.coerceAtLeast(limits.minHeight)))
+    // Keep the same measured node between the capsule and its parent when the picker opens.
+    val pickerRoom = Modifier.layout { measurable, limits ->
+        val constraints = if (pickerOpen) {
+            val keep = (editorMinHeight + controlRowHeight + bottomGap).roundToPx()
+            val height = pickerComposerMaxHeight(limits.maxHeight, safeArea.getTop(this), keep)
+            limits.copy(maxHeight = height.coerceAtLeast(limits.minHeight))
+        } else limits
+        val composer = measurable.measure(constraints)
         layout(composer.width, composer.height) { composer.place(0, 0) }
     }
     Column(modifier.then(pickerRoom).fillMaxWidth().padding(start = sideInset, end = sideInset, bottom = bottomGap)) {
