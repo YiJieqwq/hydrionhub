@@ -13,11 +13,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.input.TextFieldValue
-import io.hydrion.hub.ui.ChatPanelMotionMillis
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-internal const val ToolsPageTravelMillis = ChatPanelMotionMillis
+internal const val ToolsPageTravelMillis = 320
 
 // A symmetric curve leaves half the visible height and panel travel for the second half.
 private val ToolsTravelEasing = CubicBezierEasing(.2f, 0f, .8f, 1f)
