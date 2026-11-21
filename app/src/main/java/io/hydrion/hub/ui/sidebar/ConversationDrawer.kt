@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -41,6 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
 import io.hydrion.hub.model.Conversation
+import io.hydrion.hub.ui.profile.LocalProfileStore
+import io.hydrion.hub.ui.profile.ProfileAvatar
 import io.hydrion.hub.ui.theme.IonMark
 import java.time.Instant
 import java.time.LocalDate
@@ -155,17 +158,33 @@ internal fun ConversationDrawer(
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 12.dp, top = 6.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(36.dp).background(colors.surfaceContainerHigh, CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Outlined.PersonOutline, null, Modifier.size(21.dp))
-                }
-                Text(stringResource(R.string.drawer_you), Modifier.weight(1f).padding(start = 18.dp),
-                    fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                IconButton(onSettings, Modifier.testTag("drawer-settings")) {
-                    Icon(Icons.Outlined.Settings, stringResource(R.string.drawer_settings), Modifier.size(22.dp))
-                }
-            }
+            DrawerFooter(onNew, onSettings)
+        }
+    }
+}
+
+@Composable
+private fun DrawerFooter(onNew: () -> Unit, onSettings: () -> Unit) {
+    val context = LocalContext.current
+    val store = remember(context) { LocalProfileStore.shared(context) }
+    val profile by store.profile.collectAsState()
+    val colors = MaterialTheme.colorScheme
+    val newChat = stringResource(R.string.drawer_new)
+    val settings = stringResource(R.string.drawer_settings)
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(Modifier.clip(CircleShape).background(colors.primary)
+            .clickable(role = Role.Button, onClickLabel = newChat, onClick = onNew).testTag("drawer-new-chat")
+            .heightIn(min = 48.dp).padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.Edit, null, Modifier.size(19.dp), tint = colors.onPrimary)
+            Text(stringResource(R.string.drawer_chat), color = colors.onPrimary, fontSize = 15.sp,
+                fontWeight = FontWeight.Medium, maxLines = 1)
+        }
+        Box(Modifier.size(48.dp).clip(CircleShape).background(colors.surfaceContainerHigh)
+            .testTag("drawer-settings").clickable(role = Role.Button, onClick = onSettings)
+            .semantics { contentDescription = settings }, contentAlignment = Alignment.Center) {
+            ProfileAvatar(profile, Modifier.size(32.dp))
         }
     }
 }

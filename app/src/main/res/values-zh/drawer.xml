@@ -20,4 +20,5 @@
     <string name="drawer_expanded">已展开</string>
     <string name="drawer_collapsed">已折叠</string>
     <string name="drawer_dismiss">关闭侧栏</string>
+    <string name="drawer_chat">聊天</string>
 </resources>

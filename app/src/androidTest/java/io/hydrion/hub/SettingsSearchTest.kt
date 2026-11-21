@@ -20,7 +20,10 @@ class SettingsSearchTest {
 
     private fun openSettings() {
         screen.onNodeWithContentDescription("打开侧栏").performClick()
-        screen.onNodeWithTag("drawer-settings").performClick()
+        val chat = screen.onNodeWithTag("drawer-new-chat").assertIsDisplayed()
+        val avatar = screen.onNodeWithTag("drawer-settings").assertIsDisplayed()
+        assertEquals(chat.fetchSemanticsNode().boundsInRoot.center.y, avatar.fetchSemanticsNode().boundsInRoot.center.y, 1f)
+        avatar.performClick()
         search().assertIsDisplayed()
     }
 
