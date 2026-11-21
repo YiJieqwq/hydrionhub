@@ -8,7 +8,9 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
@@ -77,7 +79,7 @@ class ComposerEffortGeometryTest {
         }
     }
 
-    @Test fun changingEffortKeepsComposerNameAndPickerRowInPlace() {
+    @Test fun changingEffortKeepsComposerTrailingEdgeAndPickerRowInPlace() {
         // Exercise the descender in High even when the emulator runs in Chinese.
         screen.activityRule.scenario.onActivity { activity ->
             val config = Configuration(activity.resources.configuration).apply { setLocale(Locale.ENGLISH) }
@@ -95,41 +97,51 @@ class ComposerEffortGeometryTest {
         }
     }
 
-    @Test fun effortInkStartsBesideTheNameEvenWhenTheSelectedLabelIsShorter() {
+    @Test fun modelAndEffortEndTogetherAtTheToolbarAnchor() {
         val direction = mutableStateOf(LayoutDirection.Ltr)
         val width = mutableStateOf(160.dp)
+        val model = mutableStateOf("Hydrion")
         val selected = mutableStateOf<String?>("Medium")
         val choices = listOf("Medium", "High")
         screen.activityRule.scenario.onActivity { activity ->
             activity.setContent {
                 CompositionLocalProvider(LocalLayoutDirection provides direction.value) {
-                    Box(Modifier.width(width.value)) {
-                        ChatTriggerText(ChatTriggerLabel("Hydrion", selected.value, effortLabels = choices),
+                    Box(Modifier.width(width.value).testTag("label-space"), contentAlignment = Alignment.CenterEnd) {
+                        ChatTriggerText(ChatTriggerLabel(model.value, selected.value, effortLabels = choices),
                             dark = true, style = TextStyle(fontSize = 14.sp), gapPx = 6, modifier = Modifier)
                     }
                 }
             }
         }
-        for (dir in listOf(LayoutDirection.Ltr, LayoutDirection.Rtl)) {
-            for (available in listOf(160.dp, 72.dp)) {
-                screen.runOnIdle { direction.value = dir; width.value = available; selected.value = "Medium" }
-                val name = screen.onNodeWithText("Hydrion", useUnmergedTree = true)
-                val initial = name.fetchSemanticsNode().boundsInRoot
+        for (dir in LayoutDirection.values()) for (available in listOf(160.dp, 72.dp)) {
+            for (modelName in listOf("Hydrion", "A long model name that needs truncation")) {
+                screen.runOnIdle { direction.value = dir; width.value = available; model.value = modelName }
+                val area = tag("label-space").fetchSemanticsNode().boundsInRoot
+                val name = screen.onNodeWithText(modelName, useUnmergedTree = true)
                 for (effort in choices) {
                     screen.runOnIdle { selected.value = effort }
-                    val label = screen.onNodeWithText(effort, useUnmergedTree = true)
-                    val slot = label.fetchSemanticsNode().boundsInRoot
-                    assertEquals(initial, name.fetchSemanticsNode().boundsInRoot)
+                    val nameBox = name.fetchSemanticsNode().boundsInRoot
+                    val suffix = screen.onNodeWithText(effort, useUnmergedTree = true)
+                    val slot = suffix.fetchSemanticsNode().boundsInRoot
                     val lines = mutableListOf<TextLayoutResult>()
-                    label.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(lines) }
-                    val text = lines.single()
-                    val gap = if (dir == LayoutDirection.Ltr) slot.left + text.getLineLeft(0) - initial.right
-                        else initial.left - (slot.left + text.getLineRight(0))
-                    assertEquals("Visible gap for $effort in $dir at $available", 6f, gap, 1f)
+                    suffix.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(lines) }
+                    val left = slot.left + lines.single().getLineLeft(0)
+                    val right = slot.left + lines.single().getLineRight(0)
+                    val rtl = dir == LayoutDirection.Rtl
+                    assertEquals("Suffix ends at the available edge", if (rtl) area.left else area.right,
+                        if (rtl) left else right, 1f)
+                    assertEquals("One space between visible labels", 6f,
+                        if (rtl) nameBox.left - right else left - nameBox.right, 1f)
+                    if (modelName != "Hydrion") {
+                        val layouts = mutableListOf<TextLayoutResult>()
+                        name.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+                        assertTrue(layouts.single().isLineEllipsized(0))
+                    }
                 }
                 screen.runOnIdle { selected.value = null }
-                name.assertExists()
-                screen.onNodeWithText("High").assertDoesNotExist()
+                val onlyName = name.fetchSemanticsNode().boundsInRoot
+                if (dir == LayoutDirection.Ltr) assertEquals(area.right, onlyName.right, 1f)
+                else assertEquals(area.left, onlyName.left, 1f)
             }
         }
     }
@@ -137,9 +149,7 @@ class ComposerEffortGeometryTest {
     private fun checkAdjustable(choices: List<String>) {
         val model = ProviderModel("geometry", "Atlas", listOf(Capability("effort", "Effort", choices)))
         withPicker(model) { vm ->
-            val name = screen.onNode(hasText(model.name) and hasAnyAncestor(hasTestTag("chat-model-source-label")),
-                useUnmergedTree = true)
-            fun boxes(): List<Rect> = listOf(name, tag("chat-composer-dictate"), tag("chat-composer-send"),
+            fun boxes(): List<Rect> = listOf(tag("chat-model-trigger"), tag("chat-composer-dictate"), tag("chat-composer-send"),
                 tag("chat-model-name"), tag("chat-model-name-chevron"), tag("chat-model-effort")).map { it.fetchSemanticsNode().boundsInRoot }
             val expected = boxes()
             val card = tag("chat-model-card").fetchSemanticsNode().boundsInRoot
@@ -152,7 +162,12 @@ class ComposerEffortGeometryTest {
                 tag("chat-model-effort").performSemanticsAction(SemanticsActions.SetProgress) { it(index.toFloat()) }
                 tag("chat-model-effort-title").assertTextEquals(choices[index])
                 screen.runOnIdle { assertEquals(choices[index], vm.providers.selection(Mode.Chat).parameters["effort"]) }
-                assertEquals("Composer name, adjacent actions, popup name, chevron and rail keep their bounds", expected, boxes())
+                val suffix = screen.onNode(hasText(choices[index]) and hasAnyAncestor(hasTestTag("chat-model-source-label")),
+                    useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+                val mic = expected[1]
+                val clearance = if (rtl) suffix.left - mic.right else mic.left - suffix.right
+                assertEquals("Effort ends at the existing toolbar inset", 16f * density, clearance, 1f)
+                assertEquals("Trigger, adjacent actions, popup name, chevron and rail keep their bounds", expected, boxes())
             }
         }
     }
