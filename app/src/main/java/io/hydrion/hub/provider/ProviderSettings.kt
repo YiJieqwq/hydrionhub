@@ -79,7 +79,8 @@ fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
                     }
                 }
             }
-            detail == SettingsEntry.Data -> io.hydrion.hub.ui.settings.StorageSettings(onBack = goBack)
+            detail == SettingsEntry.Backup -> io.hydrion.hub.ui.settings.BackupSettings(viewModel(), goBack)
+            detail == SettingsEntry.Data -> io.hydrion.hub.ui.settings.StorageSettings(viewModel(), onBack = goBack)
             detail == SettingsEntry.Style -> MessageStyleSettings(onBack = goBack)
             else -> SettingsHome(
                 search = search, onSearch = { search = it }, onBack = goBack,

@@ -28,6 +28,8 @@ internal class ConversationSession(
     private val jobs = mutableMapOf<String, Job>()
     private var parkedEmpty: Conversation? = null
 
+    private var restoredUnsentId: String? = null
+
     fun restore(saved: SavedWorkspace) {
         // A fast first send can complete before disk I/O returns.
         val liveIds = screen.history.mapTo(mutableSetOf()) { it.id }
@@ -38,12 +40,31 @@ internal class ConversationSession(
         }
         saved.drafts.forEach { (id, draft) -> drafts.putIfAbsent(id, draft) }
         mutable.value = screen.copy(history = (screen.history + restored).sortedByDescending { it.updatedAt })
+        saved.unsent?.let { pending ->
+            restoredUnsentId = pending.id
+            if (!screen.modeLocked && screen.draft == Draft() && screen.current.mode == Mode.Chat &&
+                screen.current.environmentId == null) choose(pending) else if (parkedEmpty == null) parkedEmpty = pending
+        }
     }
 
-    fun snapshot(): SavedWorkspace {
+    fun snapshot(includeUnsent: Boolean = false): SavedWorkspace {
         val history = screen.history
         val savedDrafts = history.mapNotNull { item -> drafts[item.id]?.let { item.id to it } }.toMap()
-        return SavedWorkspace(history, savedDrafts)
+        val pending = (if (screen.modeLocked) parkedEmpty else screen.current)?.takeIf {
+            (includeUnsent || it.id == restoredUnsentId) && drafts[it.id] != null
+        }
+        return if (pending == null) SavedWorkspace(history, savedDrafts)
+            else SavedWorkspace(history, savedDrafts + (pending.id to drafts.getValue(pending.id)), pending)
+    }
+
+    /** Apply a verified local import/undo while keeping an existing open thread selected. */
+    fun adoptBackup(saved: SavedWorkspace) {
+        val current = saved.history.find { it.id == screen.current.id } ?: saved.unsent ?: Conversation()
+        parkedEmpty = saved.unsent?.takeUnless { it.id == current.id }
+        restoredUnsentId = saved.unsent?.id
+        drafts.clear()
+        drafts.putAll(saved.drafts)
+        mutable.value = HubState(current, saved.history, drafts[current.id] ?: Draft())
     }
 
     private fun save() = persist(snapshot())
@@ -73,9 +94,11 @@ internal class ConversationSession(
 
     fun newConversation() {
         if (!screen.modeLocked) drafts.remove(screen.current.id)
+        val discardImported = !screen.modeLocked && screen.current.id == restoredUnsentId
         val pending = parkedEmpty
         parkedEmpty = null
         choose(pending ?: Conversation())
+        if (discardImported) save()
     }
 
     fun openConversation(id: String) {
@@ -129,7 +152,7 @@ internal class ConversationSession(
         dictatedDrafts.remove(screen.current.id)
         if (draft == Draft()) drafts.remove(screen.current.id) else drafts[screen.current.id] = draft
         mutable.value = screen.copy(draft = draft)
-        if (screen.modeLocked) save()
+        if (screen.modeLocked || screen.current.id == restoredUnsentId) save()
     }
 
     fun setDraft(text: String) = changeDraft(screen.draft.copy(text = text))

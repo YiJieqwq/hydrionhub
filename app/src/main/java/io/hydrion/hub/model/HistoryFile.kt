@@ -9,7 +9,8 @@ import org.json.JSONObject
 
 /** The local demo history is replaced atomically. The codec is used only on Dispatchers.IO. */
 internal class HistoryFile(context: Context) {
-    private val file = AtomicFile(File(context.filesDir, "conversation-history-v1.json"))
+    val path = File(context.filesDir, "conversation-history-v1.json")
+    private val file = AtomicFile(path)
 
     fun load(): SavedWorkspace {
         val json = try {
@@ -17,36 +18,11 @@ internal class HistoryFile(context: Context) {
         } catch (_: FileNotFoundException) {
             return SavedWorkspace()
         }
-        val history = json.optJSONArray("history").objects().map { item ->
-            Conversation(id = item.getString("id"), title = item.getString("title"),
-                mode = Mode.valueOf(item.getString("mode")), pinned = item.optBoolean("pinned"),
-                updatedAt = item.getLong("updatedAt"), messages = item.optJSONArray("messages").objects().map(::readMessage),
-                environmentId = item.optional("environmentId"))
-        }
-        val drafts = json.optJSONObject("drafts") ?: JSONObject()
-        val defaults = Draft()
-        return SavedWorkspace(history, drafts.keys().asSequence().associateWith { id ->
-            val draft = drafts.getJSONObject(id)
-            val imageTool = draft.optString("imageTool", defaults.imageTool)
-            Draft(draft.optString("text"), readAttachments(draft.optJSONArray("attachments")),
-                draft.optString("search", defaults.search),
-                if (imageTool == "模型内置图片生成") CUSTOM_IMAGE_TOOL else imageTool)
-        })
+        return decodeWorkspace(json)
     }
 
     fun save(saved: SavedWorkspace) {
-        val history = JSONArray()
-        for (c in saved.history) {
-            history.put(JSONObject().put("id", c.id).put("title", c.title)
-                .put("mode", c.mode.name).put("pinned", c.pinned).put("updatedAt", c.updatedAt)
-                .put("messages", JSONArray(c.messages.map(::writeMessage))).put("environmentId", c.environmentId))
-        }
-        val drafts = JSONObject()
-        for ((id, draft) in saved.drafts) {
-            drafts.put(id, JSONObject().put("text", draft.text).put("attachments", writeAttachments(draft.attachments))
-                .put("search", draft.search).put("imageTool", draft.imageTool))
-        }
-        val bytes = JSONObject().put("history", history).put("drafts", drafts).toString().toByteArray(Charsets.UTF_8)
+        val bytes = encodeWorkspace(saved).toString().toByteArray(Charsets.UTF_8)
         val stream = file.startWrite()
         try {
             stream.write(bytes)
@@ -57,6 +33,39 @@ internal class HistoryFile(context: Context) {
         }
     }
 }
+
+internal fun decodeWorkspace(json: JSONObject): SavedWorkspace {
+    val history = json.optJSONArray("history").objects().map(::readConversation)
+    val drafts = json.optJSONObject("drafts") ?: JSONObject()
+    val defaults = Draft()
+    return SavedWorkspace(history, drafts.keys().asSequence().associateWith { id ->
+        val draft = drafts.getJSONObject(id)
+        val imageTool = draft.optString("imageTool", defaults.imageTool)
+        Draft(draft.optString("text"), readAttachments(draft.optJSONArray("attachments")),
+            draft.optString("search", defaults.search),
+            if (imageTool == "模型内置图片生成") CUSTOM_IMAGE_TOOL else imageTool)
+    }, json.optJSONObject("unsent")?.let(::readConversation))
+}
+
+internal fun encodeWorkspace(saved: SavedWorkspace): JSONObject {
+    val history = JSONArray(saved.history.map(::writeConversation))
+    val drafts = JSONObject()
+    for ((id, draft) in saved.drafts) {
+        drafts.put(id, JSONObject().put("text", draft.text).put("attachments", writeAttachments(draft.attachments))
+            .put("search", draft.search).put("imageTool", draft.imageTool))
+    }
+    return JSONObject().put("history", history).put("drafts", drafts).put("unsent", saved.unsent?.let(::writeConversation))
+}
+
+private fun readConversation(item: JSONObject) = Conversation(
+    id = item.getString("id"), title = item.getString("title"),
+    mode = Mode.valueOf(item.getString("mode")), pinned = item.optBoolean("pinned"),
+    updatedAt = item.getLong("updatedAt"), messages = item.optJSONArray("messages").objects().map(::readMessage),
+    environmentId = item.optional("environmentId"))
+
+private fun writeConversation(c: Conversation) = JSONObject().put("id", c.id).put("title", c.title)
+    .put("mode", c.mode.name).put("pinned", c.pinned).put("updatedAt", c.updatedAt)
+    .put("messages", JSONArray(c.messages.map(::writeMessage))).put("environmentId", c.environmentId)
 
 private fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else
     (0 until length()).map { getJSONObject(it) }

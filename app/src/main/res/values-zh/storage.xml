@@ -7,4 +7,5 @@
     <string name="storage_external">从其他应用选取的文件由来源应用保存，未计入本机占用。</string>
     <string name="storage_clear">清理超过 24 小时的副本（%1$s）</string>
     <string name="storage_read_failed">无法读取或更新本机存储。</string>
+    <string name="storage_rollback">导入前的回滚点</string>
 </resources>

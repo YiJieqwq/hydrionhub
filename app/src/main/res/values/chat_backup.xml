@@ -1,0 +1,16 @@
+<resources>
+    <string name="backup_title">Local chat backup</string>
+    <string name="backup_scope">Includes chats, saved drafts, the unsent new-chat draft, picked files and generated images. Settings, account credentials, environments, request parameters and provider diagnostics are excluded. The ZIP contains readable chat contents. Each file can be up to 32 MiB, with up to 256 MiB of media in total.</string>
+    <string name="backup_export">Export to a file</string>
+    <string name="backup_preview">Preview a backup</string>
+    <string name="backup_summary">%1$d chats · %2$d drafts · %3$d unique media files. Import adds these chats without replacing existing threads.</string>
+    <string name="backup_apply">Import chats and files</string>
+    <string name="backup_undo">Undo last import</string>
+    <string name="backup_undo_detail">Restore the chats and drafts from immediately before import. This is available while they are unchanged. Imported file copies remain on this device.</string>
+    <string name="backup_undone">Previous chats and drafts restored.</string>
+    <string name="backup_saved">Backup saved.</string>
+    <string name="backup_restored">Import complete.</string>
+    <string name="backup_failed">Could not complete this operation. Check the file, available storage and access permissions.</string>
+    <string name="backup_conflict">There is a matching conversation ID, a conflicting unsent draft, or an active reply. No chats were imported.</string>
+    <string name="backup_missing">These originals could not be read. The operation was stopped:\n%1$s</string>
+</resources>

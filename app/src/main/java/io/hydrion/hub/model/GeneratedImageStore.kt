@@ -192,6 +192,27 @@ internal class GeneratedImageStore(context: Context) {
         return channel
     }
 
+    /** Validate all archive PNGs during preview. Recheck on publication and never overwrite a live image. */
+    suspend fun checkArchivePng(key: String, source: File) {
+        require(source.length() in 45..MAX_IMAGE_BYTES.toLong())
+        require(validatePng(source.readBytes()) == dimensions(key))
+    }
+
+    fun installArchivePng(key: String, source: File): Boolean {
+        val dest = imageFile(key)
+        val batch = requireNotNull(dest.parentFile)
+        Files.createDirectories(root.toPath())
+        requireDirectory(root)
+        Files.createDirectories(batch.toPath())
+        require(isOwnedDirectory(batch))
+        if (Files.exists(dest.toPath(), NOFOLLOW_LINKS)) {
+            require(Files.isRegularFile(dest.toPath(), NOFOLLOW_LINKS) && sameBackupBytes(source, dest))
+            return false
+        }
+        installBackupFile(source, dest)
+        return true
+    }
+
     suspend fun requireAvailable(key: String) = withContext(Dispatchers.IO) { openImage(key).close() }
 
     suspend fun copyPng(key: String, output: OutputStream) = withContext(Dispatchers.IO) {

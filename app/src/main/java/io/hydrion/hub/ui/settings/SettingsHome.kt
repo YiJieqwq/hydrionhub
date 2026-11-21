@@ -45,7 +45,7 @@ import androidx.compose.ui.unit.sp
 import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 import io.hydrion.hub.ui.theme.HubStyle
 
-internal enum class SettingsEntry { About, Language, Image, Style, Data }
+internal enum class SettingsEntry { About, Language, Image, Style, Data, Backup }
 
 private data class SettingsRow(
     val label: Int,
@@ -79,6 +79,7 @@ private val settingsGroups = listOf(
     ),
     R.string.settings_app to listOf(
         SettingsRow(R.string.settings_data, Icons.Outlined.Storage, "数据管理 存储 本机 历史 数据 data management storage history", SettingsEntry.Data),
+        SettingsRow(R.string.backup_title, Icons.Outlined.Backup, "数据备份 本地导出 恢复 local chat backup export restore", SettingsEntry.Backup),
         SettingsRow(R.string.settings_about, Icons.Outlined.Info, "关于 应用 版本 about version hydrionhub 氢离子", SettingsEntry.About),
     ),
 )

@@ -10,6 +10,7 @@ import io.hydrion.hub.provider.imageInvocation
 import io.hydrion.hub.provider.prepareOfficialImageGeneration
 import io.hydrion.hub.runtime.ProotEnvironmentStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -17,12 +18,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 class HubViewModel(app: Application) : AndroidViewModel(app) {
     private val historyFile = HistoryFile(app)
-    private val writes = Channel<SavedWorkspace>(Channel.CONFLATED)
+    private val writes = Channel<Pair<Long, SavedWorkspace>>(Channel.CONFLATED)
+    private val historyLock = Mutex()
+    @Volatile private var storageEpoch = 0L
     private var loaded = false
+    private val initialMediaScan = CompletableDeferred<Unit>()
     private var changedDuringLoad = false
     internal val providers = ProviderStore(app)
     private val environments by lazy { ProotEnvironmentStore(app) }
@@ -34,7 +40,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     private val mutableErrors = MutableStateFlow<Map<String, String>>(emptyMap())
     internal val errors = mutableErrors.asStateFlow()
     private val session = ConversationSession(viewModelScope, generation,
-        persist = { snapshot -> if (loaded) writes.trySend(snapshot) else changedDuringLoad = true },
+        persist = { snapshot -> if (loaded) writes.trySend(storageEpoch to snapshot) else changedDuringLoad = true },
         onGenerationError = ::reportError)
     val state = session.state
     private val mutableNotice = MutableStateFlow<String?>(null)
@@ -43,9 +49,9 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     init {
         // The single writer finishes queued atomic saves even if the Activity is closed.
         CoroutineScope(Dispatchers.IO).launch {
-            for (snapshot in writes) {
+            for ((epoch, snapshot) in writes) {
                 try {
-                    historyFile.save(snapshot)
+                    historyLock.withLock { if (epoch == storageEpoch) historyFile.save(snapshot) }
                 } catch (_: Exception) {
                     mutableNotice.value = "本地历史保存失败，请检查设备存储空间。"
                 }
@@ -56,7 +62,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
                 val saved = withContext(Dispatchers.IO) { historyFile.load() }
                 session.restore(saved)
                 loaded = true
-                if (changedDuringLoad) writes.trySend(session.snapshot())
+                if (changedDuringLoad) writes.trySend(storageEpoch to session.snapshot())
                 val retained = saved.imageReferences() + session.snapshot().imageReferences() +
                     state.value.draft.attachments.mapNotNull { it.imageKey }
                 try {
@@ -70,7 +76,49 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
                 throw cancelled
             } catch (_: Exception) {
                 mutableNotice.value = "本地历史加载失败，本次会话仅在内存中保留。"
-            }
+            } finally { initialMediaScan.complete(Unit) }
+        }
+    }
+
+    internal fun backupSnapshot(): SavedWorkspace {
+        check(loaded)
+        return session.snapshot(includeUnsent = true)
+    }
+
+    internal val backups by lazy { LocalChatBackup(getApplication(), images) }
+
+    internal suspend fun applyBackup(preview: InspectedChatArchive) {
+        initialMediaScan.await()
+        val before = backupSnapshot()
+        mergeBackup(before, preview.workspace) // Fail on collisions before publishing any files.
+        withContext(Dispatchers.IO) {
+            var rollback: java.io.File? = null
+            try {
+                backups.withMedia(preview, beforeWrite = { incoming ->
+                    rollback = backups.stageRollback(before, mergeBackup(before, incoming))
+                }) { incoming -> commitBackup(before, mergeBackup(before, incoming), requireNotNull(rollback)) }
+            } finally { rollback?.delete() }
+        }
+    }
+
+    internal suspend fun undoBackup() {
+        val (before, after) = withContext(Dispatchers.IO) { backups.rollbackPoint() }
+        check(backupSnapshot() == after)
+        withContext(Dispatchers.IO) { commitBackup(after, before, rollback = null) }
+    }
+
+    private suspend fun commitBackup(before: SavedWorkspace, after: SavedWorkspace, rollback: java.io.File?) {
+        historyLock.withLock {
+            val staged = backups.stageHistory(historyFile.path, after)
+            try {
+                withContext(Dispatchers.Main.immediate) {
+                    check(loaded && session.snapshot(includeUnsent = true) == before)
+                    rollback?.let(backups::publishRollback)
+                    backups.publishHistory(staged, historyFile.path)
+                    storageEpoch++
+                    session.adoptBackup(after)
+                }
+            } finally { staged.delete() }
         }
     }
 

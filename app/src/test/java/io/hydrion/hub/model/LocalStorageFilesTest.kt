@@ -20,11 +20,17 @@ class LocalStorageFilesTest {
         val fresh = File(copies, "HydrionHub-456.png").apply { writeBytes(ByteArray(23)) }
         val unknown = File(copies, "other.png").apply { writeBytes(ByteArray(10)); setLastModified(1) }
         Files.createSymbolicLink(File(copies, "HydrionHub-link.png").toPath(), original.toPath())
-        val storage = LocalStorageFiles(files, cache, prefs)
+        val storage = LocalStorageFiles(files, cache, prefs, root.newFolder("no-backup"))
         val usage = storage.usage()
         assertEquals(31L, usage.imported)
         assertEquals(40L, usage.cachedCopies)
         assertEquals(17L, usage.expiredCopies)
+        val ref = "content://fixture.images/generated/${old.name}"
+        val workspace = SavedWorkspace(drafts = mapOf("new-chat" to Draft(attachments = listOf(Attachment(ref, "copy", ref)))))
+        val protected = workspace.clipboardOriginals("fixture.images")
+        assertEquals(0L, storage.usage(protectedNames = protected).expiredCopies)
+        storage.clearExpired(protectedNames = protected)
+        assertTrue(old.exists())
         storage.clearExpired()
         assertFalse(old.exists())
         assertTrue(fresh.exists() && original.exists() && unknown.exists())

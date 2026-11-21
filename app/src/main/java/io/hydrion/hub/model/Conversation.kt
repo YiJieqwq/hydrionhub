@@ -99,5 +99,6 @@ data class HubState(
 
 internal data class SavedWorkspace(
     val history: List<Conversation> = emptyList(),
-    val drafts: Map<String, Draft> = emptyMap()
+    val drafts: Map<String, Draft> = emptyMap(),
+    val unsent: Conversation? = null,
 )

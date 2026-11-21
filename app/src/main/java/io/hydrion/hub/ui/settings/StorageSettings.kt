@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import io.hydrion.hub.model.HubViewModel
+import io.hydrion.hub.model.clipboardOriginals
 import io.hydrion.hub.R
 import io.hydrion.hub.model.LocalStorageFiles
 import io.hydrion.hub.model.LocalStorageUsage
@@ -21,9 +23,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun StorageSettings(onBack: () -> Unit) {
+internal fun StorageSettings(vm: HubViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
-    val files = remember(context) { LocalStorageFiles(context.filesDir, context.cacheDir, File(context.applicationInfo.dataDir, "shared_prefs")) }
+    val files = remember(context) { LocalStorageFiles(context.filesDir, context.cacheDir, File(context.applicationInfo.dataDir, "shared_prefs"), context.noBackupFilesDir) }
     val scope = rememberCoroutineScope()
     var usage by remember { mutableStateOf<LocalStorageUsage?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -32,9 +34,10 @@ internal fun StorageSettings(onBack: () -> Unit) {
         busy = true
         failed = false
         try {
+            val originals = vm.backupSnapshot().clipboardOriginals(context.packageName + ".images")
             usage = withContext(Dispatchers.IO) {
-                if (clear) files.clearExpired()
-                files.usage()
+                if (clear) files.clearExpired(protectedNames = originals)
+                files.usage(protectedNames = originals)
             }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { failed = true }
@@ -46,7 +49,8 @@ internal fun StorageSettings(onBack: () -> Unit) {
         Header(stringResource(R.string.settings_data), onBack)
         usage?.let {
             for ((label, size) in listOf(R.string.storage_history to it.history, R.string.storage_images to it.images,
-                R.string.storage_restored to it.imported, R.string.storage_settings to it.settings, R.string.storage_copies to it.cachedCopies)) {
+                R.string.storage_restored to it.imported, R.string.storage_settings to it.settings, R.string.storage_copies to it.cachedCopies,
+                R.string.storage_rollback to it.rollback)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(stringResource(label), Modifier.weight(1f))
                     Text(Formatter.formatFileSize(context, size))
