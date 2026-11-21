@@ -209,7 +209,6 @@ internal fun HubComposer(
     allowImeReturn: Boolean = true,
     chatPicker: ChatModelPickerState? = null,
     modelEditorBridge: ModelEditorComposerBridge? = null,
-    forceReturnFolded: Boolean = false,
     chatTools: ToolsPageState? = null,
     modelBrowseProgress: () -> Float = { 0f },
 ) {
@@ -321,7 +320,7 @@ internal fun HubComposer(
     val dictation = key(state.current.id, chat, draft.attachments, draft.search, draft.imageTool) {
         rememberChatDictation(
             conversationId = state.current.id,
-            enabled = chat && allowImeReturn && !forceReturnFolded && !morphingEditor && !toolsRequested,
+            enabled = chat && allowImeReturn && !morphingEditor && !toolsRequested,
             readDraft = {
                 fieldValue.takeIf { acceptsDraftInput() && vm.state.value.draft == draft && it.text == draft.text }
             },
@@ -376,7 +375,7 @@ internal fun HubComposer(
         )
     }
     // Legacy keyboards may jump straight to zero before the flow collector sees the final inset.
-    val expansion = if (!forceReturnFolded && (hasImeHeight || hasImeTarget || hardwareOnly)) shapeProgress.value else 0f
+    val expansion = if ((hasImeHeight || hasImeTarget || hardwareOnly)) shapeProgress.value else 0f
     if (chatPicker != null) {
         // The floating panel belongs to this composer even while its toolbar trigger is folded away.
         DisposableEffect(chatPicker) {
@@ -390,8 +389,8 @@ internal fun HubComposer(
     val hasContent = draft.text.isNotEmpty() || draft.attachments.isNotEmpty()
     // The underlying draft retains its ordinary IME/draft shape. Only the page's shared
     // progress drives the transformation into the one-line search capsule.
-    val rowGate = rememberDraftRowMotion(hasContent, forceReturnFolded).fraction
-    val chatToolbar = if (forceReturnFolded) 0f else maxOf(expansion, rowGate)
+    val rowGate = rememberDraftRowMotion(hasContent).fraction
+    val chatToolbar = maxOf(expansion, rowGate)
     // A keyboard may hide halfway through the panel flight. Continue measuring its source label
     // until landing; when opening from an already folded composer the picker uses its fallback.
     var hadModelRow by remember(chatPicker) { mutableStateOf(false) }
@@ -399,8 +398,7 @@ internal fun HubComposer(
         if (modelSearch == null || chatToolbar > 0f) hadModelRow = chatToolbar > 0f
     }
     val toolbar = chatToolbar * (1f - pageProgress)
-    val returning = modelEditorBridge?.returning != null
-    val overlay: Any? = if (chatPicker == null || forceReturnFolded || returning || !allowImeReturn) null
+    val overlay: Any? = if (chatPicker == null || !allowImeReturn) null
         else chatPicker.page ?: tools?.takeIf { it.targetOpen }
     val effortAtEditor = overlay == ChatModelPickerState.Page.Controls && !morphingEditor
     val editorTap = Modifier.dismissOnEditorTap(
@@ -420,11 +418,6 @@ internal fun HubComposer(
             }
         },
     )
-    val returnFrame = remember(modelEditorBridge) { mutableStateOf<ModelEditorReturnFrame?>(null) }
-    if (modelEditorBridge != null) {
-        ObserveModelEditorReturn(modelEditorBridge, returnFrame.value)
-        DisposableEffect(modelEditorBridge) { onDispose { modelEditorBridge.hasLayout = false } }
-    }
     val canSend = (modelAvailable || state.current.mode == Mode.Image) &&
         (draft.text.isNotBlank() || draft.attachments.isNotEmpty())
     val active = state.isGenerating
@@ -473,18 +466,6 @@ internal fun HubComposer(
         Surface(
             modifier = Modifier.fillMaxWidth().testTag("composer-capsule")
                 .then(if (chatPicker != null) Modifier.pickerCapsuleBounds() else Modifier)
-                .then(if (modelEditorBridge == null) Modifier else Modifier.layout { measurable, constraints ->
-                    val capsule = measurable.measure(constraints)
-                    layout(capsule.width, capsule.height) {
-                        capsule.place(0, 0)
-                        modelEditorBridge.hasLayout = capsule.width > 0 && capsule.height > 0
-                        returnFrame.value = if (returning) ModelEditorReturnFrame(
-                            capsule.width, capsule.height, (current.getBottom(density) - nav).coerceAtLeast(0),
-                            (source.getBottom(density) - nav).coerceAtLeast(0), (target.getBottom(density) - nav).coerceAtLeast(0),
-                            imeVisible, expansion, rowGate, hasContent, forceReturnFolded,
-                        ) else null
-                    }
-                })
                 .then(if (chatPicker == null) Modifier else Modifier.onGloballyPositioned {
                     chatPicker.composerBounds = IntRect(it.positionInWindow().round(), it.size)
                 })
@@ -493,13 +474,12 @@ internal fun HubComposer(
             color = colors.surfaceContainerHigh,
         ) {
             Column {
-                if (!dictating && draft.attachments.isNotEmpty() && !forceReturnFolded && pageProgress < 1f) {
+                if (!dictating && draft.attachments.isNotEmpty() && pageProgress < 1f) {
                     val imageAndText = draft.text.isNotEmpty() && draft.attachments.any { it.hasImagePreview }
                     // Let the editor and toolbar measure first in short windows above the IME.
                     BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth()
                         .then(when {
                             morphingEditor -> Modifier.clearAndSetSemantics { }.revealHeight(1f - pageProgress, 0.dp)
-                            returning -> Modifier.revealHeight(toolbar, 0.dp)
                             else -> Modifier
                         })
                         .padding(start = 8.dp, end = 8.dp, top = 3.dp, bottom = if (imageAndText) 0.dp else 3.dp)) {
@@ -536,12 +516,11 @@ internal fun HubComposer(
                                 }
                                 focused = nowFocused
                             },
-                            modifier = (if (pickerOpen) Modifier.weight(1f, fill = false) else Modifier)
-                                .then(if (returning || forceReturnFolded) Modifier.revealHeight(toolbar, foldedHeight) else Modifier),
+                            modifier = (if (pickerOpen) Modifier.weight(1f, fill = false) else Modifier),
                         ) { draftFocusModifier ->
                             val modelHint = stringResource(R.string.chat_picker_search_hint)
                             val toolHint = stringResource(R.string.tools_search_hint)
-                            val visibleModelQuery = browsing && !forceReturnFolded
+                            val visibleModelQuery = browsing
                             val shown = if (visibleModelQuery) chatPicker!!.searchQuery else toolEditor?.query ?: editorValue
                             val showingChatDraft = chat && !visibleModelQuery && toolEditor == null
                             val inputHint = if (visibleModelQuery) modelHint else if (toolEditor != null) toolHint
@@ -599,7 +578,7 @@ internal fun HubComposer(
                                     letterSpacing = if (showingChatDraft) 0.1.sp else editorTextStyle.letterSpacing,
                                 ),
                                 cursorBrush = SolidColor(colors.primary),
-                                maxLines = if (!editingQuery && !forceReturnFolded && (hasContent || focused)) 5 else 1,
+                                maxLines = if (!editingQuery && (hasContent || focused)) 5 else 1,
                                 keyboardActions = if (editingQuery) KeyboardActions(onSearch = { modelSearch?.submitSearch() },
                                     onDone = { modelSearch?.submitSearch() }, onSend = { modelSearch?.submitSearch() })
                                     else KeyboardActions.Default,
@@ -627,14 +606,14 @@ internal fun HubComposer(
                                         }.heightIn(min = editorMinHeight)
                                         .padding(top = textTop, bottom = TextBottom),
                                         contentAlignment = Alignment.CenterStart) {
-                                        val visibleTextLine = if (!forceReturnFolded && chatPicker != null)
+                                        val visibleTextLine = if (chatPicker != null)
                                             Modifier.testTag("composer-editable-text").then(if (effortAtEditor) Modifier else editorTap)
                                         else Modifier
                                         Box(Modifier.fillMaxWidth().trackPickerEditor(chatPicker, textOnly = true)
                                             .then(visibleTextLine), contentAlignment = Alignment.CenterStart) {
                                             if (shown.text.isEmpty()) {
                                                 val hintStyle = if (chat) editorTextStyle else editorTextStyle.copy(fontSize = 17.sp)
-                                                if (modelSearch != null && !forceReturnFolded) {
+                                                if (modelSearch != null) {
                                                     ModelSearchHints(ChatDraftHint, modelHint, hintStyle, browsing, browseProgress,
                                                         draftEmpty = draft.text.isEmpty(), lastQueryEmpty = exitingEmptySearch)
                                                 } else Text(inputHint, color = HubStyle.ComposerHint, style = hintStyle,
@@ -798,7 +777,7 @@ internal fun HubComposer(
                                                         fieldValue.text, fieldValue.selection.start, fieldValue.selection.end))
                                                 }
                                             },
-                                            enabled = interactive && allowImeReturn && !returning,
+                                            enabled = interactive && allowImeReturn,
                                             modifier = Modifier.padding(end = ToolbarTouchOutset).testTag("chat-composer-dictate"),
                                             slotWidth = 48.dp,
                                         ) {

@@ -15,29 +15,29 @@ import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.ui.composer.PanelTravelClock
 
 @Stable
-internal class ModelBrowseMotion(private val picker: ChatModelPickerState, private val hidden: State<Boolean>) {
+internal class ModelBrowseMotion(private val picker: ChatModelPickerState, private val restoring: State<Boolean>) {
     private val clock = PanelTravelClock()
     private var lastPage by mutableStateOf<ChatModelPickerState.Page?>(null)
-    val progress: Float get() = if (hidden.value) 0f else clock.progress
+    val progress: Float get() = if (restoring.value && picker.modelListNavigation) 1f else clock.progress
     val page by derivedStateOf {
         if (picker.modelListNavigation) picker.page else lastPage.takeUnless { clock.atStart }
     }
     val active by derivedStateOf { page != null }
-    val interactive by derivedStateOf { picker.modelListNavigation && !hidden.value && clock.atEnd }
+    val interactive by derivedStateOf { picker.modelListNavigation && !restoring.value && clock.atEnd }
 
     fun retain(page: ChatModelPickerState.Page) { lastPage = page }
 
     suspend fun travel(open: Boolean, restoring: Boolean) {
-        // During a config return the source remains mounted for scroll/focus restoration.
-        // Only the existing measured composer/IME completion gate can release this hidden pose.
-        if (restoring) clock.snapClosed() else clock.animateTo(open)
+        // Configuration covers an already-open search. Restore that endpoint without
+        // replaying the ordinary draft-to-search animation after the cover disappears.
+        if (restoring && open) clock.snapOpen() else clock.animateTo(open)
     }
 }
 
 @Composable
 internal fun rememberModelBrowseMotion(picker: ChatModelPickerState, restoring: Boolean): ModelBrowseMotion {
-    val hidden = rememberUpdatedState(restoring)
-    val state = remember(picker) { ModelBrowseMotion(picker, hidden) }
+    val restoreState = rememberUpdatedState(restoring)
+    val state = remember(picker) { ModelBrowseMotion(picker, restoreState) }
     val open = picker.modelListNavigation
     val page = picker.page
     if (open && page != null) SideEffect { state.retain(page) }

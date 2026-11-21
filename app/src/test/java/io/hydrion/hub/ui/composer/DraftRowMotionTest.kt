@@ -22,13 +22,13 @@ class DraftRowMotionTest {
             clock.sendFrame(now)
             yield()
         }
-        val open = launch(clock, start = CoroutineStart.UNDISPATCHED) { motion.moveTo(true, false) }
+        val open = launch(clock, start = CoroutineStart.UNDISPATCHED) { motion.moveTo(true) }
         frame(0)
         frame(16)
         val halfway = motion.fraction
         assertEquals(16 / 33f, halfway, .0001f)
         open.cancelAndJoin()
-        val close = launch(clock, start = CoroutineStart.UNDISPATCHED) { motion.moveTo(false, false) }
+        val close = launch(clock, start = CoroutineStart.UNDISPATCHED) { motion.moveTo(false) }
         frame(0)
         assertEquals(halfway, motion.fraction, 0f)
         frame(33)
@@ -36,14 +36,12 @@ class DraftRowMotionTest {
         assertEquals(0f, motion.fraction, 0f)
     }
 
-    @Test fun heldFoldSnapsAndAlreadyPresentDraftSettlesWithDisabledAnimations() = runBlocking {
-        val motion = DraftRowMotion(true)
-        assertEquals(1f, motion.fraction, 0f)
-        motion.moveTo(content = true, heldFolded = true)
+    @Test fun draftSettlesWithDisabledAnimations() = runBlocking {
+        val motion = DraftRowMotion(false)
         assertEquals(0f, motion.fraction, 0f)
         val disabled = object : MotionDurationScale { override val scaleFactor = 0f }
         val clock = BroadcastFrameClock()
-        val open = launch(clock + disabled, start = CoroutineStart.UNDISPATCHED) { motion.moveTo(true, false) }
+        val open = launch(clock + disabled, start = CoroutineStart.UNDISPATCHED) { motion.moveTo(true) }
         clock.sendFrame(1L)
         open.join()
         assertEquals(1f, motion.fraction, 0f)

@@ -12,16 +12,15 @@ internal class DraftRowMotion(content: Boolean) {
     private val value = Animatable(if (content) 1f else 0f)
     val fraction get() = value.value
 
-    suspend fun moveTo(content: Boolean, heldFolded: Boolean) {
-        val target = if (content && !heldFolded) 1f else 0f
-        if (heldFolded) value.snapTo(0f)
-        else if (fraction != target) value.animateTo(target, tween(33, easing = LinearEasing))
+    suspend fun moveTo(content: Boolean) {
+        val target = if (content) 1f else 0f
+        if (fraction != target) value.animateTo(target, tween(33, easing = LinearEasing))
     }
 }
 
 @Composable
-internal fun rememberDraftRowMotion(content: Boolean, heldFolded: Boolean): DraftRowMotion {
-    val motion = remember { DraftRowMotion(content && !heldFolded) }
-    LaunchedEffect(motion, content, heldFolded) { motion.moveTo(content, heldFolded) }
+internal fun rememberDraftRowMotion(content: Boolean): DraftRowMotion {
+    val motion = remember { DraftRowMotion(content) }
+    LaunchedEffect(motion, content) { motion.moveTo(content) }
     return motion
 }

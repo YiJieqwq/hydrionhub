@@ -11,36 +11,28 @@ class ModelEditorComposerBridgeTest {
     @Test fun onlyAnActuallyVisibleImeAndItsFocusedEditorRequestRestoration() {
         val bridge = ModelEditorComposerBridge()
         for (visible in listOf(false, true)) for (target in listOf(null, ModelEditorInput.Draft, ModelEditorInput.Search)) {
-            val snapshot = ModelEditorComposerSnapshot(selected, visible, target, if (visible) 410 else 0)
+            val snapshot = ModelEditorComposerSnapshot(selected, visible, target)
             bridge.capture = { snapshot }
             bridge.restore(requireNotNull(bridge.captureAndDismiss()))
             assertEquals(selected.selection, bridge.pending?.draft?.selection)
-            assertEquals(visible && target != null, bridge.expectIme)
+            assertEquals(visible, bridge.pending?.imeVisible)
+            assertEquals(target, bridge.pending?.focusedInput)
             assertTrue(bridge.consume(snapshot))
             assertFalse(bridge.consume(snapshot))
-            assertFalse(bridge.returnSettled)
-            bridge.settled(snapshot)
-            assertTrue(bridge.returnSettled)
+            assertNull(bridge.pending)
         }
     }
 
-    @Test fun oldFramesAndAbandonedKeyboardRequestsCannotCompleteANewerVisit() {
+    @Test fun oldFocusRequestsCannotCompleteANewerVisit() {
         val bridge = ModelEditorComposerBridge()
-        val first = ModelEditorComposerSnapshot(selected, true, ModelEditorInput.Search, 410)
+        val first = ModelEditorComposerSnapshot(selected, true, ModelEditorInput.Search)
         val next = first.copy(focusedInput = ModelEditorInput.Draft)
         bridge.restore(first)
         bridge.restore(next)
-        bridge.settled(first)
-        assertFalse(bridge.returnSettled)
         assertFalse(bridge.consume(first))
-        bridge.abandonImeRestore()
+        assertSame(next, bridge.pending)
+        bridge.captureAndDismiss()
         assertFalse(bridge.consume(next))
-        assertFalse(bridge.expectIme)
-        bridge.updateProgress(next, .4f)
-        assertEquals(.4f, bridge.returnProgress, 0f)
-        bridge.finishReturn()
-        bridge.updateProgress(next, 1f)
-        assertEquals(.4f, bridge.returnProgress, 0f)
-        assertNull(bridge.returning)
+        assertNull(bridge.pending)
     }
 }

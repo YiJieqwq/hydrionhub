@@ -75,8 +75,22 @@ class ModelBrowseMotionTest {
         assertTrue(models.interactive)
         hidden.value = true
         models.travel(open = true, restoring = true)
-        assertEquals(0f, models.progress, 0f)
+        assertEquals(1f, models.progress, 0f)
         assertFalse(models.interactive)
-        assertTrue(models.active) // Its list can restore scroll before the new entrance.
+        assertTrue(models.active)
+        hidden.value = false
+        assertTrue(models.interactive)
+        assertEquals(1f, models.progress, 0f)
+    }
+
+    @Test fun configurationCoverDrivesSearchAndGlassTogetherWithoutAddingImeTravelTwice() {
+        for (cover in listOf(0f, .25f, .5f, .75f, 1f).let { it + it.reversed() }) {
+            val reveal = modelVisitBrowseReveal(1f, cover)
+            assertEquals(1f - reveal, modelVisitDockOffset(cover, 144f, false) / 144f, .00001f)
+            for (ime in listOf(600, 350, 0)) {
+                val imeTop = 2400f - ime
+                assertEquals(imeTop - 36f, imeTop - 36f + modelVisitDockOffset(cover, 144f, true), 0f)
+            }
+        }
     }
 }

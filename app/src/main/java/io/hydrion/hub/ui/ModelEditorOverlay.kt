@@ -5,7 +5,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.union
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
@@ -38,6 +40,14 @@ import io.hydrion.hub.provider.ProviderStore
 import io.hydrion.hub.ui.composer.ModelEditorComposerSnapshot
 import io.hydrion.hub.ui.messages.ChatEdgeFade
 
+internal const val ModelEditorMotionMillis = ChatPanelMotionMillis
+
+// The existing IME padding already supplies all downward movement for a visible source keyboard.
+internal fun modelVisitDockOffset(cover: Float, dockHeight: Float, followsIme: Boolean): Float =
+    if (followsIme) 0f else cover * dockHeight
+
+internal fun modelVisitBrowseReveal(browse: Float, cover: Float): Float = browse * (1f - cover)
+
 internal data class ModelEditVisit(
     val route: RemoteModel,
     val conversationId: String,
@@ -50,13 +60,12 @@ internal data class ModelEditVisit(
 @Composable
 internal fun ModelEditorOverlay(
     store: ProviderStore, visit: ModelEditVisit, returning: Boolean, cover: State<Float>,
-    composerBounds: () -> IntRect?, workspaceReveal: () -> Float, onBack: () -> Unit,
+    composerBounds: () -> IntRect?, onBack: () -> Unit,
 ) {
-    val safe = WindowInsets.safeDrawing
+    val safe = WindowInsets.systemBars.union(WindowInsets.displayCutout)
     val background = MaterialTheme.colorScheme.background
     var origin by remember { mutableStateOf(Offset.Zero) }
     val showPage by remember(returning, cover) { derivedStateOf { !returning || cover.value > 0f } }
-    val returnMaskAtStart = remember(returning) { cover.value }
     // This sibling of the inset-aware chat uses the full window for both directions of travel.
     Box(Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInWindow() }) {
         val shield = Modifier.matchParentSize().pointerInput(Unit) {
@@ -64,7 +73,7 @@ internal fun ModelEditorOverlay(
         }
         Spacer(shield)
         if (showPage) {
-            // Keep the moving page, including its local scroll fade, out of the actual system bars/IME.
+            // Keep the moving page, including its local scroll fade, inside the permanent system bars.
             Box(Modifier.fillMaxSize().drawWithContent {
                 clipRect(safe.getLeft(this, layoutDirection).toFloat(), safe.getTop(this).toFloat(),
                     size.width - safe.getRight(this, layoutDirection), size.height - safe.getBottom(this)) {
@@ -75,7 +84,7 @@ internal fun ModelEditorOverlay(
                 translationY = (progress - 1f) * size.height
                 alpha = progress
             }.testTag("chat-model-editor")) {
-                ChatModelConfigScreen(store, visit.route, onBack)
+                ChatModelConfigScreen(store, visit.route, returning, visit.editor.imeVisible, onBack)
             }
         }
         // Draw over the real workspace (including the composer), only OUTSIDE the moving page.
@@ -102,7 +111,7 @@ internal fun ModelEditorOverlay(
             val bottomBrush = Brush.verticalGradient(*bottomStops.toTypedArray(), endY = 1f)
             onDrawBehind {
                 val progress = cover.value
-                val strength = if (returning) returnMaskAtStart * (1f - workspaceReveal()) else progress
+                val strength = progress
                 if (strength <= 0f || safeBottom <= safeTop || right <= left) return@onDrawBehind
                 // The translated full-height page ends at precisely height * cover.
                 val start = exposedWorkspaceTop(size.height, safeTop, safeBottom, progress)

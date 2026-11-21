@@ -92,41 +92,24 @@ private fun Workspace(vm: HubViewModel) {
     val pageCover = page.animateFloat({ tween(ModelEditorMotionMillis, easing = ChatPickerEasing) },
         label = "Page travel and fade") { if (it) 1f else 0f }
     val ime = WindowInsets.ime
-    val nav = WindowInsets.navigationBars
-    val imeVisible = WindowInsets.isImeVisible
     val density = LocalDensity.current
     val keyboard = LocalSoftwareKeyboardController.current
     val view = LocalView.current
     var returnHeight by remember { mutableIntStateOf(0) }
     val returning = editVisit != null && !editTransition.targetState
     val modelBrowse = rememberModelBrowseMotion(chatPicker, returning)
-    val sourceAvailable = editVisit?.conversationId == current.id
-    val returnMotion = rememberModelEditorReturnMotion(
-        returning = returning,
-        canLand = { !sourceAvailable || (composerBridge.hasLayout && !imeVisible && ime.getBottom(density) <= nav.getBottom(density)) },
-        composerProgress = { if (sourceAvailable) composerBridge.returnProgress else 1f },
-        composerSettled = {
-            editTransition.isIdle && (!sourceAvailable || (composerBridge.returnSettled && chatPicker.pendingBrowseRestore == null))
-        },
-        onLanded = { if (sourceAvailable) editVisit?.let { composerBridge.restore(it.editor) } },
-        onImeFallback = {
-            if (sourceAvailable && composerBridge.returning == null && !composerBridge.returnSettled) {
-                editVisit?.let { composerBridge.restore(it.editor.copy(imeVisible = false, focusedInput = null)) }
-            } else composerBridge.abandonImeRestore()
-        },
-        onFinished = { composerBridge.finishReturn(); editVisit = null },
-    )
-    val blockEditorFocus = editVisit != null && (!returning || returnMotion.holdCollapsed)
+    val blockEditorFocus = editVisit != null && !returning
     val chatReveal = if (!returning) Modifier else Modifier.graphicsLayer {
-        val progress = returnMotion.contentProgress
-        translationY = returnHeight * (1f - progress)
-        alpha = progress
+        translationY = returnHeight * pageCover.value
+        alpha = 1f - pageCover.value
     }
     val composerReveal = editVisit?.let { visit ->
         Modifier.graphicsLayer {
-            val progress = if (returning) returnMotion.composerLandingProgress else 1f - pageCover.value
-            translationY = (1f - progress) * (if (returning) size.height else visit.entryDockTravel)
-            alpha = progress
+            // The host already follows the actual IME. Adding a second downward slide
+            // on entry puts the field behind the still-visible keyboard.
+            translationY = modelVisitDockOffset(pageCover.value, visit.entryDockTravel,
+                followsIme = !returning && visit.editor.imeVisible)
+            alpha = 1f - pageCover.value
         }
     } ?: Modifier
     var settings by rememberSaveable { mutableStateOf(false) }
@@ -206,7 +189,7 @@ private fun Workspace(vm: HubViewModel) {
             Box(
                 Modifier.fillMaxSize()
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                    .windowInsetsPadding(if (returnMotion.holdCollapsed) nav.only(WindowInsetsSides.Bottom) else hostImeInsets),
+                    .windowInsetsPadding(hostImeInsets),
                 contentAlignment = Alignment.TopCenter
             ) {
                 val covered = toolsActive || modelBrowse.active
@@ -220,7 +203,7 @@ private fun Workspace(vm: HubViewModel) {
                             modelBrowseProgress = { modelBrowse.progress }, modifier = Modifier.fillMaxSize()) }
                     } else null,
                     composer = {
-                        val bottomBars = if (returnMotion.holdCollapsed) nav else WindowInsets.safeDrawing
+                        val bottomBars = WindowInsets.safeDrawing
                         Column(composerReveal.windowInsetsPadding(bottomBars.only(WindowInsetsSides.Bottom))) {
                             key(current.id) {
                                 errors[current.id]?.let { detail -> ComposerError(detail) { vm.clearError(current.id) } }
@@ -238,7 +221,6 @@ private fun Workspace(vm: HubViewModel) {
                                     modelEditorBridge = composerBridge,
                                     chatTools = toolsPage,
                                     modelBrowseProgress = { modelBrowse.progress },
-                                    forceReturnFolded = returnMotion.holdCollapsed,
                                     allowImeReturn = !blockEditorFocus && !drawerOpening && !configure && !finding && renameId == null && deleteId == null,
                                     toolsAvailable = selectedEntry?.second?.chatProtocol() == null,
                                     onConfigure = { focus.clearFocus(); configure = true },
@@ -303,7 +285,7 @@ private fun Workspace(vm: HubViewModel) {
                         }
                     }
                     modelBrowse.page?.let {
-                        ChatSlidingPage({ modelBrowse.progress }, modelBrowse.interactive && editVisit == null,
+                        ChatSlidingPage({ modelVisitBrowseReveal(modelBrowse.progress, pageCover.value) }, modelBrowse.interactive && editVisit == null,
                             "chat-model-browse-surface") {
                             ChatModelBrowsePage(providers, chatPicker, suspended = editVisit != null,
                                 hideForReturn = returning, composerPadding = panelDock,
@@ -328,20 +310,19 @@ private fun Workspace(vm: HubViewModel) {
         var earlyBack by remember(visit) { mutableStateOf(false) }
         fun startReturn() {
             returnHeight = view.height
-            keyboard?.hide()
+            if (!visit.editor.imeVisible) keyboard?.hide()
             focus.clearFocus(force = true)
             vm.restoreModelPickerDraft(visit.conversationId, visit.draft)
             editTransition.targetState = false
         }
         ModelEditorOverlay(providers, visit, returning, pageCover,
-            composerBounds = { chatPicker.composerBounds },
-            workspaceReveal = { returnMotion.composerLandingProgress }) {
+            composerBounds = { chatPicker.composerBounds }) {
             if (editTransition.targetState) {
                 if (editTransition.isIdle) startReturn() else earlyBack = true
             }
         }
         if (earlyBack) LaunchedEffect(visit) {
-            // Only start the folded return pose once the entering page fully covers the old one.
+            // A second back during entry queues one return after the configuration fully covers the source.
             snapshotFlow { editTransition.isIdle }.first { it }
             if (editTransition.targetState) startReturn()
             earlyBack = false
@@ -350,7 +331,12 @@ private fun Workspace(vm: HubViewModel) {
             if (editTransition.targetState) return@LaunchedEffect
             // A return to another live conversation installs its picker/bridge on the next composition.
             if (current.id != visit.conversationId && vm.state.value.current.id == visit.conversationId) return@LaunchedEffect
-            if (current.id == visit.conversationId) chatPicker.restoreBrowsing(visit.browse)
+            if (current.id == visit.conversationId) {
+                chatPicker.restoreBrowsing(visit.browse)
+                composerBridge.restore(visit.editor)
+                snapshotFlow { editTransition.isIdle && chatPicker.pendingBrowseRestore == null }.first { it }
+            } else snapshotFlow { editTransition.isIdle }.first { it }
+            editVisit = null
         }
     }
 

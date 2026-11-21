@@ -35,7 +35,7 @@ internal class PanelTravelClock {
         timeline.animateTo(end, tween(millis, easing = LinearEasing))
     }
 
-    suspend fun snapClosed() = timeline.snapTo(0f)
+    suspend fun snapOpen() = timeline.snapTo(1f)
 }
 
 @Stable

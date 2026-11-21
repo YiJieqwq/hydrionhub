@@ -268,6 +268,45 @@ class ChatModelSearchTest {
         }
     }
 
+    @Test fun returnWithOrWithoutANewModelKeepsTheSameTrailingAnchorThroughLanding() =
+        withProviders { vm, first, second ->
+            editor.performTouchInput { click(center) }
+            screen.waitUntil(15_000) { imeIsVisible() }
+            val clock = screen.mainClock
+            val label = screen.onNodeWithTag("chat-model-source-label", useUnmergedTree = true)
+            val mic = screen.onNodeWithTag("chat-composer-dictate", useUnmergedTree = true)
+            fun positions() = listOf(label.fetchSemanticsNode().boundsInRoot.right, mic.fetchSemanticsNode().boundsInRoot.center.x)
+            val docked = positions()
+            for (chooseOther in listOf(false, true)) {
+                openControls()
+                enterModels()
+                val exit = if (chooseOther) reveal(option(second, "other-only")) else control("list-back")
+                clock.autoAdvance = false
+                try {
+                    exit.performTouchInput { click(center) }
+                    clock.advanceTimeByFrame()
+                    clock.advanceTimeBy(ToolsPageTravelMillis / 2L)
+                    val middle = positions()
+                    clock.advanceTimeBy(ToolsPageTravelMillis / 2L - 16L)
+                    val nearEnd = positions()
+                    clock.advanceTimeBy(64)
+                    val end = positions()
+                    for (i in end.indices) {
+                        assertTrue("Toolbar approaches its docked anchor", kotlin.math.abs(middle[i] - end[i]) >= kotlin.math.abs(nearEnd[i] - end[i]))
+                        assertEquals("No last-frame lateral handoff", nearEnd[i], end[i], 2f * screen.density.density)
+                        assertEquals("Same docked anchor with or without changing model", docked[i], end[i], 1f)
+                    }
+                    assertEquals("Name and microphone travel as a group", end[1] - end[0], middle[1] - middle[0], 1.5f)
+                    assertTrue(imeIsVisible())
+                } finally {
+                    clock.autoAdvance = true
+                }
+                val expected = if (chooseOther) RemoteModel(second.id, "other-only") else RemoteModel(first.id, "batch-alpha")
+                screen.runOnIdle { assertEquals(expected, vm.providers.catalog.value.active[Mode.Chat]) }
+                if (!chooseOther) control("trigger").performClick()
+            }
+        }
+
     @OptIn(ExperimentalTestApi::class)
     @Test fun listArrowRestoresEffortAndTriggerClosesItWithKeyboardOpen() =
         withProviders(includeAttachment = true) { vm, _, _ ->
@@ -550,7 +589,11 @@ class ChatModelSearchTest {
                     screen.mainClock.autoAdvance = false
                     screen.onNodeWithContentDescription(screen.activity.getString(R.string.settings_back)).performClick()
                     screen.mainClock.advanceTimeBy(ModelEditorMotionMillis / 5L)
-                    control("list").assertDoesNotExist() // The moving chat cannot expose the picker early.
+                    // This is the parked search capsule throughout the reveal. The page is
+                    // shielded until it lands; no ordinary draft toolbar should flash underneath.
+                    screen.onNodeWithTag("chat-model-search-field", useUnmergedTree = true).assertExists()
+                    screen.onNodeWithTag("chat-composer-dictate", useUnmergedTree = true).assertDoesNotExist()
+                    send.assertDoesNotExist()
                 } finally {
                     screen.mainClock.autoAdvance = true
                 }
