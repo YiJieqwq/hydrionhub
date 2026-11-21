@@ -1,6 +1,9 @@
 package io.hydrion.hub.ui.sidebar
 
 import android.icu.text.BreakIterator
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -46,17 +49,22 @@ internal fun AssistantAvatar(assistant: LocalAssistant) {
     }
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun AssistantRow(assistant: LocalAssistant, selected: Boolean, enabled: Boolean, showSelection: Boolean = false,
-    onSelect: () -> Unit, onEdit: () -> Unit) {
+    loading: Boolean = false, onMenu: (() -> Unit)? = null, onSelect: () -> Unit, onEdit: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+        .then(if (onMenu != null) Modifier.background(colors.surface) else Modifier)
         .testTag("assistant-row-${assistant.id}")
-        .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onSelect)
+        .then(if (onMenu == null) Modifier.selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onSelect)
+            else Modifier.combinedClickable(enabled = enabled, role = Role.RadioButton, onClick = onSelect, onLongClick = onMenu)
+                .semantics { this.selected = selected })
         .heightIn(min = 48.dp).padding(start = 4.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         AssistantAvatar(assistant)
         Text(assistant.name, Modifier.padding(start = 16.dp).weight(1f), fontSize = 15.sp,
-            color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            fontWeight = if (onMenu != null) FontWeight.Medium else FontWeight.Normal, color = colors.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (loading) DrawerLoadingDot()
         if (showSelection && selected) Icon(Icons.Outlined.Check, null, Modifier.size(18.dp), tint = colors.primary)
         Spacer(Modifier.width(8.dp))
         IconButton(onEdit, enabled = enabled) {

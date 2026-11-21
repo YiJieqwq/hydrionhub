@@ -30,4 +30,26 @@
     <string name="assistant_rename">Rename assistant</string>
     <string name="assistant_name">Assistant name</string>
     <string name="assistant_edit">Edit %1$s</string>
+    <string name="drawer_select">Select conversations</string>
+    <string name="drawer_select_all">Select all</string>
+    <string name="drawer_clear_selection">Clear selection</string>
+    <string name="drawer_selected_count">%1$d selected</string>
+    <string name="drawer_move">Move to assistant</string>
+    <string name="drawer_duplicate">Duplicate</string>
+    <string name="drawer_copy_name">%1$s (copy)</string>
+    <string name="drawer_delete_selected">Delete %1$d selected conversations and their messages from this device?</string>
+    <string name="drawer_draft">Draft</string>
+    <string name="drawer_generating">Generating</string>
+    <string name="drawer_result_count">%1$d conversations</string>
+    <string name="drawer_delete_assistant">Delete assistant “%1$s”?</string>
+    <string name="drawer_clear_history">Delete unpinned conversations</string>
+    <string name="drawer_confirm_clear_history">Delete %1$d unpinned conversations belonging to %2$s?</string>
+    <string name="drawer_all_owners">Show all assistants</string>
+    <string name="drawer_current_owner">Show current assistant</string>
+    <string name="drawer_title">Conversation name</string>
+    <string name="drawer_delete_one">Delete “%1$s” and its messages from this device?</string>
+    <string name="drawer_group">Assistant group</string>
+    <string name="drawer_group_name">Group name</string>
+    <string name="drawer_ungrouped">Ungrouped</string>
+    <string name="drawer_move_short">Move</string>
 </resources>

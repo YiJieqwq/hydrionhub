@@ -23,8 +23,8 @@ class DrawerHistoryTest {
         assertEquals(listOf(null, today, yesterday), all.map { it.date })
         assertEquals(listOf("p", "t", "x", "i"), all.flatMap { it.rows }.map { it.id })
         assertEquals(listOf("p"), historySections(history, " NEEDLE ").flatMap { it.rows }.map { it.id })
-        assertEquals(listOf("p", "t", "i"), historySections(history, " NEEDLE ", global = true).flatMap { it.rows }.map { it.id })
-        assertEquals(listOf("t", "i"), historySections(history, "different  needle", global = true).flatMap { it.rows }.map { it.id })
+        assertEquals(listOf("p", "t", "i"), globalDrawerHits(history, " NEEDLE ").map { it.id })
+        assertEquals(listOf("t", "i"), globalDrawerHits(history, "different  needle").map { it.id })
         assertEquals(emptyList<HistorySection>(), historySections(history, "absent"))
     }
 
@@ -33,7 +33,7 @@ class DrawerHistoryTest {
         val second = first.copy(id = "two", assistantId = "b")
         val rows = listOf(first, second)
         assertEquals(listOf(first), historySections(rows, "", assistantId = "a").single().rows)
-        assertEquals(rows, historySections(rows, "work", global = true, assistantId = "a").single().rows)
+        assertEquals(listOf("one", "two"), globalDrawerHits(rows, "work").map { it.id })
         assertEquals(rows, historySections(rows, "").single().rows)
     }
 
@@ -58,8 +58,11 @@ class DrawerHistoryTest {
             Message(role = Role.Assistant, text = "visible answer", thought = "secret", tool = "meta", prompt = "unshown"),
         ))
         for (query in listOf("secret", "meta", "unshown", "visible missing")) {
-            assertEquals(emptyList<HistorySection>(), historySections(listOf(item), query, global = true))
+            assertEquals(emptyList<DrawerHit>(), globalDrawerHits(listOf(item), query))
         }
-        assertEquals(listOf(item), historySections(listOf(item), "TITLE answer", global = true).single().rows)
+        val hit = globalDrawerHits(listOf(item), "TITLE answer").single()
+        assertEquals(item.id, hit.id)
+        assertEquals(item.messages.single().id, hit.messageId)
+        assertEquals("visible answer", hit.snippet)
     }
 }

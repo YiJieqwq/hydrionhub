@@ -54,6 +54,10 @@ import io.hydrion.hub.ui.composer.ModelEditorComposerBridge
 import io.hydrion.hub.ui.messages.ProvideMessageStyle
 import io.hydrion.hub.ui.messages.MessageList
 import io.hydrion.hub.ui.messages.matchingMessages
+import androidx.compose.ui.res.stringResource
+import io.hydrion.hub.R
+import io.hydrion.hub.ui.sidebar.DrawerActions
+import io.hydrion.hub.ui.sidebar.DrawerHit
 import io.hydrion.hub.ui.sidebar.ConversationDrawer
 import io.hydrion.hub.ui.sidebar.WorkspaceDrawer
 import io.hydrion.hub.ui.theme.HydrionTheme
@@ -117,6 +121,22 @@ private fun Workspace(vm: HubViewModel) {
     var finding by rememberSaveable(current.id) { mutableStateOf(false) }
     var query by rememberSaveable(current.id) { mutableStateOf("") }
     var matchIndex by rememberSaveable(query, current.id) { mutableIntStateOf(0) }
+    var drawerHit by remember { mutableStateOf<DrawerHit?>(null) }
+    LaunchedEffect(current.id, drawerHit) {
+        val hit = drawerHit ?: return@LaunchedEffect
+        if (hit.id == current.id && hit.needle != null) {
+            finding = true
+            query = hit.needle
+        }
+    }
+    // matchIndex is keyed by the query. Position the match once that query has been applied.
+    LaunchedEffect(current.id, query, drawerHit) {
+        val hit = drawerHit ?: return@LaunchedEffect
+        if (hit.id == current.id && hit.needle == query) {
+            matchIndex = matchingMessages(state, query).indexOf(hit.messageId).coerceAtLeast(0)
+            drawerHit = null
+        }
+    }
     val hits = remember(query, current.messages, finding) {
         if (finding && query.isNotBlank()) matchingMessages(state, query) else emptyList()
     }
@@ -127,6 +147,11 @@ private fun Workspace(vm: HubViewModel) {
     val scope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
     val timelines = rememberSaveableStateHolder()
+    val drawerActions = remember(vm, timelines) {
+        DrawerActions(vm::hasDrawerDraft, vm::setPinned, vm::moveConversations, vm::duplicateConversation,
+            delete = { ids -> ids.forEach(timelines::removeState); vm.deleteConversations(ids) },
+            vm::copyAssistant, vm::groupAssistant, vm::canRemoveAssistant, vm::removeEmptyAssistant)
+    }
     val snackbar = remember { SnackbarHostState() }
     val notice by vm.notice.collectAsStateWithLifecycle()
     val errors by vm.errors.collectAsStateWithLifecycle()
@@ -175,7 +200,8 @@ private fun Workspace(vm: HubViewModel) {
                     onRenameAssistant = vm::renameAssistant, currentId = current.id, onNew = { leaveDrawer(vm::newConversation) },
                     onOpen = { id -> leaveDrawer { vm.openConversation(id) } },
                     onSettings = { closeDrawer(); settings = true },
-                    onRename = { renameId = it }, onPin = vm::togglePin, onDelete = { deleteId = it }
+                    onRename = { renameId = it }, onPin = vm::togglePin, onDelete = { deleteId = it }, actions = drawerActions,
+                    onHit = { hit -> leaveDrawer { vm.openConversation(hit.id); drawerHit = hit.takeIf { it.needle != null } } }
                 )
             }
         ) {
@@ -346,18 +372,18 @@ private fun Workspace(vm: HubViewModel) {
     fun titleFor(id: String) = if (id == current.id) current.title else state.history.firstOrNull { it.id == id }?.title.orEmpty()
     renameId?.let { id ->
         var value by rememberSaveable(id) { mutableStateOf(titleFor(id)) }
-        AlertDialog(onDismissRequest = { renameId = null }, title = { Text("重命名会话") }, text = {
-            OutlinedTextField(value, { value = it }, label = { Text("会话名称") }, singleLine = true)
+        AlertDialog(onDismissRequest = { renameId = null }, title = { Text(stringResource(R.string.drawer_rename)) }, text = {
+            OutlinedTextField(value, { value = it }, label = { Text(stringResource(R.string.drawer_title)) }, singleLine = true)
         }, confirmButton = {
-            TextButton(onClick = { vm.rename(id, value.trim()); renameId = null }, enabled = value.isNotBlank()) { Text("保存") }
-        }, dismissButton = { TextButton(onClick = { renameId = null }) { Text("取消") } })
+            TextButton(onClick = { vm.rename(id, value.trim()); renameId = null }, enabled = value.isNotBlank()) { Text(stringResource(R.string.settings_save)) }
+        }, dismissButton = { TextButton(onClick = { renameId = null }) { Text(stringResource(R.string.settings_cancel)) } })
     }
     deleteId?.let { id ->
-        AlertDialog(onDismissRequest = { deleteId = null }, title = { Text("删除会话？") },
-            text = { Text("将从本机删除「${titleFor(id)}」及其消息。") },
+        AlertDialog(onDismissRequest = { deleteId = null }, title = { Text(stringResource(R.string.drawer_delete)) },
+            text = { Text(stringResource(R.string.drawer_delete_one, titleFor(id))) },
             confirmButton = { TextButton(onClick = { timelines.removeState(id); vm.deleteConversation(id); deleteId = null }) {
-                Text("删除", color = MaterialTheme.colorScheme.error)
-            } }, dismissButton = { TextButton(onClick = { deleteId = null }) { Text("取消") } })
+                Text(stringResource(R.string.drawer_delete), color = MaterialTheme.colorScheme.error)
+            } }, dismissButton = { TextButton(onClick = { deleteId = null }) { Text(stringResource(R.string.settings_cancel)) } })
     }
 }
 

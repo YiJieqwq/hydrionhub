@@ -38,7 +38,7 @@ internal fun decodeWorkspace(json: JSONObject): SavedWorkspace {
     val history = json.optJSONArray("history").objects().map(::readConversation)
     val drafts = json.optJSONObject("drafts") ?: JSONObject()
     val assistants = json.optJSONArray("assistants").objects().map {
-        LocalAssistant(it.getString("id"), it.getString("name"))
+        LocalAssistant(it.getString("id"), it.getString("name"), it.optional("sidebarGroup")?.takeIf(LocalAssistant::validName))
     }.ifEmpty { listOf(LocalAssistant.Default) }
     val lastThreads = json.optJSONObject("lastThreads") ?: JSONObject()
     val defaults = Draft()
@@ -62,7 +62,7 @@ internal fun encodeWorkspace(saved: SavedWorkspace): JSONObject {
             .put("search", draft.search).put("imageTool", draft.imageTool))
     }
     return JSONObject().put("history", history).put("drafts", drafts).put("unsent", saved.unsent?.let(::writeConversation))
-        .put("assistants", JSONArray(saved.assistants.map { JSONObject().put("id", it.id).put("name", it.name) }))
+        .put("assistants", JSONArray(saved.assistants.map { JSONObject().put("id", it.id).put("name", it.name).put("sidebarGroup", it.sidebarGroup) }))
         .put("selectedAssistant", saved.selectedAssistant).put("lastThreads", JSONObject(saved.lastThreads))
         .put("otherUnsent", JSONArray(saved.otherUnsent.map(::writeConversation)))
 }

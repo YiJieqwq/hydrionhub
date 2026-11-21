@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import io.hydrion.hub.model.LocalAssistant
 import io.hydrion.hub.model.Conversation
+import io.hydrion.hub.ui.sidebar.DrawerActions
 import io.hydrion.hub.ui.sidebar.ConversationDrawer
 import android.view.View
 import androidx.compose.ui.geometry.Offset
@@ -28,6 +29,8 @@ import org.junit.runner.RunWith
 class PushDrawerTest {
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
 
+    private val actions = DrawerActions({ false }, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}, { _, _ -> false }, { _, _ -> false }, { false }, {})
+
     private fun node(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode()
 
     @Test fun headerAndFooterStayOnSingleRowsInRegularAndNarrowDrawers() {
@@ -37,7 +40,7 @@ class PushDrawerTest {
                 ConversationDrawer(width.value, MaterialTheme.colorScheme.surface, emptyList(), "",
                     assistants = listOf(LocalAssistant.Default), assistantId = LocalAssistant.Default.id,
                     assistantsReady = true, onSelectAssistant = {}, onRenameAssistant = { _, _ -> false },
-                    onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = {}, onDelete = {})
+                    onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = {}, onDelete = {}, actions = actions, onHit = {})
             }
         } }
         val search = screen.onNode(hasContentDescription(screen.activity.getString(R.string.drawer_search)) and hasSetTextAction())
@@ -91,7 +94,7 @@ class PushDrawerTest {
                 ConversationDrawer(300.dp, MaterialTheme.colorScheme.surface, chats, "",
                     assistants = listOf(LocalAssistant.Default, alt), assistantId = current,
                     onSelectAssistant = { current = it }, onRenameAssistant = { _, _ -> false }, assistantsReady = true,
-                    onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = {}, onDelete = {})
+                    onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = {}, onDelete = {}, actions = actions, onHit = {})
             }
         } }
         val disclosure = screen.onNodeWithContentDescription(screen.activity.getString(R.string.drawer_assistants))
@@ -108,6 +111,29 @@ class PushDrawerTest {
         screen.onNodeWithTag("assistant-row-writing").assertIsSelected()
         screen.onNodeWithTag("drawer-settings").assertIsDisplayed()
         screen.onNodeWithTag("drawer-new-chat").assertIsDisplayed()
+    }
+
+    @Test fun longPressSeedsSelectionAndCancelLeavesHistoryUntouched() {
+        val owner = LocalAssistant.Default
+        val ids = listOf(Conversation(title = "Alpha"), Conversation(title = "Beta"))
+        val changes = mutableListOf<Set<String>>()
+        val f = DrawerActions({ it == ids[0].id }, { selected, _ -> changes += selected },
+            { _, _ -> }, { _, _ -> }, { changes += it }, { _, _ -> false }, { _, _ -> false }, { false }, {})
+        screen.runOnUiThread { screen.activity.setContent { MaterialTheme {
+            ConversationDrawer(300.dp, MaterialTheme.colorScheme.surface, ids, ids[0].id,
+                listOf(owner), owner.id, {}, { _, _ -> false }, true, {}, {}, {}, {}, {}, {}, f, {})
+        } } }
+        fun label(id: Int) = screen.activity.getString(id)
+        screen.onNodeWithText("Alpha").performTouchInput { longClick() }
+        screen.onNodeWithText(label(R.string.drawer_select)).performTouchInput { click() }
+        screen.onNodeWithText("Beta").performTouchInput { click() }
+        screen.onNodeWithText(label(R.string.drawer_pin)).performTouchInput { click() }
+        screen.runOnIdle { assertEquals(listOf(ids.map { it.id }.toSet()), changes) }
+        screen.onNodeWithText(label(R.string.drawer_delete)).performTouchInput { click() }
+        screen.onNodeWithText(label(R.string.settings_cancel)).performTouchInput { click() }
+        screen.onNodeWithContentDescription(label(R.string.settings_cancel)).performTouchInput { click() }
+        screen.onNodeWithTag("drawer-new-chat").assertIsDisplayed()
+        screen.runOnIdle { assertEquals(1, changes.size) }
     }
 
     @Test fun dragMovesTheFullWidthChatAndOnlyTheExposedStripDismissesTheDrawer() {

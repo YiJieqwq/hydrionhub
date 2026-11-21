@@ -77,7 +77,7 @@ data class Message(
     val reportedUsage: TokenUsage? get() = usage ?: totalTokens?.let { TokenUsage(totalTokens = it) }
 }
 
-data class LocalAssistant(val id: String, val name: String) {
+data class LocalAssistant(val id: String, val name: String, val sidebarGroup: String? = null) {
     companion object {
         val Default = LocalAssistant("default", "HydrionHub")
         fun validName(name: String) = name.isNotBlank() && name.length <= 64 && name.none(Char::isISOControl)

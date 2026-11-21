@@ -152,6 +152,19 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         withContext(Dispatchers.Main.immediate) { session.bindEnvironment(conversationId, environmentId) }
     }
     fun rename(id: String, title: String) = session.rename(id, title)
+    internal fun hasDrawerDraft(id: String) = session.hasDraft(id)
+    internal fun copyAssistant(name: String, group: String?) = loaded && session.addAssistant(name, group)
+    internal fun groupAssistant(id: String, group: String) = loaded && session.groupAssistant(id, group)
+    internal fun canRemoveAssistant(id: String) = loaded && session.canRemoveAssistant(id)
+    internal fun removeEmptyAssistant(id: String) { if (loaded) session.removeEmptyAssistant(id) }
+    internal fun setPinned(ids: Set<String>, pinned: Boolean) { if (loaded) session.setPinned(ids, pinned) }
+    internal fun moveConversations(ids: Set<String>, target: String) { if (loaded) session.moveConversations(ids, target) }
+    internal fun duplicateConversation(id: String, title: String) { if (loaded) session.duplicateConversation(id, title) }
+    internal fun deleteConversations(ids: Set<String>) {
+        if (!loaded) return
+        session.deleteConversations(ids)
+        mutableErrors.update { it - ids }
+    }
     fun togglePin(id: String) = session.togglePin(id)
     fun deleteConversation(id: String) {
         session.deleteConversation(id)

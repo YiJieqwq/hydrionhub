@@ -71,7 +71,7 @@ private fun SavedWorkspace.transform(attachment: (Attachment) -> Attachment, ima
         modelRoutes = c.modelRoutes?.mapValues { (_, r) -> RemoteModel(r.providerId, r.modelId) })
     return SavedWorkspace(history.map(::conversation), drafts.mapValues { (_, d) ->
         Draft(d.text, d.attachments.map(::portableAttachment), d.search, d.imageTool)
-    }, unsent?.let(::conversation), assistants.map { LocalAssistant(it.id, it.name) }, selectedAssistant,
+    }, unsent?.let(::conversation), assistants.map { LocalAssistant(it.id, it.name, it.sidebarGroup) }, selectedAssistant,
         otherUnsent.map(::conversation), lastThreads.toMap())
 }
 
@@ -81,7 +81,7 @@ private fun stableId(value: String) = value.isNotBlank() && value.length <= 256 
 private fun SavedWorkspace.checkIds() {
     val owners = assistants.map { it.id }.toSet()
     require(owners.size == assistants.size && LocalAssistant.Default.id in owners && selectedAssistant in owners)
-    require(assistants.all { stableId(it.id) && LocalAssistant.validName(it.name) })
+    require(assistants.all { stableId(it.id) && LocalAssistant.validName(it.name) && (it.sidebarGroup == null || LocalAssistant.validName(it.sidebarGroup)) })
     val conversations = history + pending
     require(conversations.all { it.assistantId in owners })
     require(pending.map { it.assistantId }.distinct().size == pending.size)
