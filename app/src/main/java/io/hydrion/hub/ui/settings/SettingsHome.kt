@@ -57,6 +57,8 @@ private data class SettingsRow(
 
 private val settingsGroups = listOf(
     R.string.settings_general to listOf(
+        SettingsRow(R.string.settings_signed_in_accounts, Icons.Outlined.ManageAccounts,
+            "登录账户管理 已登录账号 manage signed-in accounts signed in login"),
         SettingsRow(R.string.settings_style, Icons.Outlined.Palette,
             "消息样式 外观与主题 字色 气泡 样式 配色 消息 颜色 message appearance style theme", SettingsEntry.Style),
         SettingsRow(R.string.settings_assistants, Icons.Outlined.PersonOutline, "助手管理 assistants assistant management"),
