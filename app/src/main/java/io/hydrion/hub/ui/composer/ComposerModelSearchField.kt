@@ -2,6 +2,7 @@ package io.hydrion.hub.ui.composer
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -11,13 +12,41 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.round
 import io.hydrion.hub.provider.ChatModelPickerState
+import io.hydrion.hub.ui.theme.HubStyle
+
+// A search with actual text never leaves a phantom search placeholder when it departs.
+internal fun searchHintFraction(progress: Float, browsing: Boolean, lastQueryEmpty: Boolean) =
+    if (browsing || lastQueryEmpty) progress.coerceIn(0f, 1f) else 0f
+
+/** Decorative hints share one moving field. Only its destination is exposed to accessibility. */
+@Composable
+internal fun ModelSearchHints(
+    draftHint: String, searchHint: String, style: TextStyle, browsing: Boolean, progress: Float,
+    draftEmpty: Boolean, lastQueryEmpty: Boolean,
+) {
+    val search = searchHintFraction(progress, browsing, lastQueryEmpty)
+    if (draftEmpty && search < 1f) {
+        Text(draftHint, Modifier.graphicsLayer { alpha = 1f - search }
+            .then(if (browsing) Modifier.clearAndSetSemantics {} else Modifier),
+            color = HubStyle.ComposerHint, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    if (search > 0f) {
+        Text(searchHint, Modifier.graphicsLayer { alpha = search }
+            .then(if (browsing) Modifier else Modifier.clearAndSetSemantics {}),
+            color = HubStyle.ComposerHint, style = style, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
 
 internal fun Modifier.trackPickerEditor(picker: ChatModelPickerState?, textOnly: Boolean = false): Modifier =
     if (picker == null) this else onGloballyPositioned {

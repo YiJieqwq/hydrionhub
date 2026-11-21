@@ -25,6 +25,7 @@ import io.hydrion.hub.provider.ModelProfile
 import io.hydrion.hub.provider.Provider
 import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.provider.ProviderStore
+import io.hydrion.hub.ui.composer.ToolsPageTravelMillis
 import io.hydrion.hub.ui.ModelEditorMotionMillis
 import io.hydrion.hub.provider.deepSeekProvider
 import java.util.UUID
@@ -225,6 +226,47 @@ class ChatModelSearchTest {
             assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
             screen.runOnIdle { assertEquals(attachments, vm.state.value.draft.attachments) }
         }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test fun listReturnRestoresTheLiveEditorBeforeTheToolbarLands() = withProviders { vm, _, _ ->
+        editor.performTouchInput { click(center) }
+        screen.waitUntil(15_000) { imeIsVisible() }
+        val clock = screen.mainClock
+        fun xBounds(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        for (original in listOf("", "first line\nsecond line")) {
+            editor.performTextReplacement(original)
+            val selection = TextRange(0, minOf(3, original.length))
+            editor.performTextInputSelection(selection)
+            openControls()
+            val labelTag = "chat-model-source-label"
+            val micTag = "chat-composer-dictate"
+            val settled = xBounds(labelTag)
+            val gap = xBounds(micTag).left - settled.right
+            val query = enterModels()
+            if (original.isNotEmpty()) query.performTextReplacement("Nimbus")
+
+            clock.autoAdvance = false
+            try {
+                control("list-back").performClick()
+                clock.advanceTimeByFrame()
+                clock.advanceTimeBy(ToolsPageTravelMillis / 2L)
+                assertTrue(imeIsVisible())
+                control("search-field").assertDoesNotExist()
+                assertEquals(original, editor.assertIsFocused().fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+                assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+                assertComposerHint(if (original.isEmpty()) "Chat with AI" else null)
+                val middle = xBounds(labelTag)
+                assertEquals("The model label and mic must travel together", gap, xBounds(micTag).left - middle.right, 1f)
+                clock.advanceTimeBy(ToolsPageTravelMillis.toLong())
+                assertEquals("The label returns to its original anchor", settled.right, xBounds(labelTag).right, 1f)
+            } finally {
+                clock.autoAdvance = true
+            }
+            control("card").assertIsDisplayed()
+            control("trigger").performClick()
+            screen.runOnIdle { assertEquals(original, vm.state.value.draft.text) }
+        }
+    }
 
     @OptIn(ExperimentalTestApi::class)
     @Test fun listArrowRestoresEffortAndTriggerClosesItWithKeyboardOpen() =

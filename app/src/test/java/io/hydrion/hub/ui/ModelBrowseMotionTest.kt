@@ -4,6 +4,7 @@ import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.mutableStateOf
 import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.ui.composer.ToolsPageState
+import io.hydrion.hub.ui.composer.searchHintFraction
 import io.hydrion.hub.ui.composer.ToolsPageTravelMillis
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancelAndJoin
@@ -29,6 +30,12 @@ class ModelBrowseMotionTest {
             frames.sendFrame(time)
             yield()
             assertEquals(tools.progress, models.progress, 0.0001f)
+            assertEquals("The query hint follows the page on every sampled frame, including reversals",
+                tools.progress, searchHintFraction(models.progress, picker.modelListNavigation, lastQueryEmpty = true), .0001f)
+            if (!picker.modelListNavigation) {
+                assertEquals("A departing nonempty query has no outgoing hint", 0f,
+                    searchHintFraction(models.progress, browsing = false, lastQueryEmpty = false), 0f)
+            }
         }
         fun animate(open: Boolean) = listOf(
             launch(frames, start = CoroutineStart.UNDISPATCHED) { tools.animateToTarget(open) },

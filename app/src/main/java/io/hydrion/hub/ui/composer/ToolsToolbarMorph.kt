@@ -52,6 +52,7 @@ internal fun ToolsToolbarMorph(
     progress: Float,
     toolsOpen: Boolean,
     modelSearch: Boolean = false,
+    trackModel: Boolean,
     hasClearableTools: Boolean,
     generating: Boolean,
     canSend: Boolean,
@@ -75,7 +76,7 @@ internal fun ToolsToolbarMorph(
         val slot = with(density) { pose.slotWidth.toDp() }
         if (p < 1f || modelSearch) {
             fun motion(leading: Boolean): Modifier {
-                if (modelSearch && !leading) {
+                if (trackModel && !leading) {
                     // Place the model group at its actual travelling position so the parent
                     // can use its bounds and displacement in the very same measure pass.
                     return Modifier.pickerModelTravel { width -> pose.moveToCenter(width.toFloat(), false).roundToInt() }
