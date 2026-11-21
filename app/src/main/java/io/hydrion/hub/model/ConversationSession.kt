@@ -23,6 +23,8 @@ internal class ConversationSession(
     val state: StateFlow<HubState> = mutable.asStateFlow()
     private val screen get() = mutable.value
     private val drafts = mutableMapOf<String, Draft>()
+    // Present only while a dictated send is active and its cleared draft is still untouched.
+    private val dictatedDrafts = mutableMapOf<String, Draft>()
     private val jobs = mutableMapOf<String, Job>()
     private var parkedEmpty: Conversation? = null
 
@@ -111,6 +113,7 @@ internal class ConversationSession(
     fun deleteConversation(id: String) {
         if (conversation(id) == null) return
         jobs.remove(id)?.cancel()
+        dictatedDrafts.remove(id)
         drafts.remove(id)
         mutable.value = screen.copy(history = screen.history.filterNot { it.id == id })
         if (screen.current.id == id) {
@@ -123,6 +126,7 @@ internal class ConversationSession(
 
     private fun changeDraft(draft: Draft) {
         if (draft == screen.draft) return
+        dictatedDrafts.remove(screen.current.id)
         if (draft == Draft()) drafts.remove(screen.current.id) else drafts[screen.current.id] = draft
         mutable.value = screen.copy(draft = draft)
         if (screen.modeLocked) save()
@@ -159,7 +163,7 @@ internal class ConversationSession(
     }
 
     fun send(model: String, parameters: Map<String, String>, search: String?, imageTool: String?,
-             image: ImageInvocation? = null, remoteModel: RemoteModel? = null) {
+             image: ImageInvocation? = null, remoteModel: RemoteModel? = null, restoreDraftOnError: Boolean = false) {
         val s = screen
         val draft = s.draft.copy(search = search ?: s.draft.search, imageTool = imageTool ?: s.draft.imageTool)
         val prompt = draft.text.trim()
@@ -174,6 +178,7 @@ internal class ConversationSession(
         val title = if (!s.modeLocked && s.current.title == "新会话")
             prompt.ifBlank { draft.attachments.first().name }.lineSequence().first().take(32) else s.current.title
         changeDraft(draft.copy(text = "", attachments = emptyList()))
+        if (restoreDraftOnError) dictatedDrafts[s.current.id] = s.draft
         touch(s.current.copy(title = title, messages = s.current.messages + user + response))
         generate(s.current.id, s.current.mode, response)
     }
@@ -210,6 +215,11 @@ internal class ConversationSession(
         } else {
             touch(updated)
             jobs.remove(conversationId)
+            val dictated = dictatedDrafts.remove(conversationId)
+            if (reply.status == Generation.Error && dictated != null) {
+                drafts[conversationId] = dictated
+                if (screen.current.id == conversationId) mutable.value = screen.copy(draft = dictated)
+            }
             save()
             if (reply.status == Generation.Error) onGenerationError(conversationId, reply.error ?: "消息生成失败。")
         }
@@ -240,7 +250,10 @@ internal class ConversationSession(
         val item = screen.current
         val removed = item.messages.filter { it.id == id || it.replyTo == id }
         if (removed.isEmpty()) return
-        if (removed.any { it.status.isActive }) jobs.remove(item.id)?.cancel()
+        if (removed.any { it.status.isActive }) {
+            jobs.remove(item.id)?.cancel()
+            dictatedDrafts.remove(item.id)
+        }
         touch(item.copy(messages = item.messages.filterNot { it.id == id || it.replyTo == id }))
         save()
     }

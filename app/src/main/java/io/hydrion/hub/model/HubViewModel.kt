@@ -102,9 +102,10 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     fun referenceImage(imageKey: String, width: Int? = null, height: Int? = null) =
         session.referenceImage(imageKey, width, height)
     fun send(model: String, parameters: Map<String, String> = emptyMap(), search: String? = null,
-             imageTool: String? = null, image: ImageInvocation? = null, remoteModel: RemoteModel? = null) {
+             imageTool: String? = null, image: ImageInvocation? = null, remoteModel: RemoteModel? = null,
+             restoreDraftOnError: Boolean = false) {
         clearError(state.value.current.id)
-        session.send(model, parameters, search, imageTool, image, remoteModel)
+        session.send(model, parameters, search, imageTool, image, remoteModel, restoreDraftOnError)
     }
     fun stop() = session.stop()
     fun editMessage(id: String, text: String) = session.editMessage(id, text)

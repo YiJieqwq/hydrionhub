@@ -59,6 +59,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +70,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
@@ -79,6 +81,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -200,7 +203,7 @@ internal fun HubComposer(
     modelAvailable: Boolean,
     fast: Boolean,
     onConfigure: () -> Unit,
-    onSend: () -> Unit,
+    onSend: (fromDictation: Boolean) -> Unit,
     modifier: Modifier = Modifier,
     toolsAvailable: Boolean = true,
     allowImeReturn: Boolean = true,
@@ -312,16 +315,27 @@ internal fun HubComposer(
             chatPicker?.dismissEffort()
         }
     }
-    val dictate = if (chat) rememberChatDictation(
-        conversationId = state.current.id,
-        enabled = allowImeReturn && !forceReturnFolded && !editingQuery && !toolsRequested,
-        readDraft = { fieldValue.takeIf { acceptsDraftInput() && it.text == vm.state.value.draft.text } },
-        onDraft = ::updateDraft,
-    ) else null
+    // Attachments and tool settings belong to the same unsubmitted message as the recording.
+    val dictation = key(state.current.id, chat, draft.attachments, draft.search, draft.imageTool) {
+        rememberChatDictation(
+            conversationId = state.current.id,
+            enabled = chat && allowImeReturn && !forceReturnFolded && !editingQuery && !toolsRequested,
+            readDraft = {
+                fieldValue.takeIf { acceptsDraftInput() && vm.state.value.draft == draft && it.text == draft.text }
+            },
+            onResult = { updated, send ->
+                if (acceptsDraftInput() && vm.state.value.draft == draft) {
+                    updateDraft(updated)
+                    if (send && modelAvailable && !vm.state.value.isGenerating) onSend(true)
+                }
+            },
+        )
+    }
+    val dictating = dictation.isActive
     ComposerImeReturnEffect(
         controller = imeReturn,
         enabled = allowImeReturn && !toolsRequested && !hardwareKeyboardOnly && !editingQuery,
-        editorFocused = focused, windowFocused = windowFocused,
+        editorFocused = focused, windowFocused = windowFocused && !dictation.prompting,
         imeShown = imeVisible || hasImeHeight, dismissing = hiding, opening = opening,
         clearAfterDismissal = hiddenAfterEditing && !toolsRequested && !editingQuery,
         selection = ComposerEditorSelection(editorValue.text, editorValue.selection.start, editorValue.selection.end),
@@ -344,8 +358,12 @@ internal fun HubComposer(
             if (toolsPanel == ToolsPanel.WaitingForIme) toolsPanel = if (present) ToolsPanel.Open else ToolsPanel.Closed
         }
     }
-    BackHandler(enabled = toolsPanel == ToolsPanel.WaitingForIme || (focused && !toolsRequested && !pickerOpen && !editingQuery)) {
-        if (toolsPanel == ToolsPanel.WaitingForIme) cancelPendingTools() else collapse()
+    BackHandler(enabled = dictating || toolsPanel == ToolsPanel.WaitingForIme || (focused && !toolsRequested && !pickerOpen && !editingQuery)) {
+        when {
+            dictating -> dictation.cancel()
+            toolsPanel == ToolsPanel.WaitingForIme -> cancelPendingTools()
+            else -> collapse()
+        }
     }
     val shapeProgress = rememberComposerShape {
         ComposerMotionInput(
@@ -412,7 +430,7 @@ internal fun HubComposer(
         if (acceptsDraftInput() && vm.state.value.isGenerating == active) {
             if (active) vm.stop() else if (canSend) {
                 collapse()
-                onSend()
+                onSend(false)
             }
         }
     }
@@ -442,7 +460,7 @@ internal fun HubComposer(
                 }
             }
         }
-        val shape = if (toolbar == 0f) CircleShape else RoundedCornerShape(24.dp)
+        val shape = if (dictating || toolbar == 0f) CircleShape else RoundedCornerShape(24.dp)
         Surface(
             modifier = Modifier.fillMaxWidth().testTag("composer-capsule")
                 .then(if (chatPicker != null) Modifier.pickerCapsuleBounds() else Modifier)
@@ -466,7 +484,7 @@ internal fun HubComposer(
             color = colors.surfaceContainerHigh,
         ) {
             Column {
-                if (draft.attachments.isNotEmpty() && !forceReturnFolded && pageProgress < 1f) {
+                if (!dictating && draft.attachments.isNotEmpty() && !forceReturnFolded && pageProgress < 1f) {
                     val imageAndText = draft.text.isNotEmpty() && draft.attachments.any { it.hasImagePreview }
                     // Let the editor and toolbar measure first in short windows above the IME.
                     BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth()
@@ -492,7 +510,10 @@ internal fun HubComposer(
                     }
                 }
                 Box(Modifier.fillMaxWidth()) {
-                    Column {
+                    // Keep the native input connection alive beneath the one-line voice controls.
+                    val editorLayer = if (dictating) Modifier.height(48.dp)
+                        .clearAndSetSemantics { }.drawWithContent { } else Modifier
+                    Column(editorLayer) {
                         ComposerEditorSlot(
                             searching = browsing, editorFocus = editorFocus, modelEditorBridge = modelEditorBridge,
                             readDraft = { fieldValue },
@@ -530,7 +551,7 @@ internal fun HubComposer(
                                         if (draftSession.value && toolEditor.targetOpen) {
                                             toolEditor.query = updated.singleLineQuery()
                                         }
-                                    } else if (acceptsDraftInput()) {
+                                    } else if (!dictation.isActive && acceptsDraftInput()) {
                                         updateDraft(updated)
                                     }
                                 },
@@ -614,7 +635,18 @@ internal fun HubComposer(
                         }
                         Spacer(Modifier.height(controlRowHeight * toolbar))
                     }
-                    ToolsToolbarMorph(
+                    if (dictating) {
+                        DictationBar(
+                            level = { dictation.level },
+                            onCancel = dictation::cancel, onSave = dictation::save, onSend = dictation::send,
+                            canSend = modelAvailable && !state.isGenerating, waiting = dictation.waiting,
+                            resultReady = dictation.resultReady,
+                            // Hit test even the silent space between actions, above the live editor.
+                            modifier = Modifier.fillMaxWidth().height(48.dp).pointerInput(Unit) {
+                                awaitPointerEventScope { while (true) awaitPointerEvent() }
+                            },
+                        )
+                    } else ToolsToolbarMorph(
                         progress = pageProgress, toolsOpen = browsing || tools?.targetOpen == true, modelSearch = modelSearch != null,
                         hasClearableTools = (modelSearch?.searchQuery ?: toolEditor?.query)?.text?.isNotEmpty() == true,
                         generating = active, canSend = canSend,
@@ -743,10 +775,17 @@ internal fun HubComposer(
                                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
                                     }
-                                    if (dictate != null) {
+                                    if (chat) {
                                         ComposerIconButton(
                                             label = stringResource(R.string.chat_dictate),
-                                            onClick = dictate,
+                                            onClick = {
+                                                chatPicker?.dismissEffort()
+                                                dictation.start()
+                                                if (dictation.prompting) {
+                                                    imeReturn.onSpeechPrompt(ComposerEditorSelection(
+                                                        fieldValue.text, fieldValue.selection.start, fieldValue.selection.end))
+                                                }
+                                            },
                                             enabled = interactive && allowImeReturn && !returning,
                                             modifier = Modifier.padding(end = 5.dp).testTag("chat-composer-dictate"),
                                             slotWidth = 48.dp,

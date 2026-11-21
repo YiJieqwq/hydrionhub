@@ -38,6 +38,22 @@ class ComposerImeReturnTest {
         assertEquals(Action.ClearEditorFocus, sample(shown = false, clear = true))
     }
 
+    @Test fun speechPromptRestoresOnlyAnAlreadyVisibleEditedFieldAndOnlyOnce() {
+        sample(shown = false)
+        controller.onSpeechPrompt(range)
+        assertEquals(Action.None, sample(shown = false))
+        sample()
+        controller.onSpeechPrompt(range)
+        assertEquals(Action.None, sample(interactive = false, shown = false))
+        assertEquals(Action.RestoreEditor, sample(shown = false, clear = true))
+        assertEquals(range, controller.selectionFor(range.text))
+        assertEquals(Action.None, sample(shown = false, clear = true))
+        sample()
+        sample(hiding = true)
+        controller.onSpeechPrompt(range)
+        assertEquals(Action.ClearEditorFocus, sample(shown = false, clear = true))
+    }
+
     @Test fun gestureOrBackDismissalAndDraftWithoutAnImeDoNotQualify() {
         sample()
         sample(hiding = true)

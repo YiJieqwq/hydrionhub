@@ -1,6 +1,20 @@
 <resources>
     <string name="chat_dictate">听写消息</string>
-    <string name="chat_dictation_unavailable">此设备无法使用系统语音识别。</string>
-    <string name="chat_dictation_no_result">未识别到语音，请重试。</string>
     <string name="chat_dictation_draft_changed">草稿或选区已更改，听写结果未插入。</string>
+    <string name="dictation_service_consent_title">使用系统语音识别服务？</string>
+    <string name="dictation_service_consent_body">设备的默认语音服务可能会将音频发送给其提供商进行识别。你也可以使用输入法自带的语音输入。</string>
+    <string name="dictation_service_allow">使用系统服务</string>
+    <string name="dictation_service_cancel">取消</string>
+    <string name="dictation_service_missing">此设备无法使用内嵌语音识别，可使用输入法自带的语音输入。</string>
+    <string name="dictation_service_permission">听写需要麦克风权限，可在应用设置中开启，也可以使用输入法自带的语音输入。</string>
+    <string name="dictation_service_audio">语音识别服务无法使用麦克风，可使用输入法自带的语音输入。</string>
+    <string name="dictation_service_failed">语音识别服务未能完成听写，请重试或使用输入法自带的语音输入。</string>
+    <string name="dictation_service_timeout">听写超时，请重试或使用输入法自带的语音输入。</string>
+    <string name="dictation_service_no_result">未识别到语音，请重试或使用输入法自带的语音输入。</string>
+    <string name="dictation_bar_cancel">取消听写</string>
+    <string name="dictation_bar_save">结束听写并将文字保留在草稿中</string>
+    <string name="dictation_bar_send">结束听写并发送消息</string>
+    <string name="dictation_bar_listening">正在听写</string>
+    <string name="dictation_bar_finishing">识别中…</string>
+    <string name="dictation_bar_ready">已识别语音，请选择操作。</string>
 </resources>

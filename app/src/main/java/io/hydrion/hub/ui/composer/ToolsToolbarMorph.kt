@@ -138,32 +138,37 @@ internal fun ToolsToolbarMorph(
                     if (generating && p == 0f) {
                         Box(Modifier.size(11.dp).background(Color.Black, RoundedCornerShape(1.25.dp)))
                     } else {
-                        Canvas(Modifier.size(20.dp).graphicsLayer { rotationZ = pose.arrowDegrees }) {
-                            val stroke = 2.dp.toPx()
-                            val r = 6.67.dp.toPx()
-                            val wing = 5.67.dp.toPx()
-                            val shape = if (generating) p else 1f
-                            val tipY: Float
-                            if (shape == 1f) {
-                                tipY = center.y - r
-                                drawLine(ink, Offset(center.x, center.y + r), Offset(center.x, tipY), stroke, StrokeCap.Round)
-                            } else {
-                                // Narrow the original 11dp stop square into the arrow's rounded stem.
-                                val halfWidth = 5.5.dp.toPx() * (1f - shape) + stroke / 2 * shape
-                                val halfHeight = 5.5.dp.toPx() * (1f - shape) + (r + stroke / 2) * shape
-                                val corner = 1.25.dp.toPx() * (1f - shape) + stroke / 2 * shape
-                                drawRoundRect(ink, center - Offset(halfWidth, halfHeight),
-                                    Size(2 * halfWidth, 2 * halfHeight), CornerRadius(corner))
-                                tipY = center.y - halfHeight + stroke / 2
-                            }
-                            val tip = Offset(center.x, tipY)
-                            drawLine(ink, tip, tip + Offset(-wing, wing) * shape, stroke, StrokeCap.Round)
-                            drawLine(ink, tip, tip + Offset(wing, wing) * shape, stroke, StrokeCap.Round)
-                        }
+                        ComposerSendGlyph(ink, Modifier.graphicsLayer { rotationZ = pose.arrowDegrees },
+                            shape = if (generating) p else 1f)
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun ComposerSendGlyph(ink: Color, modifier: Modifier = Modifier, shape: Float = 1f) {
+    Canvas(modifier.size(20.dp)) {
+        val stroke = 2.dp.toPx()
+        val r = 6.67.dp.toPx()
+        val wing = 5.67.dp.toPx()
+        val tipY: Float
+        if (shape == 1f) {
+            tipY = center.y - r
+            drawLine(ink, Offset(center.x, center.y + r), Offset(center.x, tipY), stroke, StrokeCap.Round)
+        } else {
+            // Narrow the original 11dp stop square into the arrow's rounded stem.
+            val halfWidth = 5.5.dp.toPx() * (1f - shape) + stroke / 2 * shape
+            val halfHeight = 5.5.dp.toPx() * (1f - shape) + (r + stroke / 2) * shape
+            val corner = 1.25.dp.toPx() * (1f - shape) + stroke / 2 * shape
+            drawRoundRect(ink, center - Offset(halfWidth, halfHeight),
+                Size(2 * halfWidth, 2 * halfHeight), CornerRadius(corner))
+            tipY = center.y - halfHeight + stroke / 2
+        }
+        val tip = Offset(center.x, tipY)
+        drawLine(ink, tip, tip + Offset(-wing, wing) * shape, stroke, StrokeCap.Round)
+        drawLine(ink, tip, tip + Offset(wing, wing) * shape, stroke, StrokeCap.Round)
     }
 }
 

@@ -15,6 +15,14 @@ internal class ComposerImeReturn {
 
     fun selectionFor(text: String) = lastSelection?.takeIf { it.text == text }
 
+    /** A user-opened permission or consent window can dismiss the IME without stopping the activity. */
+    fun onSpeechPrompt(selection: ComposerEditorSelection) {
+        if (editingWithIme || awaitingKeyboard) {
+            lastSelection = selection
+            pendingReturn = true
+        }
+    }
+
     fun cancel() {
         lastSelection = null
         editingWithIme = false

@@ -1,6 +1,20 @@
 <resources>
     <string name="chat_dictate">Dictate message</string>
-    <string name="chat_dictation_unavailable">Speech recognition is unavailable on this device.</string>
-    <string name="chat_dictation_no_result">No speech was recognized. Try again.</string>
     <string name="chat_dictation_draft_changed">Dictation was discarded because the draft or selection changed.</string>
+    <string name="dictation_service_consent_title">Use the system speech service?</string>
+    <string name="dictation_service_consent_body">Your device’s default speech service may send audio to its provider for recognition. You can also use voice input on your keyboard.</string>
+    <string name="dictation_service_allow">Use system service</string>
+    <string name="dictation_service_cancel">Cancel</string>
+    <string name="dictation_service_missing">Inline speech recognition is unavailable. Try voice input on your keyboard.</string>
+    <string name="dictation_service_permission">Allow microphone access for dictation. You can change it in app settings or use voice input on your keyboard.</string>
+    <string name="dictation_service_audio">The speech service could not use the microphone. Try voice input on your keyboard.</string>
+    <string name="dictation_service_failed">The speech service could not finish dictation. Try again or use voice input on your keyboard.</string>
+    <string name="dictation_service_timeout">Recognition timed out. Try again or use voice input on your keyboard.</string>
+    <string name="dictation_service_no_result">No speech was recognized. Try again or use voice input on your keyboard.</string>
+    <string name="dictation_bar_cancel">Cancel dictation</string>
+    <string name="dictation_bar_save">Finish dictation and keep the text in the draft</string>
+    <string name="dictation_bar_send">Finish dictation and send the message</string>
+    <string name="dictation_bar_listening">Dictation in progress</string>
+    <string name="dictation_bar_finishing">Recognizing…</string>
+    <string name="dictation_bar_ready">Speech recognized. Choose an action.</string>
 </resources>

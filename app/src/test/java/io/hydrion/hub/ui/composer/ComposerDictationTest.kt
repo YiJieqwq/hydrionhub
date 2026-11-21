@@ -1,42 +1,97 @@
 package io.hydrion.hub.ui.composer
 
-import androidx.compose.runtime.saveable.SaverScope
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ComposerDictationTest {
-    private val old = TextFieldValue("前文\n旧文字\n后文", TextRange(6, 3))
-    private val target = DictationTarget.capture("chat", old)
+    private val original = TextFieldValue("前文\n旧文字\n后文", TextRange(6, 3))
 
-    @Test fun replacesReversedSelectionAndPlacesCursorAfterSpeech() {
+    @Test fun saveBeforeFinalWaitsAndReplacesOnlyTheOriginalReversedSelection() {
+        val session = DictationSession("chat", original)
+        assertTrue(session.choose(DictationAction.Save))
+        assertTrue(session.waitingForFinal)
+        assertFalse(session.choose(DictationAction.Send))
+        assertNull(session.consume("chat", original))
+
         val speech = "新🎈"
-        assertEquals(TextFieldValue("前文\n新🎈\n后文", TextRange(3 + speech.length)), target.insert("chat", old, speech))
+        assertTrue(session.finalResult(speech))
+        assertFalse(session.waitingForFinal)
+        val expected = TextFieldValue("前文\n新🎈\n后文", TextRange(3 + speech.length))
+        assertEquals(DictationCommit(DictationAction.Save, expected), session.consume("chat", original))
+        assertFalse(session.isActive)
+        assertNull(session.consume("chat", original))
     }
 
-    @Test fun insertsAtCursorWithoutChangingSurroundingText() {
+    @Test fun finalBeforeChoiceWaitsWithoutSendingAndOnlyTheFirstChoiceIsUsed() {
         val draft = TextFieldValue("hello world", TextRange(6))
-        assertEquals(TextFieldValue("hello wide world", TextRange(11)),
-            DictationTarget.capture("chat", draft).insert("chat", draft, "wide "))
+        val session = DictationSession("chat", draft)
+        assertTrue(session.finalResult("wide "))
+        assertTrue(session.isActive)
+        assertTrue(session.hasFinal)
+        assertFalse(session.waitingForFinal)
+        assertNull(session.consume("chat", draft))
+        assertFalse(session.finalResult("duplicate"))
+
+        assertTrue(session.choose(DictationAction.Send))
+        assertFalse(session.choose(DictationAction.Save))
+        assertEquals(DictationCommit(DictationAction.Send, TextFieldValue("hello wide world", TextRange(11))),
+            session.consume("chat", draft))
+        assertFalse(session.finalResult("late"))
+        assertNull(session.consume("chat", draft))
     }
 
-    @Test fun rejectsDifferentChatDraftOrSelectionAndEmptyResults() {
-        assertNull(target.insert("other-chat", old, "语音"))
-        assertNull(target.insert("chat", old.copy(text = "替换后的消息", selection = TextRange(6, 3)), "语音"))
-        assertNull(target.insert("chat", old.copy(selection = TextRange.Zero), "语音"))
-        assertNull(target.insert("chat", old, "  "))
+    @Test fun cancellationDiscardsBothEarlyAndLateResultsEvenAfterStartingAgainInTheSameDraft() {
+        val canceledBefore = DictationSession("chat", original)
+        canceledBefore.choose(DictationAction.Send)
+        canceledBefore.cancel()
+        val next = DictationSession("chat", original)
+        next.choose(DictationAction.Save)
+        assertFalse(canceledBefore.finalResult("late"))
+        assertNull(canceledBefore.consume("chat", original))
+        assertNull(next.consume("chat", original))
+        assertTrue(next.finalResult("new"))
+        assertEquals("前文\nnew\n后文", next.consume("chat", original)?.draft?.text)
+
+        val canceledAfter = DictationSession("chat", original)
+        canceledAfter.finalResult("not accepted")
+        canceledAfter.cancel()
+        assertFalse(canceledAfter.choose(DictationAction.Send))
+        assertNull(canceledAfter.consume("chat", original))
     }
 
-    @Test fun recreationRestoresTheOriginalInsertionPointOnlyForAnUnchangedDraft() {
-        val scope = object : SaverScope { override fun canBeSaved(value: Any) = true }
-        val saved = with(DictationTarget.Saver) { requireNotNull(scope.save(target)) }
-        val restored = requireNotNull(DictationTarget.Saver.restore(saved))
-        assertEquals(TextFieldValue("前文\n新\n后文", TextRange(4)),
-            restored.insert("chat", TextFieldValue(old.text), "新"))
-        assertNull(restored.insert("chat", TextFieldValue("新的草稿"), "新"))
-        assertNull(restored.insert("chat", old.copy(selection = TextRange(2)), "新"))
-        assertNull(restored.insert("other-chat", TextFieldValue(old.text), "新"))
+    @Test fun blankFinalEndsTheRequestRegardlessOfWhetherAChoiceWasMade() {
+        for (choice in listOf(null, DictationAction.Save, DictationAction.Send)) {
+            val session = DictationSession("chat", original)
+            if (choice != null) assertTrue(session.choose(choice))
+            assertFalse(session.finalResult(" \n "))
+            assertFalse(session.isActive)
+            assertFalse(session.finalResult("late"))
+            assertFalse(session.choose(DictationAction.Send))
+            assertNull(session.consume("chat", original))
+        }
+    }
+
+    @Test fun rejectsAndConsumesRequestsWhenConversationSelectionTextOrEligibilityChanged() {
+        val changed = listOf(
+            "other chat" to original,
+            "chat" to original.copy(selection = TextRange.Zero),
+            "chat" to original.copy(text = "changed draft"),
+            "chat" to null,
+        )
+        for (choice in DictationAction.entries) {
+            for ((id, currentDraft) in changed) {
+                val session = DictationSession("chat", original)
+                session.finalResult("speech")
+                session.choose(choice)
+                assertNull(session.consume(id, currentDraft))
+                assertFalse(session.isActive)
+                assertNull(session.consume("chat", original))
+            }
+        }
     }
 }

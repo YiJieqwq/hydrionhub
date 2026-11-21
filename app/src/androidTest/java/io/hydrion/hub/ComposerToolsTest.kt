@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.speech.RecognizerIntent
 import android.view.KeyEvent
 import android.view.ViewTreeObserver
 import android.view.View
@@ -166,31 +165,6 @@ class ComposerToolsTest {
                 vm.setDraft(previous.draft.text)
                 vm.setMode(previous.current.mode)
             }
-        }
-    }
-
-    @OptIn(ExperimentalTestApi::class)
-    @Test fun microphoneInsertsAnInterceptedResultAtTheSelectionWithoutSending() {
-        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
-        val before = screen.runOnIdle { vm.state.value }
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val fixture = Intent().putStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS, arrayListOf("dictated"))
-        val monitor = instrumentation.addMonitor(IntentFilter(RecognizerIntent.ACTION_RECOGNIZE_SPEECH),
-            Instrumentation.ActivityResult(Activity.RESULT_OK, fixture), true)
-        try {
-            screen.runOnIdle { vm.setDraft("before replace after") }
-            editor.performTextInputSelection(TextRange(7, 14))
-            screen.onNodeWithTag("chat-composer-dictate").performTouchInput { click(center) }
-            screen.waitUntil(5_000) { vm.state.value.draft.text == "before dictated after" }
-            assertEquals(1, monitor.hits)
-            assertEquals(TextRange(15), editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-            screen.runOnIdle {
-                assertEquals(before.draft.attachments, vm.state.value.draft.attachments)
-                assertEquals(before.current.messages, vm.state.value.current.messages)
-            }
-        } finally {
-            instrumentation.removeMonitor(monitor)
-            screen.runOnIdle { vm.setDraft(before.draft.text) }
         }
     }
 

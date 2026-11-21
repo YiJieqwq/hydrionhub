@@ -189,7 +189,8 @@ private fun Workspace(vm: HubViewModel) {
                 )
             }
         ) {
-            val selectedEntry = remember(catalog, current.mode) { catalog.selectedEntry(current.mode) }
+            val composerCatalog = catalog
+            val selectedEntry = remember(composerCatalog, current.mode) { composerCatalog.selectedEntry(current.mode) }
             // Legacy IMEs can remove the entire inset between composition and layout.
             // Place the host using the same inset frame that determines the composer shape.
             val imeInsets = WindowInsets.ime
@@ -234,9 +235,14 @@ private fun Workspace(vm: HubViewModel) {
                                     allowImeReturn = !blockEditorFocus && !drawerOpening && !configure && !finding && renameId == null && deleteId == null,
                                     toolsAvailable = selectedEntry?.second?.chatProtocol() == null,
                                     onConfigure = { focus.clearFocus(); configure = true },
-                                    onSend = {
-                                        scope.launch {
-                                            sendDraft(vm, providers)?.let { vm.reportError(current.id, it) }
+                                    onSend = { fromDictation ->
+                                        // Dictation has already written the final transcript to the live draft.
+                                        val submitted = vm.state.value
+                                        if (submitted.current.id == current.id && submitted.current.mode == current.mode) {
+                                            scope.launch {
+                                                sendDraft(vm, providers, submitted, composerCatalog, fromDictation)
+                                                    ?.let { vm.reportError(current.id, it) }
+                                            }
                                         }
                                     })
                             }
