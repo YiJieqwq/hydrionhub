@@ -656,7 +656,7 @@ internal fun HubComposer(
                     } else ToolsToolbarMorph(
                         progress = pageProgress, toolsOpen = browsing || tools?.targetOpen == true, modelSearch = modelSearch != null,
                         hasClearableTools = (modelSearch?.searchQuery ?: toolEditor?.query)?.text?.isNotEmpty() == true,
-                        generating = active, canSend = canSend, sendFaceInset = if (chat) 0.dp else SendFaceInset,
+                        generating = active, canSend = canSend, chat = chat,
                         onAttach = { if (acceptsDraftInput()) pick() }, onSend = onAction,
                         onClear = { if (modelSearch != null) modelSearch.clearSearchQuery() else toolEditor?.clearQuery() },
                         onBack = { if (modelSearch?.modelListNavigation == true) modelSearch.open() else toolEditor?.close() },

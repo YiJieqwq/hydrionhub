@@ -31,7 +31,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -56,7 +55,7 @@ internal fun ToolsToolbarMorph(
     hasClearableTools: Boolean,
     generating: Boolean,
     canSend: Boolean,
-    sendFaceInset: Dp,
+    chat: Boolean,
     onAttach: () -> Unit,
     onSend: () -> Unit,
     onClear: () -> Unit,
@@ -129,12 +128,15 @@ internal fun ToolsToolbarMorph(
                 tag = if (!tools) "chat-composer-send" else if (modelSearch) "chat-model-list-back" else "chat-tools-back",
                 label = if (tools) back else if (generating) "停止生成" else "发送消息",
                 interactive = actions != ToolsToolbarActions.Moving, keepEditorFocus = tools, enabled = tools || generating || canSend,
+                // A disabled clickable does not receive Compose's automatic minimum-touch expansion.
+                // Keep the action's actual bounds centered on the same slot in both send states.
+                modifier = if (chat && ordinary) Modifier.requiredWidth(slot + ToolbarTouchOutset * 2) else Modifier,
                 onClick = if (tools) onBack else onSend,
             ) {
                 val fill = if (generating) Color.White else colors.composerActionFill(canSend)
                 val startInk = if (generating) Color.Black else colors.composerActionInk(canSend)
                 val ink = if (p == 0f) startInk else lerp(startInk, newInk, p)
-                val inset = if (generating) 0.dp else -sendFaceInset * (1f - p)
+                val inset = if (generating || chat) 0.dp else -SendFaceInset * (1f - p)
                 Box(Modifier.size(HubStyle.ComposerActionDiameter).offset(x = inset)
                     .testTag("chat-composer-action-face")
                     .background(fill.copy(alpha = fill.alpha * (1f - p)), CircleShape),
@@ -178,11 +180,11 @@ internal fun ComposerSendGlyph(ink: Color, modifier: Modifier = Modifier, shape:
 
 @Composable
 private fun ToolbarAction(tag: String, label: String, interactive: Boolean, keepEditorFocus: Boolean, enabled: Boolean,
-    onClick: () -> Unit, content: @Composable () -> Unit) {
+    onClick: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val inputMode = LocalInputModeManager.current
     val action = if (interactive) Modifier.testTag(tag)
         .then(if (keepEditorFocus) Modifier.focusProperties { canFocus = inputMode.inputMode != InputMode.Touch } else Modifier)
         .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         .semantics { contentDescription = label } else Modifier.clearAndSetSemantics {}
-    Box(Modifier.fillMaxSize().clip(CircleShape).then(action), contentAlignment = Alignment.Center) { content() }
+    Box(modifier.fillMaxSize().clip(CircleShape).then(action), contentAlignment = Alignment.Center) { content() }
 }
