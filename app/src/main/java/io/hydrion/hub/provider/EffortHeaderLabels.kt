@@ -78,10 +78,9 @@ internal fun EffortHeaderLabels(
             Modifier.size(14.dp).testTag("chat-model-name-chevron"), tint = secondary)
     }) { parts, limits ->
         val fullWidth = cardWidth.roundToPx()
-        val side = startInset.roundToPx()
-        val centerX = fullWidth / 2 - side
+        val centerX = fullWidth / 2 - startInset.roundToPx()
         val buttonHeight = if (besideButtons) 48.dp.roundToPx() else 0
-        val inlineWidth = (fullWidth - 2 * side).coerceAtLeast(0)
+        val inlineWidth = (fullWidth - 2 * startInset.roundToPx()).coerceAtLeast(0)
         val arrow = parts[2].measure(Constraints())
         val gap = 3.dp.roundToPx()
         val inlineNameWidth = inlineWidth - 2 * (arrow.width + gap)
@@ -110,19 +109,13 @@ internal fun EffortHeaderLabels(
         val nameY = ((titleBaseline + height + railInset - nameInkSum) / 2f).roundToInt()
             .coerceIn(minOf(minNameY, lastY), lastY)
         layout(limits.maxWidth, height) {
-            val titleX = centerX - heading.width / 2
-            heading.placeRelative(titleX, titleBaseline - heading[FirstBaseline])
-            val rowEnd = if (wideLine) fullWidth - side else inlineWidth
-            val nameX = effortModelRowStart(titleX, name.width + gap + arrow.width, rowEnd)
+            heading.placeRelative(centerX - heading.width / 2, titleBaseline - heading[FirstBaseline])
+            val nameX = centerX - name.width / 2
             name.placeRelative(nameX, nameY)
             arrow.placeRelative(nameX + name.width + gap, nameY + (name.height - arrow.height) / 2)
         }
     }
 }
-
-/** Align the leading text edges, moving only the lower row back if its chevron would overflow. */
-internal fun effortModelRowStart(titleStart: Int, rowWidth: Int, availableEnd: Int): Int =
-    minOf(titleStart, availableEnd - rowWidth)
 
 @Composable
 internal fun EffortHeaderSideTouches(modifier: Modifier, sideInset: Dp, onModels: () -> Unit) {
