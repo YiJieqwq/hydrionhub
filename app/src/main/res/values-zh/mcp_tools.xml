@@ -1,0 +1,24 @@
+<resources>
+    <string name="mcp_add">添加 HTTPS 服务器</string>
+    <string name="mcp_import">导入服务器 JSON</string>
+    <string name="mcp_add_fixture">添加本机测试服务器</string>
+    <string name="mcp_fixture">本机测试服务器</string>
+    <string name="mcp_in_process">在本机应用进程中运行的测试服务器</string>
+    <string name="mcp_config_only">已保存 Streamable HTTP 配置，暂未接入远程连接。</string>
+    <string name="mcp_revoke">撤销信任</string>
+    <string name="mcp_trust">信任服务器</string>
+    <string name="mcp_enabled">启用</string>
+    <string name="mcp_edit">编辑</string>
+    <string name="mcp_delete">删除服务器</string>
+    <string name="mcp_discover">在本机连接并查看工具</string>
+    <string name="mcp_response">本机返回：%1$s</string>
+    <string name="mcp_run">运行一次</string>
+    <string name="mcp_call_confirm">本机测试服务器提供 %1$s。是否用空参数运行一次？它会返回 pong。</string>
+    <string name="mcp_review">请核对将要新增的服务器。每项均从未信任、未启用开始。</string>
+    <string name="mcp_import_hint">粘贴服务器映射或含 mcpServers 的 JSON，只支持 HTTPS 地址。带命令、凭据或自定义请求头的配置会被拒绝。</string>
+    <string name="mcp_name">服务器名称</string>
+    <string name="mcp_endpoint_hint">填写不含凭据的公开 HTTPS 地址。支持路径 /、/mcp、/api/mcp 和 /v1/mcp。</string>
+    <string name="mcp_invalid">无法保存。请核对名称、传输类型和地址，并确认该助手的服务器数量未超过 64 个。</string>
+    <string name="mcp_preview">审阅导入</string>
+    <string name="mcp_save">保存</string>
+</resources>

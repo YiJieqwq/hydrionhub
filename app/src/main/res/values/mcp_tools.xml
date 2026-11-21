@@ -1,0 +1,24 @@
+<resources>
+    <string name="mcp_add">Add HTTPS server</string>
+    <string name="mcp_import">Import server JSON</string>
+    <string name="mcp_add_fixture">Add local test server</string>
+    <string name="mcp_fixture">Local test server</string>
+    <string name="mcp_in_process">In-process test server on this device</string>
+    <string name="mcp_config_only">Saved Streamable HTTP configuration. Remote connections are not available.</string>
+    <string name="mcp_revoke">Revoke trust</string>
+    <string name="mcp_trust">Trust server</string>
+    <string name="mcp_enabled">Enabled</string>
+    <string name="mcp_edit">Edit</string>
+    <string name="mcp_delete">Delete server</string>
+    <string name="mcp_discover">Connect locally and list tools</string>
+    <string name="mcp_response">Local reply: %1$s</string>
+    <string name="mcp_run">Run once</string>
+    <string name="mcp_call_confirm">The local server offers %1$s. Run it once with no arguments? It returns pong.</string>
+    <string name="mcp_review">Review these new servers. Each starts disabled and untrusted.</string>
+    <string name="mcp_import_hint">Paste a server map or mcpServers JSON with HTTPS URLs only. Commands, credentials and custom headers are rejected.</string>
+    <string name="mcp_name">Server name</string>
+    <string name="mcp_endpoint_hint">Use a public HTTPS endpoint with no credentials. Supported paths: /, /mcp, /api/mcp and /v1/mcp.</string>
+    <string name="mcp_invalid">Cannot save this configuration. Check the name, supported transport and URL, and available server slots (64 per assistant).</string>
+    <string name="mcp_preview">Review import</string>
+    <string name="mcp_save">Save</string>
+</resources>
