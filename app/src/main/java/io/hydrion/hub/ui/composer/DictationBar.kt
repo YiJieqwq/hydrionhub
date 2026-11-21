@@ -50,13 +50,14 @@ internal fun DictationBar(
     modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
+    val cancelAndSaveFill = Color(0xFF393939)
     val cancelInk = if (colors.surface.luminance() < 0.5f) Color.White else colors.onSurface
     BoxWithConstraints(modifier.fillMaxWidth().testTag("chat-dictation-bar").padding(horizontal = 3.dp)) {
         val hitWidth = minOf(48.dp, (maxWidth - 18.dp).coerceAtLeast(0.dp) / 3)
         Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {
             DictationButton(hitWidth, "chat-dictation-cancel", stringResource(R.string.dictation_bar_cancel),
                 enabled = true, onClick = onCancel) {
-                Box(Modifier.size(HubStyle.ComposerActionDiameter).background(colors.outline, CircleShape),
+                Box(Modifier.size(HubStyle.ComposerActionDiameter).background(cancelAndSaveFill, CircleShape),
                     contentAlignment = Alignment.Center) {
                     Canvas(Modifier.size(18.dp)) {
                         val delta = 5.5.dp.toPx()
@@ -73,7 +74,7 @@ internal fun DictationBar(
             DictationButton(hitWidth, "chat-dictation-save", stringResource(R.string.dictation_bar_save),
                 enabled = !waiting, onClick = onSave) {
                 Box(Modifier.size(HubStyle.ComposerActionDiameter)
-                    .background(if (waiting) colors.surfaceContainerHighest else colors.outline, CircleShape),
+                    .background(cancelAndSaveFill, CircleShape),
                     contentAlignment = Alignment.Center) {
                     Box(Modifier.size(11.dp).background(
                         if (waiting) colors.onSurfaceVariant else Color.White, RoundedCornerShape(1.25.dp)))
