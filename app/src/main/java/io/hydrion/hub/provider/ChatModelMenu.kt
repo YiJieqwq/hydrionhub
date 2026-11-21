@@ -31,7 +31,7 @@ internal fun matchingMenuModels(models: List<ProviderModel>, query: String): Lis
     val term = query.trim()
     if (term.isEmpty()) return models
     return models.filter {
-        it.name.contains(term, ignoreCase = true) || it.id.contains(term, ignoreCase = true) ||
+        it.name.contains(term, ignoreCase = true) ||
             it.profile.externalId.contains(term, ignoreCase = true)
     }
 }
@@ -53,7 +53,7 @@ internal fun modelMenuRows(entries: List<Pair<ProviderModel, Provider>>, query: 
             val provider = group.first().second
             val models = group.map { it.first }
             val title = labels[provider.id] ?: provider.name
-            val matches = if (title.contains(term, true) || provider.name.contains(term, true)) models else matchingMenuModels(models, term)
+            val matches = matchingMenuModels(models, term)
             if (matches.isNotEmpty()) {
                 val name = if (providerNames[title] == 1) title else "$title · ${provider.id}"
                 add(ModelMenuRow(provider, null, name))

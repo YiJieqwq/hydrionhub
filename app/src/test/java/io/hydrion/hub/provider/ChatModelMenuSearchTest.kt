@@ -122,12 +122,23 @@ class ChatModelMenuSearchTest {
         assertEquals(null, picker.page)
     }
 
-    @Test fun matchesNamesAndBothIdsWithoutChangingOrder() {
+    @Test fun matchesNamesAndExplicitModelIdsWithoutChangingOrder() {
         assertSame(choices, matchingMenuModels(choices, "  "))
         assertEquals(choices, matchingMenuModels(choices, " 用模 "))
         assertEquals(listOf(first), matchingMenuModels(choices, " UTE-x "))
-        assertEquals(listOf(second), matchingMenuModels(choices, "CAL-02"))
+        assertTrue(matchingMenuModels(choices, "CAL-02").isEmpty())
         assertEquals(emptyList<ProviderModel>(), matchingMenuModels(choices, "absent"))
+    }
+
+    @Test fun installedPresetsOnlyMatchTheTwoDeepSeekModelsForE() {
+        val catalog = demoCatalog().withDeepSeekPreset()
+        val eligible = catalog.entries(Mode.Chat)
+        assertEquals(4, eligible.size)
+        val rows = modelMenuRows(eligible, " E ", mapOf("demo-chat" to "On-device chat models"))
+        assertEquals(listOf("DeepSeek", "DeepSeek V4.1 Flash", "DeepSeek V4 Pro"), rows.map { it.label })
+        val images = catalog.entries(Mode.Image)
+        assertEquals(listOf("Hydrion Image"), modelMenuRows(images, "IMAGE").mapNotNull { it.model?.name })
+        assertTrue(modelMenuRows(images, "demo-canvas").isEmpty())
     }
 
     @Test fun oneListUsesEligibleRoutesAcrossProvidersAndOmitsEmptyGroups() {
@@ -141,7 +152,8 @@ class ChatModelMenuSearchTest {
         assertEquals(listOf(null, first.id, second.id, null, first.id), all.map { it.model?.id })
         assertEquals(all.size, all.map { it.key }.distinct().size)
         assertEquals(listOf("a", "a", "b", "b"), modelMenuRows(entries, "route-X").map { it.provider.id })
-        assertEquals(listOf(null, first.id), modelMenuRows(entries, "SeCoNd").map { it.model?.id })
+        assertTrue(modelMenuRows(entries, "SeCoNd").isEmpty())
+        assertTrue(modelMenuRows(entries, "本机", mapOf("b" to "本机模型")).isEmpty())
         assertTrue(modelMenuRows(entries, "disabled").isEmpty())
         assertTrue(modelMenuRows(entries, "image").isEmpty())
     }

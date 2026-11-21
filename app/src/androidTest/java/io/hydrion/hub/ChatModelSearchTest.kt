@@ -71,7 +71,7 @@ class ChatModelSearchTest {
             ProviderModel("batch-beta", "Nimbus"),
         ) + List(20) { ProviderModel("extra-$it", "Other model $it") } + ProviderModel("last", "Zeta"))
         val second = first.copy(id = "$prefix-b", name = "Search fixture B", models = listOf(
-            ProviderModel("batch-alpha", "Nimbus"), ProviderModel("other-only", "Elsewhere"),
+            ProviderModel("batch-alpha", "Nimbus", profile = ModelProfile(externalId = "atlas/remote-b")), ProviderModel("other-only", "Elsewhere"),
         ))
         try {
             screen.runOnIdle {
@@ -401,14 +401,14 @@ class ChatModelSearchTest {
         reveal(option(first, "batch-beta")).assertIsNotSelected().assertTextContains("batch-beta", substring = true)
         reveal(option(second, "batch-alpha")).assertIsNotSelected()
         field.performTextReplacement("tch-BEt")
-        reveal(option(first, "batch-beta"))
+        reveal("search-empty")
         control(option(first, "batch-alpha")).assertDoesNotExist()
         field.performTextClearance()
         reveal(option(first, "last"))
         field.performTextReplacement("  /AtLaS-v3  ")
         reveal(option(first, "batch-alpha")).assertIsSelected()
         control(option(first, "batch-beta")).assertDoesNotExist()
-        field.performTextReplacement("other-only")
+        field.performTextReplacement("eLseWhere")
         reveal(option(second, "other-only"))
         field.performTextReplacement("no-such-model-qz")
         reveal("search-empty")
@@ -424,7 +424,7 @@ class ChatModelSearchTest {
         field.assertIsFocused().assertTextEquals("Nimbus")
         control(option(second, "other-only")).assertDoesNotExist()
         assertActive(active)
-        field.performTextReplacement("batch-alpha")
+        field.performTextReplacement("Nimbus")
         reveal(option(first, "batch-alpha")).assertIsSelected()
         reveal(option(second, "batch-alpha")).assertIsNotSelected().performTouchInput { click(center) }
         control("card").assertIsDisplayed()
@@ -457,8 +457,8 @@ class ChatModelSearchTest {
     @OptIn(ExperimentalTestApi::class)
     @Test fun longPressEditsTheBrowsedProviderWithoutSelectingItAndRestoresTheSearch() =
         withProviders(includeAttachment = true) { vm, first, second ->
-            val beforeTarget = List(14) { ProviderModel("batch-alpha-before-$it", "Before $it") }
-            val afterTarget = List(18) { ProviderModel("batch-alpha-after-$it", "After $it") }
+            val beforeTarget = List(14) { ProviderModel("batch-alpha-before-$it", "Atlas Before $it") }
+            val afterTarget = List(18) { ProviderModel("batch-alpha-after-$it", "Atlas After $it") }
             screen.runOnIdle {
                 vm.providers.save(second.copy(models = beforeTarget + second.models + afterTarget), "", null)
             }
@@ -473,11 +473,11 @@ class ChatModelSearchTest {
             openControls()
             enterModels()
             val search = control("search-field").assertIsDisplayed()
-            val query = "batch-alpha"
-            val querySelection = TextRange(2, 6)
+            val query = "atlas"
+            val querySelection = TextRange(2, 4)
             search.performTextReplacement(query)
             search.performTextInputSelection(querySelection)
-            val row = reveal(option(second, query)).assertIsNotSelected()
+            val row = reveal(option(second, "batch-alpha")).assertIsNotSelected()
             val results = control("results")
             fun rowOffset() = row.fetchSemanticsNode().positionInRoot.y - results.fetchSemanticsNode().positionInRoot.y
             val inset = 7 * screen.activity.resources.displayMetrics.density
@@ -490,8 +490,8 @@ class ChatModelSearchTest {
             control("editor").assertIsDisplayed()
             screen.waitUntil(15_000) { !imeIsVisible() }
             // The other provider uses the same local model ID but has external ID "vendor/atlas-v3".
-            screen.onNodeWithContentDescription(screen.activity.getString(R.string.model_id)).assertTextContains("Nimbus")
-            val active = RemoteModel(first.id, query)
+            screen.onNodeWithContentDescription(screen.activity.getString(R.string.model_id)).assertTextContains("atlas/remote-b")
+            val active = RemoteModel(first.id, "batch-alpha")
             screen.runOnIdle { assertEquals(active, vm.providers.catalog.value.active[Mode.Chat]) }
 
             val name = screen.onNodeWithContentDescription(screen.activity.getString(R.string.model_name)).performScrollTo()
@@ -502,13 +502,13 @@ class ChatModelSearchTest {
             screen.waitUntil(15_000) { imeIsVisible() }
             search.assertIsFocused().assertTextEquals(query)
             assertEquals(querySelection, search.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-            control(option(second, query)).assertIsDisplayed().assertIsNotSelected().assertTextContains("Renamed on B")
+            control(option(second, "batch-alpha")).assertIsDisplayed().assertIsNotSelected().assertTextContains("Renamed on B")
             assertEquals("The same model keeps its pixel offset in the filtered list", savedOffset, rowOffset(), 1f)
             screen.runOnIdle {
                 val catalog = vm.providers.catalog.value
                 assertEquals(active, catalog.active[Mode.Chat])
                 assertEquals(first, catalog.providers.single { it.id == first.id })
-                assertEquals("Renamed on B", catalog.providers.single { it.id == second.id }.models.single { it.id == query }.name)
+                assertEquals("Renamed on B", catalog.providers.single { it.id == second.id }.models.single { it.id == "batch-alpha" }.name)
                 val saved = ProviderStore(screen.activity.applicationContext).catalog.value
                 assertEquals(catalog.providers.single { it.id == second.id }, saved.providers.single { it.id == second.id })
             }
@@ -567,13 +567,13 @@ class ChatModelSearchTest {
             control("search-field").performTouchInput { click(center) }
             screen.waitUntil(15_000) { imeIsVisible() }
             val search = control("search-field")
-            search.performTextReplacement("extra-9")
+            search.performTextReplacement("Other model 9")
             hideKeyboard()
             row.performTouchInput { longClick(center) }
             control("editor").assertIsDisplayed()
             assertImeStays(false) { screen.onNodeWithContentDescription(screen.activity.getString(R.string.settings_back)).performClick() }
             control("editor").assertDoesNotExist()
-            search.assertIsDisplayed().assertTextEquals("extra-9")
+            search.assertIsDisplayed().assertTextEquals("Other model 9")
             row.assertIsDisplayed().assertIsNotSelected()
         }
 
