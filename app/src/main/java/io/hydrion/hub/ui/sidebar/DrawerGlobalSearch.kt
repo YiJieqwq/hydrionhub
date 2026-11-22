@@ -16,35 +16,53 @@ import androidx.compose.ui.unit.sp
 import io.hydrion.hub.model.Conversation
 
 internal data class DrawerHit(val id: String, val title: String, val snippet: String, val messageId: String?,
-    val needle: String?, val score: Int, val updatedAt: Long)
+    val needle: String?, val score: Long, val updatedAt: Long)
 
 internal fun globalDrawerHits(history: List<Conversation>, query: String): List<DrawerHit> {
-    val tokens = query.trim().split(Regex("\\s+")).filter(String::isNotBlank).distinctBy { it.lowercase() }
-    if (tokens.isEmpty()) return emptyList()
+    val terms = query.trim().split(Regex("\\s+")).filter(String::isNotBlank)
+        .groupBy { it.lowercase() }.values.associate { it.first() to it.size }
+    if (terms.isEmpty()) return emptyList()
     return history.mapNotNull { item ->
-        val titleMatches = tokens.filter { item.title.contains(it, ignoreCase = true) }
-        val found = titleMatches.toMutableSet()
-        var score = titleMatches.size * 4
+        val found = mutableSetOf<String>()
+        var score = 0L
         var snippet = ""
         var messageId: String? = null
         var needle: String? = null
-        for (message in item.messages) {
-            val surfaces = if (message.imageKeys.isEmpty()) listOf(message.text) else listOf(message.text, message.prompt)
-            for (surface in surfaces) {
-                val matches = tokens.filter { surface.contains(it, ignoreCase = true) }
-                if (matches.isEmpty()) continue
-                found += matches
-                score += matches.size
-                if (messageId == null) {
-                    messageId = message.id
-                    val first = matches.minBy { surface.indexOf(it, ignoreCase = true) }
-                    needle = first
-                    val start = (surface.indexOf(first, ignoreCase = true) - 30).coerceAtLeast(0)
-                    snippet = (if (start > 0) "…" else "") + surface.substring(start, start + minOf(160, surface.length - start)).replace('\n', ' ').trim()
+
+        fun scoreText(text: String, weight: Long, sourceMessageId: String? = null) {
+            var earliest = Int.MAX_VALUE
+            var firstToken: String? = null
+            for ((token, repetitions) in terms) {
+                var index = text.indexOf(token, ignoreCase = true)
+                if (index < 0) continue
+                found += token
+                if (index < earliest) {
+                    earliest = index
+                    firstToken = token
                 }
+                val points = weight * repetitions
+                do {
+                    score += points
+                    index = text.indexOf(token, index + token.length, ignoreCase = true)
+                } while (index >= 0)
+            }
+            if (sourceMessageId != null && messageId == null && firstToken != null) {
+                messageId = sourceMessageId
+                needle = firstToken
+                val start = (earliest - 30).coerceAtLeast(0)
+                val end = start + minOf(160, text.length - start)
+                snippet = (if (start > 0) "…" else "") + text.substring(start, end).replace('\n', ' ').trim()
             }
         }
-        if (found.size == tokens.size) DrawerHit(item.id, item.title, snippet, messageId, needle, score, item.updatedAt) else null
+
+        scoreText(item.title, weight = 3L)
+        for (message in item.messages) {
+            scoreText(message.text, weight = 1L, sourceMessageId = message.id)
+            if (message.imageKeys.isNotEmpty()) {
+                scoreText(message.prompt, weight = 1L, sourceMessageId = message.id)
+            }
+        }
+        if (found.size == terms.size) DrawerHit(item.id, item.title, snippet, messageId, needle, score, item.updatedAt) else null
     }.sortedWith(compareByDescending<DrawerHit> { it.score }.thenByDescending { it.updatedAt }).take(200)
 }
 

@@ -28,6 +28,40 @@ class DrawerHistoryTest {
         assertEquals(emptyList<HistorySection>(), historySections(history, "absent"))
     }
 
+    @Test fun globalRankingCountsNonOverlappingHitsAndBreaksWeightedTiesByRecency() {
+        fun body(id: String, text: String, updatedAt: Long) = Conversation(
+            id = id, title = "Chat", updatedAt = updatedAt,
+            messages = listOf(Message(role = Role.User, text = text)),
+        )
+        val fourBodyHits = body("four", "Aa aa AA aA", 1)
+        val threeBodyHits = body("three", "aAaAaAa", 3)
+        val recentTitle = Conversation(id = "recent", title = "aa", updatedAt = 4)
+        val olderTitle = recentTitle.copy(id = "older", updatedAt = 2)
+        val twoTitleHits = recentTitle.copy(id = "twice", title = "Aa AA", updatedAt = 0)
+
+        val hits = globalDrawerHits(listOf(threeBodyHits, olderTitle, fourBodyHits, recentTitle, twoTitleHits), "aa")
+        assertEquals(listOf("twice", "four", "recent", "three", "older"), hits.map { it.id })
+    }
+
+    @Test fun repeatedSearchTermChangesRankAndKeepsTheFirstMessageAnchor() {
+        val blueHeavy = Conversation(id = "blue", title = "Chat", updatedAt = 2,
+            messages = listOf(Message(role = Role.User, text = "red blue blue blue blue")))
+        val first = Message(id = "first", role = Role.User, text = "blue before red")
+        val redHeavy = blueHeavy.copy(id = "red", updatedAt = 1, messages = listOf(
+            first, Message(id = "later", role = Role.Assistant, text = "red RED"),
+        ))
+        val missingBlue = blueHeavy.copy(id = "incomplete",
+            messages = listOf(Message(role = Role.User, text = "red red red red red")))
+        val history = listOf(missingBlue, redHeavy, blueHeavy)
+
+        assertEquals(listOf("blue", "red"), globalDrawerHits(history, "red blue").map { it.id })
+        val hits = globalDrawerHits(history, "red blue red")
+        assertEquals(listOf("red", "blue"), hits.map { it.id })
+        assertEquals(first.id, hits.first().messageId)
+        assertEquals("blue", hits.first().needle)
+        assertEquals(first.text, hits.first().snippet)
+    }
+
     @Test fun assistantTopicsAreScopedWhileGlobalSearchAndHistoryIncludeAllOwners() {
         val first = Conversation(id = "one", title = "work", assistantId = "a")
         val second = first.copy(id = "two", assistantId = "b")
