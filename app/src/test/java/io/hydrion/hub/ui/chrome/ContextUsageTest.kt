@@ -19,6 +19,18 @@ class ContextUsageTest {
     private fun reply(total: Long?, at: Long = 1) = Message(role = Role.Assistant, model = "同名模型",
         remoteModel = remote, totalTokens = total, createdAt = at)
 
+    @Test fun compactCountsRetainTheUnderlyingReadingAndUnknownState() {
+        assertEquals("0", ContextUsage(0, 1000).label)
+        assertEquals("999", ContextUsage(999, 1000).label)
+        assertEquals("1.0k", ContextUsage(1000, 8000).label)
+        val reading = ContextUsage(123400, 150000)
+        assertEquals("123.4k", reading.label)
+        assertTrue(reading.high)
+        assertEquals(123400L, reading.tokens)
+        assertNull(ContextUsage(null, 150000).label)
+        assertEquals("0.0k", ContextUsage(0, 1000, estimated = true).label)
+    }
+
     @Test fun usesInclusiveThresholdWithoutRoundingNearlyFullWindowsToRed() {
         assertFalse(ContextUsage(799_999, 1_000_000).high)
         assertTrue(ContextUsage(800_000, 1_000_000).high)
@@ -41,7 +53,7 @@ class ContextUsageTest {
         val changed = contextUsage(history, large to deepSeekProvider)
         assertEquals(breakdown, changed.usage)
         assertEquals(2000, changed.window)
-        assertEquals("800 tokens", changed.label)
+        assertEquals("800", changed.label)
         assertEquals(0.4f, changed.fraction, 0.00001f)
         assertFalse(changed.high)
     }
@@ -58,7 +70,7 @@ class ContextUsageTest {
         val retried = reply(120).copy(createdAt = 3)
         val laterInTranscript = reply(90).copy(createdAt = 2)
         val reading = contextUsage(Conversation(messages = listOf(retried, laterInTranscript)), flash to deepSeekProvider)
-        assertEquals("120 tokens", reading.label)
+        assertEquals("120", reading.label)
         assertEquals(TokenUsage(totalTokens = 120), reading.usage)
     }
 
@@ -133,7 +145,7 @@ class ContextUsageTest {
         val estimate = contextUsage(history, local)
         assertTrue(estimate.estimated)
         assertNull(estimate.usage)
-        assertEquals("71 tokens", contextUsage(history, flash to deepSeekProvider).label)
+        assertEquals("71", contextUsage(history, flash to deepSeekProvider).label)
     }
 
     @Test fun switchingToUnmeasuredResponsesProviderHasUnknownUsage() {

@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -70,7 +71,7 @@ private fun Modifier.headerEdge(colors: ColorScheme): Modifier {
 
 @Composable
 internal fun Header(
-    mode: Mode, locked: Boolean, title: String, pinned: Boolean, contextUsage: ContextUsage,
+    mode: Mode, locked: Boolean, title: String, pinned: Boolean, contextUsage: ContextUsage, environmentName: String? = null,
     onMode: (Mode) -> Unit, onDrawer: () -> Unit, onNew: () -> Unit,
     onRename: () -> Unit, onPin: () -> Unit, onFind: () -> Unit, onDelete: () -> Unit
 ) {
@@ -87,7 +88,7 @@ internal fun Header(
                 DrawerButton(onDrawer)
                 Spacer(Modifier.width(8.dp))
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                    ConversationChip(title, mode, contextUsage, onRename)
+                    ConversationChip(title, mode, environmentName, contextUsage, onRename)
                 }
                 Spacer(Modifier.width(6.dp))
                 ConversationActions(pinned, compactActions, onNew, onPin, onFind, onDelete)
@@ -139,15 +140,17 @@ private fun ModePicker(mode: Mode, onMode: (Mode) -> Unit, modifier: Modifier = 
 
 @Composable
 private fun ConversationChip(
-    title: String, mode: Mode, usage: ContextUsage, onRename: () -> Unit
+    title: String, mode: Mode, environmentName: String?, usage: ContextUsage, onRename: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     val detailColor = Color(0xFFCDCDCD)
+    val rename = stringResource(R.string.header_rename_chat)
+    val locked = stringResource(R.string.header_locked_mode)
     Column(
         Modifier.widthIn(max = 290.dp).testTag("conversation-chip").headerEdge(colors).clip(CircleShape)
             .background(colors.capsuleFill(colors.surfaceContainerHigh))
-            .clickable(role = Role.Button, onClickLabel = "重命名会话", onClick = onRename)
-            .semantics { stateDescription = "模式已锁定" }
+            .clickable(role = Role.Button, onClickLabel = rename, onClick = onRename)
+            .semantics { stateDescription = locked }
             .heightIn(min = 44.dp).padding(start = 20.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.Center
     ) {
@@ -157,8 +160,15 @@ private fun ConversationChip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Icon(Icons.Outlined.Lock, "已锁定", Modifier.size(11.dp), tint = detailColor)
-            Text(mode.name, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, color = detailColor)
+            if (mode == Mode.Chat) {
+                Icon(painterResource(R.drawable.ic_header_environment), null, Modifier.size(14.dp), tint = detailColor)
+                Text(environmentName ?: stringResource(R.string.header_not_bound), Modifier.weight(1f, fill = false),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 12.sp, lineHeight = 16.sp,
+                    color = if (environmentName == null) colors.error else detailColor)
+            } else {
+                Icon(Icons.Outlined.Lock, "已锁定", Modifier.size(11.dp), tint = detailColor)
+                Text(mode.name, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, color = detailColor)
+            }
             val ringColor = if (usage.high) Color(0xFFEF4444) else Color(0xFF3B82F6)
             CircularProgressIndicator(
                 progress = { usage.fraction }, modifier = Modifier.size(11.dp).testTag("context-usage-ring")

@@ -65,8 +65,7 @@ class WorkspaceSmokeTest {
         send(prompt)
 
         awaitNode(hasText("本地模拟回复", substring = true))
-        screen.onNode(hasText(prompt) and hasText("Chat") and hasText("0.5k") and
-            hasContentDescription("已锁定")).assertIsDisplayed()
+        screen.onNode(hasText(prompt) and hasText(screen.activity.getString(R.string.header_not_bound)) and hasText("0.5k")).assertIsDisplayed()
         screen.onAllNodes(hasText("上下文", substring = true)).assertCountEquals(0)
         screen.onAllNodes(modeTab("Image")).assertCountEquals(0)
         screen.onNodeWithContentDescription("打开侧栏").performClick()

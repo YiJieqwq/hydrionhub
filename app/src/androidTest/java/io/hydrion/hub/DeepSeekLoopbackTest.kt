@@ -141,7 +141,7 @@ class DeepSeekLoopbackTest {
                 assertEquals(full, reply.text)
                 assertEquals(thought, reply.thought)
                 assertEquals(tokens, reply.totalTokens)
-                screen.onNodeWithText("$tokens tokens").assertIsDisplayed()
+                screen.onNodeWithText(listOf("250.0k", "800.0k")[index]).assertIsDisplayed()
                 val ring = screen.onNodeWithTag("context-usage-ring", useUnmergedTree = true).assertIsDisplayed()
                 assertEquals(tokens / 1_000_000f,
                     ring.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo].current, .00001f)

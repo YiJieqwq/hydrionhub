@@ -47,6 +47,7 @@ import io.hydrion.hub.provider.chatSpeedControls
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.provider.ProviderSettings
 import io.hydrion.hub.ui.chrome.Header
+import io.hydrion.hub.ui.chrome.conversationEnvironmentName
 import io.hydrion.hub.ui.chrome.contextUsage
 import io.hydrion.hub.ui.composer.HubComposer
 import io.hydrion.hub.ui.composer.rememberToolsPageState
@@ -278,6 +279,8 @@ private fun Workspace(vm: HubViewModel) {
                                     Header(
                                         mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
                                         contextUsage = contextUsage(current, selectedEntry),
+                                        environmentName = if (state.modeLocked && current.mode == Mode.Chat)
+                                            conversationEnvironmentName(current, vm.environments::getEnvironment) else null,
                                         onMode = vm::setMode, onNew = ::newChat,
                                         onDrawer = { focus.clearFocus(); scope.launch { drawer.open() } },
                                         onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },

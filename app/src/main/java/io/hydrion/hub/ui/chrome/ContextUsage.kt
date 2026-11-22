@@ -26,7 +26,7 @@ internal data class ContextUsage(
     val fraction: Float get() = ((tokens ?: 0L).toDouble() / window).coerceIn(0.0, 1.0).toFloat()
     val high: Boolean get() = tokens != null && tokens >= (window * 4L + 4) / 5
     val label: String? get() = tokens?.let {
-        if (estimated) String.format(Locale.ROOT, "%.1fk", it / 1000.0) else "$it tokens"
+        if (estimated || it >= 1000) String.format(Locale.ROOT, "%.1fk", it / 1000.0) else it.toString()
     }
 }
 
