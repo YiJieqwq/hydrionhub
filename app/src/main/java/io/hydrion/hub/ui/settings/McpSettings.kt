@@ -19,8 +19,8 @@ import io.hydrion.hub.provider.ModelSettingsCard
 private enum class McpEditor { Add, Edit, Import }
 
 @Composable
-internal fun McpSettings(vm: HubViewModel, onBack: () -> Unit) {
-    ScopedToolPage(vm, R.string.settings_mcp, onBack) { root, owner ->
+internal fun McpSettings(vm: HubViewModel, onBack: () -> Unit, ownerId: String? = null) {
+    ScopedToolPage(vm, R.string.settings_mcp, onBack, ownerId) { root, owner ->
         val file = remember(root, owner) { mcpFile(root, owner) }
         FeatureContent(file) { catalog, saving, update ->
             var editor by remember { mutableStateOf<McpEditor?>(null) }

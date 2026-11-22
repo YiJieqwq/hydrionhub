@@ -38,7 +38,10 @@ internal fun decodeWorkspace(json: JSONObject): SavedWorkspace {
     val history = json.optJSONArray("history").objects().map(::readConversation)
     val drafts = json.optJSONObject("drafts") ?: JSONObject()
     val assistants = json.optJSONArray("assistants").objects().map {
-        LocalAssistant(it.getString("id"), it.getString("name"), it.optional("sidebarGroup")?.takeIf(LocalAssistant::validName))
+        LocalAssistant(it.getString("id"), it.getString("name"), it.optional("sidebarGroup")?.takeIf(LocalAssistant::validName),
+            it.optional("systemPrompt").orEmpty().takeIf(LocalAssistant::validPrompt).orEmpty(), it.readRoute("chatModel"),
+            it.optional("avatarText").orEmpty().takeIf(LocalAssistant::validAvatar).orEmpty(),
+            it.optInt("contextLimit").takeIf { count -> count in LocalAssistant.ContextLimits })
     }.ifEmpty { listOf(LocalAssistant.Default) }
     val lastThreads = json.optJSONObject("lastThreads") ?: JSONObject()
     val defaults = Draft()
@@ -62,7 +65,9 @@ internal fun encodeWorkspace(saved: SavedWorkspace): JSONObject {
             .put("search", draft.search).put("imageTool", draft.imageTool))
     }
     return JSONObject().put("history", history).put("drafts", drafts).put("unsent", saved.unsent?.let(::writeConversation))
-        .put("assistants", JSONArray(saved.assistants.map { JSONObject().put("id", it.id).put("name", it.name).put("sidebarGroup", it.sidebarGroup) }))
+        .put("assistants", JSONArray(saved.assistants.map { JSONObject().put("id", it.id).put("name", it.name).put("sidebarGroup", it.sidebarGroup)
+            .put("systemPrompt", it.systemPrompt.takeIf(String::isNotEmpty)).put("chatModel", it.chatModel?.toJson())
+            .put("avatarText", it.avatarText.takeIf(String::isNotEmpty)).put("contextLimit", it.contextLimit) }))
         .put("selectedAssistant", saved.selectedAssistant).put("lastThreads", JSONObject(saved.lastThreads))
         .put("otherUnsent", JSONArray(saved.otherUnsent.map(::writeConversation)))
 }

@@ -17,15 +17,22 @@ class ProviderStore(context: Context) {
     private var storageKey = "catalog"
     private var stored = loadCatalog()
     private var conversationRoutes: Map<Mode, RemoteModel>? = null
+    private var assistantDefault: RemoteModel? = null
+    internal var onAssistantModelPicked: ((RemoteModel) -> Unit)? = null
     internal var onModelPicked: ((Mode, RemoteModel) -> Unit)? = null
     private val state = MutableStateFlow(stored.forConversation(null))
 
-    internal fun newThreadRoutes(): Map<Mode, RemoteModel> = stored.initialRoutes()
+    internal fun newThreadRoutes(ownerRoute: RemoteModel?): Map<Mode, RemoteModel> {
+        val defaults = stored.initialRoutes()
+        return if (ownerRoute != null && stored.entries(Mode.Chat).any { it.route == ownerRoute })
+            defaults + (Mode.Chat to ownerRoute) else defaults
+    }
     internal fun legacyRoutes(): Map<Mode, RemoteModel> = stored.initialRoutes() + stored.active
 
-    internal fun showRoutes(routes: Map<Mode, RemoteModel>?) {
+    internal fun showRoutes(routes: Map<Mode, RemoteModel>?, ownerRoute: RemoteModel?) {
+        assistantDefault = ownerRoute
         conversationRoutes = routes
-        state.value = stored.forConversation(routes)
+        state.value = stored.forConversation(routes, ownerRoute)
     }
 
     internal fun setPerChatModel(enabled: Boolean) = update(stored.copy(perChatModel = enabled))
@@ -88,9 +95,10 @@ class ProviderStore(context: Context) {
         val entry = old.entries(mode).singleOrNull { it.route == route } ?: return
         val shared = mode == Mode.Chat && !old.perChatModel
         update(old.copy(active = if (shared) old.active else old.active + (mode to route),
-            defaults = if (shared) old.defaults + (mode to route) else old.defaults,
+            defaults = if (shared && assistantDefault == null) old.defaults + (mode to route) else old.defaults,
             overrides = old.overrides + (route to old.parameters(entry.first, parameters))))
         if (!shared) onModelPicked?.invoke(mode, route)
+        else if (assistantDefault != null) onAssistantModelPicked?.invoke(route)
     }
 
     fun save(provider: Provider, sessionKey: String, defaultModelId: String?) {
@@ -119,7 +127,7 @@ class ProviderStore(context: Context) {
         val next = catalog.normalized()
         preferences.edit().putString(storageKey, encodeCatalog(next).toString()).apply()
         stored = next
-        showRoutes(conversationRoutes)
+        showRoutes(conversationRoutes, assistantDefault)
     }
 }
 

@@ -52,6 +52,13 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     val state = session.state
     internal fun addAssistant(name: String) = loaded && session.addAssistant(name)
     internal fun renameAssistant(id: String, name: String) = loaded && session.renameAssistant(id, name)
+    internal fun updateAssistant(id: String, name: String, avatar: String, prompt: String, route: RemoteModel?, contextLimit: Int? = null): Boolean {
+        val old = state.value.assistants.find { it.id == id } ?: return false
+        if (!loaded || (route != null && route != old.chatModel && providers.catalog.value.entries(Mode.Chat).none {
+                (m, p) -> p.id == route.providerId && m.id == route.modelId
+            })) return false
+        return session.updateAssistant(id, name, avatar, prompt, route, contextLimit)
+    }
     internal fun selectAssistant(id: String) { if (loaded) session.selectAssistant(id) }
     private val mutableNotice = MutableStateFlow<String?>(null)
     val notice = mutableNotice.asStateFlow()
@@ -59,7 +66,12 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     init {
         val previousRoutes = providers.legacyRoutes()
         providers.onModelPicked = session::selectModel
-        providers.showRoutes(state.value.current.modelRoutes)
+        providers.onAssistantModelPicked = { route ->
+            state.value.assistants.find { it.id == state.value.current.assistantId }?.let {
+                updateAssistant(it.id, it.name, it.avatarText, it.systemPrompt, route, it.contextLimit)
+            }
+        }
+        providers.showRoutes(state.value.current.modelRoutes, null)
         // The single writer finishes queued atomic saves even if the Activity is closed.
         CoroutineScope(Dispatchers.IO).launch {
             for ((epoch, snapshot) in writes) {
@@ -153,7 +165,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun rename(id: String, title: String) = session.rename(id, title)
     internal fun hasDrawerDraft(id: String) = session.hasDraft(id)
-    internal fun copyAssistant(name: String, group: String?) = loaded && session.addAssistant(name, group)
+    internal fun copyAssistant(id: String, name: String) = loaded && session.copyAssistant(id, name)
     internal fun groupAssistant(id: String, group: String) = loaded && session.groupAssistant(id, group)
     internal fun canRemoveAssistant(id: String) = loaded && session.canRemoveAssistant(id)
     internal fun removeEmptyAssistant(id: String) { if (loaded) session.removeEmptyAssistant(id) }

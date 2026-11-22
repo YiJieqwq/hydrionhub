@@ -67,7 +67,7 @@ class ChatMessageActionsTest {
         val requests = mutableListOf<List<Message>>()
         val release = CompletableDeferred<Unit>()
         val repository = object : GenerationRepository {
-            override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>) = flow {
+            override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String) = flow {
                 assertTrue(retry)
                 requests += history
                 release.await()

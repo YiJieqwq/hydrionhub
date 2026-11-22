@@ -33,7 +33,7 @@ internal class DrawerActions(
     val move: (Set<String>, String) -> Unit,
     val duplicate: (String, String) -> Unit,
     val delete: (Set<String>) -> Unit,
-    val copyAssistant: (String, String?) -> Boolean,
+    val copyAssistant: (String, String) -> Boolean,
     val groupAssistant: (String, String) -> Boolean,
     val canRemoveAssistant: (String) -> Boolean,
     val removeAssistant: (String) -> Unit,

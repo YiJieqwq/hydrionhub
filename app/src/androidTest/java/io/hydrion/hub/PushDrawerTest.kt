@@ -40,7 +40,7 @@ class PushDrawerTest {
                 ConversationDrawer(width.value, MaterialTheme.colorScheme.surface, emptyList(), "",
                     assistants = listOf(LocalAssistant.Default), assistantId = LocalAssistant.Default.id,
                     assistantsReady = true, onSelectAssistant = {}, onRenameAssistant = { _, _ -> false },
-                    onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = {}, onDelete = {}, actions = actions, onHit = {})
+                    onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = {}, onDelete = {}, actions = actions, onHit = {}, onAssistantSettings = {})
             }
         } }
         val search = screen.onNode(hasContentDescription(screen.activity.getString(R.string.drawer_search)) and hasSetTextAction())
@@ -94,7 +94,7 @@ class PushDrawerTest {
                 ConversationDrawer(300.dp, MaterialTheme.colorScheme.surface, chats, "",
                     assistants = listOf(LocalAssistant.Default, alt), assistantId = current,
                     onSelectAssistant = { current = it }, onRenameAssistant = { _, _ -> false }, assistantsReady = true,
-                    onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = {}, onDelete = {}, actions = actions, onHit = {})
+                    onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = {}, onDelete = {}, actions = actions, onHit = {}, onAssistantSettings = {})
             }
         } }
         val disclosure = screen.onNodeWithContentDescription(screen.activity.getString(R.string.drawer_assistants))
@@ -113,6 +113,24 @@ class PushDrawerTest {
         screen.onNodeWithTag("drawer-new-chat").assertIsDisplayed()
     }
 
+    @Test fun longPressOnInactiveAssistantOpensItsSettingsWithoutSelectingIt() {
+        val secondary = LocalAssistant("other-record", "Other assistant")
+        val opened = mutableListOf<String>()
+        val selected = mutableListOf<String>()
+        screen.runOnUiThread { screen.activity.setContent { MaterialTheme {
+            ConversationDrawer(320.dp, MaterialTheme.colorScheme.surface, emptyList(), "",
+                listOf(LocalAssistant.Default, secondary), LocalAssistant.Default.id, { selected += it }, { _, _ -> false }, true,
+                {}, {}, {}, {}, {}, {}, actions, {}, { opened += it })
+        } } }
+        screen.onNodeWithContentDescription(screen.activity.getString(R.string.drawer_assistants)).performClick()
+        screen.onNodeWithTag("assistant-row-other-record").performTouchInput { longClick() }
+        screen.onNodeWithText(screen.activity.getString(R.string.assistant_detail)).performClick()
+        screen.runOnIdle {
+            assertEquals(listOf(secondary.id), opened)
+            assertTrue(selected.isEmpty())
+        }
+    }
+
     @Test fun longPressSeedsSelectionAndCancelLeavesHistoryUntouched() {
         val owner = LocalAssistant.Default
         val ids = listOf(Conversation(title = "Alpha"), Conversation(title = "Beta"))
@@ -121,7 +139,7 @@ class PushDrawerTest {
             { _, _ -> }, { _, _ -> }, { changes += it }, { _, _ -> false }, { _, _ -> false }, { false }, {})
         screen.runOnUiThread { screen.activity.setContent { MaterialTheme {
             ConversationDrawer(300.dp, MaterialTheme.colorScheme.surface, ids, ids[0].id,
-                listOf(owner), owner.id, {}, { _, _ -> false }, true, {}, {}, {}, {}, {}, {}, f, {})
+                listOf(owner), owner.id, {}, { _, _ -> false }, true, {}, {}, {}, {}, {}, {}, f, {}, {})
         } } }
         fun label(id: Int) = screen.activity.getString(id)
         screen.onNodeWithText("Alpha").performTouchInput { longClick() }

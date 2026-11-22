@@ -24,8 +24,8 @@ private val NoteType.label: Int get() = when (this) {
 }
 
 @Composable
-internal fun MemorySettings(vm: HubViewModel, onBack: () -> Unit) {
-    ScopedToolPage(vm, R.string.settings_memory, onBack) { root, owner ->
+internal fun MemorySettings(vm: HubViewModel, onBack: () -> Unit, ownerId: String? = null) {
+    ScopedToolPage(vm, R.string.settings_memory, onBack, ownerId) { root, owner ->
         val file = remember(root, owner) { memoryFile(root, owner) }
         FeatureContent(file) { memory, saving, update ->
             var archived by rememberSaveable { mutableStateOf(false) }

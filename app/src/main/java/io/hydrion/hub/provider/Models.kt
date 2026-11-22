@@ -44,9 +44,13 @@ data class ModelCatalog(
     val perChatModel: Boolean = true,
 ) {
     /** Disabling per-chat selection hides the saved pin without modifying the conversation. */
-    internal fun forConversation(routes: Map<Mode, RemoteModel>?): ModelCatalog {
+    internal fun forConversation(routes: Map<Mode, RemoteModel>?, assistantDefault: RemoteModel? = null): ModelCatalog {
         val selected = routes ?: active
-        return copy(active = if (perChatModel) selected else selected - Mode.Chat)
+        val available = entries(Mode.Chat)
+        val pinned = selected[Mode.Chat].takeIf { perChatModel && available.any { row -> row.route == it } }
+        val ownerRoute = assistantDefault?.takeIf { available.any { row -> row.route == it } }
+        val chat = pinned ?: ownerRoute
+        return copy(active = if (chat == null) selected - Mode.Chat else selected + (Mode.Chat to chat))
     }
 
     internal fun movedChatProvider(id: String, direction: Int): ModelCatalog {

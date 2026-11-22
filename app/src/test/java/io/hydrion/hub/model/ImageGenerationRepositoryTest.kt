@@ -20,7 +20,7 @@ class ImageGenerationRepositoryTest {
         imageInvocation = invocation, tool = "图片生成 · $CUSTOM_IMAGE_TOOL")
     private val input = LocalModelRequest("studio", emptyMap(), JSONObject().put("n", 1), invocation.parameters)
     private val unexpectedChat = object : GenerationRepository {
-        override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>): Flow<Message> =
+        override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String): Flow<Message> =
             error("Remote image reached a chat or simulated transport")
     }
 

@@ -60,7 +60,7 @@ class ConversationSessionTest {
         val conversation = Conversation(mode = Mode.Image, messages = listOf(user, reply))
         val calls = mutableListOf<ImageInvocation>()
         val repository = object : GenerationRepository {
-            override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>) =
+            override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String) =
                 kotlinx.coroutines.flow.flow<Message> {
                     calls += requireNotNull(request.imageInvocation)
                     check(retry)

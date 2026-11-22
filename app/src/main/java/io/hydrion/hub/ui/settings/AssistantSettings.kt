@@ -38,12 +38,10 @@ internal fun AssistantSettings(vm: HubViewModel, onBack: () -> Unit) {
         LazyColumn {
             items(state.assistants, key = { it.id }) { assistant ->
                 AssistantRow(assistant, assistant.id == state.current.assistantId, ready, showSelection = true,
-                    onSelect = { vm.selectAssistant(assistant.id) }, onEdit = { editingId = assistant.id })
+                    onSelect = { editingId = assistant.id }, onEdit = { editingId = assistant.id })
             }
         }
     }
     if (adding) AssistantNameDialog(null, { adding = false }, vm::addAssistant)
-    state.assistants.find { it.id == editingId }?.let { assistant ->
-        AssistantNameDialog(assistant, { editingId = null }) { vm.renameAssistant(assistant.id, it) }
-    }
+    editingId?.let { id -> AssistantDetail(vm, id) { editingId = null } }
 }

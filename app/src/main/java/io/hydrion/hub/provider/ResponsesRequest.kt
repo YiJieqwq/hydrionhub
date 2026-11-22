@@ -15,6 +15,7 @@ internal fun ModelCatalog.responsesRequest(
     history: List<Message>,
     apiKey: String,
     selected: Map<String, String> = parameters(model, provider),
+    systemPrompt: String = "",
     attachmentData: (Attachment) -> String = { it.uri.orEmpty() }
 ): LocalModelRequest {
     val protocol = requireNotNull(provider.chatProtocol()) { "请选择 Responses 协议。" }
@@ -33,7 +34,7 @@ internal fun ModelCatalog.responsesRequest(
         body.remove("stream")
         body.remove("background")
     } else body.put("stream", true)
-    body.put("input", chatTranscript(history.responsesHistory(), model, provider, protocol, attachmentData))
+    body.put("input", chatTranscript(history.responsesHistory(), model, provider, protocol, attachmentData, systemPrompt))
     return LocalModelRequest(model.name, headers, body, options, url)
 }
 
@@ -57,7 +58,7 @@ internal fun List<Message>.responsesHistory(): List<Message> {
 
 internal fun chatTranscript(
     history: List<Message>, model: ProviderModel, provider: Provider, protocol: ChatProtocol,
-    attachmentData: (Attachment) -> String
+    attachmentData: (Attachment) -> String, systemPrompt: String = ""
 ): JSONArray {
     val deepSeek = provider.usesDeepSeekDialect()
     val completions = protocol == ChatProtocol.ChatCompletionsHttp
@@ -67,6 +68,7 @@ internal fun chatTranscript(
         if (!completions) item.put("type", "message")
         input.put(item)
     }
+    if (systemPrompt.isNotBlank()) addMessage("system", systemPrompt)
     val lastReply = history.lastOrNull { it.role == Role.Assistant }
     var remaining = responsesImageBudget()
     var imageCount = 0

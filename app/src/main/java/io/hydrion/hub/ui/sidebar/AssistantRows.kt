@@ -7,7 +7,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
@@ -33,18 +34,19 @@ import io.hydrion.hub.model.LocalAssistant
 import io.hydrion.hub.ui.theme.IonMark
 
 @Composable
-internal fun AssistantAvatar(assistant: LocalAssistant) {
+internal fun AssistantAvatar(assistant: LocalAssistant, size: Dp = 32.dp) {
     val colors = MaterialTheme.colorScheme
-    val initial = remember(assistant.name) {
+    val initial = remember(assistant.name, assistant.avatarText) {
+        if (assistant.avatarText.isNotBlank()) return@remember assistant.avatarText
         val chars = BreakIterator.getCharacterInstance()
         chars.setText(assistant.name)
         assistant.name.substring(0, chars.following(0))
     }
-    Box(Modifier.size(32.dp).clip(CircleShape).background(colors.primary.copy(alpha = 0.15f))
+    Box(Modifier.size(size).clip(CircleShape).background(colors.primary.copy(alpha = 0.15f))
         .border(0.5.dp, colors.onSurface.copy(alpha = if (colors.surface.luminance() < 0.5f) 0.24f else 0.12f), CircleShape),
         contentAlignment = Alignment.Center) {
-        if (assistant.id == LocalAssistant.Default.id) IonMark(32.dp)
-        else Text(initial, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = colors.primary,
+        if (assistant.id == LocalAssistant.Default.id && assistant.avatarText.isBlank()) IonMark(size)
+        else Text(initial, maxLines = 1, fontSize = (size.value * 13.5f / 32f).sp, fontWeight = FontWeight.Medium, color = colors.primary,
             modifier = Modifier.clearAndSetSemantics { })
     }
 }
@@ -57,7 +59,7 @@ internal fun AssistantRow(assistant: LocalAssistant, selected: Boolean, enabled:
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
         .then(if (onMenu != null) Modifier.background(colors.surface) else Modifier)
         .testTag("assistant-row-${assistant.id}")
-        .then(if (onMenu == null) Modifier.selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onSelect)
+        .then(if (onMenu == null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onSelect)
             else Modifier.combinedClickable(enabled = enabled, role = Role.RadioButton, onClick = onSelect, onLongClick = onMenu)
                 .semantics { this.selected = selected })
         .heightIn(min = 48.dp).padding(start = 4.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {

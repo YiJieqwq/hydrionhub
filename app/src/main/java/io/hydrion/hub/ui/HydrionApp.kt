@@ -116,6 +116,7 @@ private fun Workspace(vm: HubViewModel) {
             alpha = 1f - pageCover.value
         }
     } ?: Modifier
+    var assistantEditor by rememberSaveable { mutableStateOf<String?>(null) }
     var settings by rememberSaveable { mutableStateOf(false) }
     var configure by rememberSaveable { mutableStateOf(false) }
     var finding by rememberSaveable(current.id) { mutableStateOf(false) }
@@ -199,7 +200,7 @@ private fun Workspace(vm: HubViewModel) {
                     onSelectAssistant = { id -> leaveDrawer { vm.selectAssistant(id) } },
                     onRenameAssistant = vm::renameAssistant, currentId = current.id, onNew = { leaveDrawer(vm::newConversation) },
                     onOpen = { id -> leaveDrawer { vm.openConversation(id) } },
-                    onSettings = { closeDrawer(); settings = true },
+                    onSettings = { closeDrawer(); settings = true }, onAssistantSettings = { assistantEditor = it },
                     onRename = { renameId = it }, onPin = vm::togglePin, onDelete = { deleteId = it }, actions = drawerActions,
                     onHit = { hit -> leaveDrawer { vm.openConversation(hit.id); drawerHit = hit.takeIf { it.needle != null } } }
                 )
@@ -370,6 +371,9 @@ private fun Workspace(vm: HubViewModel) {
 
     if (configure) ConfigureSheet(providers, current.mode) { configure = false }
     fun titleFor(id: String) = if (id == current.id) current.title else state.history.firstOrNull { it.id == id }?.title.orEmpty()
+    assistantEditor?.let { id ->
+        io.hydrion.hub.ui.settings.AssistantDetail(vm, id) { assistantEditor = null }
+    }
     renameId?.let { id ->
         var value by rememberSaveable(id) { mutableStateOf(titleFor(id)) }
         AlertDialog(onDismissRequest = { renameId = null }, title = { Text(stringResource(R.string.drawer_rename)) }, text = {

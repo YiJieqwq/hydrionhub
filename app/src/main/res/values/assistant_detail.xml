@@ -1,0 +1,16 @@
+<resources>
+    <string name="assistant_detail">Assistant settings</string>
+    <string name="assistant_basic">Basic</string>
+    <string name="assistant_prompts">Prompts</string>
+    <string name="assistant_persona">System prompt</string>
+    <string name="assistant_persona_help">Included when this assistant sends a chat request to the selected provider.</string>
+    <string name="assistant_avatar_text">Avatar emoji or initials</string>
+    <string name="assistant_follow_global">Use global default</string>
+    <string name="assistant_model_default">Default chat model</string>
+    <string name="assistant_model_unavailable">Configured model unavailable</string>
+    <string name="assistant_model_precedence">New chats start with this model. Existing per-chat selections are kept. With per-chat selection off, chats use the assistant default, then the global default.</string>
+    <string name="assistant_discard">Discard changes to this assistant profile?</string>
+    <string name="assistant_save_failed">Could not save these changes. Check that the selected model is still available.</string>
+    <string name="assistant_limit">Limit chat context</string>
+    <string name="assistant_limit_range">Latest messages per request (1–4096)</string>
+</resources>

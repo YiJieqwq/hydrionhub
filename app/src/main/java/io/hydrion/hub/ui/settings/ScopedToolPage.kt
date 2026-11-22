@@ -22,7 +22,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun ScopedToolPage(vm: HubViewModel, title: Int, onBack: () -> Unit, content: @Composable (File, String) -> Unit) {
+internal fun ScopedToolPage(vm: HubViewModel, title: Int, onBack: () -> Unit, fixedOwner: String? = null, content: @Composable (File, String) -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val load by vm.workspaceLoad.collectAsStateWithLifecycle()
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
@@ -30,6 +30,15 @@ internal fun ScopedToolPage(vm: HubViewModel, title: Int, onBack: () -> Unit, co
     val owner = state.assistants.firstOrNull { it.id == selected } ?: state.assistants.firstOrNull { it.id == state.current.assistantId }
     val context = LocalContext.current
     val root = remember(context) { File(context.noBackupFilesDir, "assistant-features") }
+    if (fixedOwner != null) {
+        when {
+            load == WorkspaceLoad.Reading -> LinearProgressIndicator(Modifier.fillMaxWidth())
+            load != WorkspaceLoad.Ready || state.assistants.none { it.id == fixedOwner } ->
+                Text(stringResource(R.string.feature_unavailable), Modifier.padding(16.dp))
+            else -> key(fixedOwner) { content(root, fixedOwner) }
+        }
+        return
+    }
     ModelSettingsFrame(stringResource(title), onBack) {
         when {
             load == WorkspaceLoad.Reading -> LinearProgressIndicator(Modifier.fillMaxWidth())

@@ -27,8 +27,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun SkillSettings(vm: HubViewModel, onBack: () -> Unit) {
-    ScopedToolPage(vm, R.string.settings_skill, onBack) { root, owner ->
+internal fun SkillSettings(vm: HubViewModel, onBack: () -> Unit, ownerId: String? = null) {
+    ScopedToolPage(vm, R.string.settings_skill, onBack, ownerId) { root, owner ->
         val file = remember(root, owner) { skillFile(root, owner) }
         FeatureContent(file) { catalog, saving, update -> SkillManager(owner, catalog, saving, update) }
     }

@@ -106,7 +106,7 @@ internal fun ConversationDrawer(
     onRenameAssistant: (String, String) -> Boolean, assistantsReady: Boolean,
     onNew: () -> Unit, onOpen: (String) -> Unit, onSettings: () -> Unit,
     onRename: (String) -> Unit, onPin: (String) -> Unit, onDelete: (String) -> Unit,
-    actions: DrawerActions, onHit: (DrawerHit) -> Unit,
+    actions: DrawerActions, onHit: (DrawerHit) -> Unit, onAssistantSettings: (String) -> Unit,
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var global by rememberSaveable { mutableStateOf(false) }
@@ -123,10 +123,13 @@ internal fun ConversationDrawer(
     assistants.find { it.id == assistantMenu }?.let { item ->
         val copyName = stringResource(R.string.drawer_copy_name, item.name).take(64)
         DrawerActionSheet(item.name, { assistantMenu = null }) {
+            DrawerAction(stringResource(R.string.assistant_detail), Icons.Outlined.Settings) {
+                assistantMenu = null; onAssistantSettings(item.id)
+            }
             DrawerAction(stringResource(R.string.assistant_rename), Icons.Outlined.Edit) { assistantMenu = null; editingId = item.id }
             DrawerAction(stringResource(R.string.drawer_duplicate), Icons.Outlined.ContentCopy) {
                 assistantMenu = null
-                actions.copyAssistant(copyName, item.sidebarGroup)
+                actions.copyAssistant(item.id, copyName)
             }
             DrawerAction(stringResource(R.string.drawer_group), Icons.Outlined.FolderOpen) {
                 assistantMenu = null; groupId = item.id
@@ -276,7 +279,7 @@ internal fun ConversationDrawer(
                             AssistantRow(assistant, assistant.id == assistantId, showAssistants && assistantsReady,
                                 loading = assistant.id in busyOwners,
                                 onSelect = { showAssistants = false; onSelectAssistant(assistant.id) },
-                                onMenu = { assistantMenu = assistant.id }, onEdit = { editingId = assistant.id })
+                                onMenu = { assistantMenu = assistant.id }, onEdit = { onAssistantSettings(assistant.id) })
                         }
                     }
                 }

@@ -6,13 +6,13 @@ import kotlinx.coroutines.flow.flow
 
 internal interface GenerationRepository {
     /** The immutable transcript ends at the specific question being answered. */
-    fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>): Flow<Message>
+    fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String = ""): Flow<Message>
 }
 
 internal class FakeGenerationRepository(
     private val wait: suspend (Long) -> Unit = { delay(it) }
 ) : GenerationRepository {
-    override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>): Flow<Message> = flow {
+    override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String): Flow<Message> = flow {
         wait(350)
         var reply = request.copy(status = Generation.Generating, thought = if (mode == Mode.Chat && request.parameters["reasoning_enabled"] != "false")
             "已读取当前消息与附件，正在整理本地示例回复。" else "")

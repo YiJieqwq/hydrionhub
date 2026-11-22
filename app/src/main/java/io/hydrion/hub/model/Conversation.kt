@@ -77,9 +77,17 @@ data class Message(
     val reportedUsage: TokenUsage? get() = usage ?: totalTokens?.let { TokenUsage(totalTokens = it) }
 }
 
-data class LocalAssistant(val id: String, val name: String, val sidebarGroup: String? = null) {
+data class LocalAssistant(
+    val id: String, val name: String, val sidebarGroup: String? = null,
+    val systemPrompt: String = "", val chatModel: RemoteModel? = null, val avatarText: String = "",
+    val contextLimit: Int? = null,
+) {
     companion object {
         val Default = LocalAssistant("default", "HydrionHub")
+        val ContextLimits = 1..4096
+        const val PromptLimit = 16_384
+        fun validPrompt(value: String) = value.length <= PromptLimit && value.none { it.isISOControl() && it !in "\r\n\t" }
+        fun validAvatar(value: String) = value.codePointCount(0, value.length) <= 8 && value.none(Char::isISOControl)
         fun validName(name: String) = name.isNotBlank() && name.length <= 64 && name.none(Char::isISOControl)
     }
 }

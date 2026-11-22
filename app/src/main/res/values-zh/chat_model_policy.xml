@@ -1,6 +1,6 @@
 <resources>
     <string name="chat_model_per_conversation">每个会话单独使用模型</string>
-    <string name="chat_model_per_conversation_hint">关闭后使用全局默认聊天模型，此时选模会更新全局默认值。重新开启可恢复各会话原来的选择。</string>
+    <string name="chat_model_per_conversation_hint">关闭后，选模会更新该助手已有的默认模型；未设置时更新全局默认模型。重新开启可恢复会话原来的选择。</string>
     <string name="chat_provider_order">调整对话供应商顺序</string>
     <string name="chat_provider_up">上移供应商</string>
     <string name="chat_provider_down">下移供应商</string>

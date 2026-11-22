@@ -28,7 +28,7 @@ class DictatedSendTest {
 
     @Test fun thrownFailureRestoresOnlyTheBackgroundOwnersDraft() = runBlocking {
         val failing = object : GenerationRepository {
-            override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>) =
+            override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String) =
                 flow<Message> { throw IOException("offline") }
         }
         val session = ConversationSession(this, failing, {})

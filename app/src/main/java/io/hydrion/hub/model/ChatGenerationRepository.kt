@@ -25,7 +25,7 @@ internal class ChatGenerationRepository(
 ) : GenerationRepository {
     private val local = FakeGenerationRepository()
 
-    override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>): Flow<Message> {
+    override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String): Flow<Message> {
         val route = request.remoteModel ?: return local.generate(mode, request, retry, history)
         return flow {
             require(mode == Mode.Chat) { "请选择聊天模型。" }
@@ -51,9 +51,9 @@ internal class ChatGenerationRepository(
                 val options = catalog.parameters(model, request.parameters)
                 when (protocol) {
                     ChatProtocol.ChatCompletionsHttp ->
-                        catalog.chatCompletionsRequest(provider, model, transcript, key, options, sources::getValue)
+                        catalog.chatCompletionsRequest(provider, model, transcript, key, options, systemPrompt, sources::getValue)
                     ChatProtocol.ResponsesHttp, ChatProtocol.ResponsesWebSocket ->
-                        catalog.responsesRequest(provider, model, transcript, key, options, sources::getValue)
+                        catalog.responsesRequest(provider, model, transcript, key, options, systemPrompt, sources::getValue)
                 }
             }
             emitAll(stream(protocol, prepared, request))

@@ -1,0 +1,16 @@
+<resources>
+    <string name="assistant_detail">助手设置</string>
+    <string name="assistant_basic">基础</string>
+    <string name="assistant_prompts">提示词</string>
+    <string name="assistant_persona">系统提示词</string>
+    <string name="assistant_persona_help">此助手发起聊天请求时，系统提示词会一同发送给所选供应商。</string>
+    <string name="assistant_avatar_text">头像表情或缩写</string>
+    <string name="assistant_follow_global">使用全局默认模型</string>
+    <string name="assistant_model_default">默认聊天模型</string>
+    <string name="assistant_model_unavailable">已配置的模型当前不可用</string>
+    <string name="assistant_model_precedence">新会话采用此模型，已有会话保留自己的选择。关闭逐会话选模时，聊天优先使用助手默认模型，其次使用全局默认。</string>
+    <string name="assistant_discard">放弃对该助手资料的更改？</string>
+    <string name="assistant_save_failed">无法保存。请确认所选模型仍然可用。</string>
+    <string name="assistant_limit">限制上下文消息数</string>
+    <string name="assistant_limit_range">每次请求携带的最近消息条数（1–4096）</string>
+</resources>

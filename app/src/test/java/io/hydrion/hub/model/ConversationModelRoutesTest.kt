@@ -14,7 +14,7 @@ class ConversationModelRoutesTest {
         var defaults = mapOf(Mode.Chat to one, Mode.Image to image)
         var presented: Map<Mode, RemoteModel>? = null
         fun session() = ConversationSession(this, FakeGenerationRepository {}, {},
-            newRoutes = { defaults }, showRoutes = { presented = it })
+            newRoutes = { defaults }, showRoutes = { routes, _ -> presented = routes })
         val old = decodeWorkspace(JSONObject("""{"history":[{"id":"old","title":"Old","mode":"Chat","updatedAt":7}]}"""))
         val live = session()
         live.restore(old.withLegacyModelRoutes(defaults))

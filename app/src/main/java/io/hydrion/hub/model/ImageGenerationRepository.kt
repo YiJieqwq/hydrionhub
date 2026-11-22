@@ -17,9 +17,9 @@ internal class ImageGenerationRepository(
     private val saveBatch: suspend (List<ByteArray>) -> List<String>,
     private val discard: (List<String>) -> Unit
 ) : GenerationRepository {
-    override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>): Flow<Message> {
+    override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String): Flow<Message> {
         val image = request.imageInvocation
-        if (image?.remoteModel == null) return other.generate(mode, request, retry, history)
+        if (image?.remoteModel == null) return other.generate(mode, request, retry, history, systemPrompt)
         return flow {
             require(request.remoteModel == null && (mode == Mode.Image || request.tool == "图片生成 · $CUSTOM_IMAGE_TOOL")) {
                 "请通过图像模式或本机聊天的图片生成功能发送。"

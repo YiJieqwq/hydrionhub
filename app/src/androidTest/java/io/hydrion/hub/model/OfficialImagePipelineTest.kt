@@ -55,7 +55,7 @@ class OfficialImagePipelineTest {
             val catalog = ModelCatalog(listOf(provider), active = mapOf(Mode.Image to route))
             val store = GeneratedImageStore(context)
             val other = object : GenerationRepository {
-                override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>): Flow<Message> =
+                override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String): Flow<Message> =
                     error("Image generation was routed to the chat or demo backend")
             }
             val repository = ImageGenerationRepository(other, { image, prompt, _ ->

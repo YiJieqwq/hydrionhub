@@ -17,15 +17,15 @@ internal class ConversationSession(
     private val repository: GenerationRepository,
     private val persist: (SavedWorkspace) -> Unit,
     private val now: () -> Long = System::currentTimeMillis,
-    private val newRoutes: () -> Map<Mode, RemoteModel>? = { null },
-    private val showRoutes: (Map<Mode, RemoteModel>?) -> Unit = {},
+    private val newRoutes: (RemoteModel?) -> Map<Mode, RemoteModel>? = { null },
+    private val showRoutes: (Map<Mode, RemoteModel>?, RemoteModel?) -> Unit = { _, _ -> },
     private val allowSearch: () -> Boolean = { true },
     private val onGenerationError: (conversationId: String, detail: String) -> Unit = { _, _ -> }
 ) {
     private fun newChat(owner: String = LocalAssistant.Default.id) =
-        Conversation(assistantId = owner, modelRoutes = newRoutes())
+        Conversation(assistantId = owner, modelRoutes = newRoutes(assistant(owner)?.chatModel))
 
-    private val mutable = MutableStateFlow(HubState(current = newChat()))
+    private val mutable = MutableStateFlow(HubState(current = Conversation(modelRoutes = newRoutes(null))))
     val state: StateFlow<HubState> = mutable.asStateFlow()
     private val screen get() = mutable.value
     private val drafts = mutableMapOf<String, Draft>()
@@ -56,7 +56,7 @@ internal class ConversationSession(
         lastThreads.putAll(saved.lastThreads)
         saved.pending.associateByTo(parked) { it.assistantId }
         if (restoredUnsentId == null) restoredUnsentId = saved.unsent?.id
-        if (untouched && (hasSeveral || saved.unsent != null)) {
+        if (untouched && (hasSeveral || saved.unsent != null || assistant(saved.selectedAssistant)?.chatModel != null)) {
             choose(rememberedLocation(saved.selectedAssistant) ?: newChat(saved.selectedAssistant))
         }
     }
@@ -104,6 +104,30 @@ internal class ConversationSession(
         return true
     }
 
+    fun copyAssistant(id: String, name: String): Boolean {
+        val source = assistant(id) ?: return false
+        if (!LocalAssistant.validName(name.trim())) return false
+        // The new ID has separate chats, notes and tool grants.
+        mutable.value = screen.copy(assistants = screen.assistants + source.copy(id = newId(), name = name.trim()))
+        save()
+        return true
+    }
+
+    private fun assistant(id: String) = screen.assistants.find { it.id == id }
+
+    fun updateAssistant(id: String, name: String, avatar: String, prompt: String, chatModel: RemoteModel?, contextLimit: Int? = null): Boolean {
+        val previous = assistant(id) ?: return false
+        if (!LocalAssistant.validName(name.trim()) || !LocalAssistant.validAvatar(avatar.trim()) || !LocalAssistant.validPrompt(prompt)) return false
+        if (contextLimit != null && contextLimit !in LocalAssistant.ContextLimits) return false
+        val next = previous.copy(contextLimit = contextLimit, name = name.trim(), avatarText = avatar.trim(), systemPrompt = prompt, chatModel = chatModel)
+        if (next != previous) {
+            mutable.value = screen.copy(assistants = screen.assistants.map { if (it.id == id) next else it })
+            if (id == owner) showRoutes(screen.current.modelRoutes, chatModel)
+            save()
+        }
+        return true
+    }
+
     fun renameAssistant(id: String, name: String): Boolean {
         val clean = name.trim()
         if (!LocalAssistant.validName(clean) || screen.assistants.none { it.id == id }) return false
@@ -125,7 +149,7 @@ internal class ConversationSession(
         if (screen.history.any { it.assistantId == id }) return false
         val pending = if (id == owner) screen.current else parked[id]
         return pending == null || (pending.id !in drafts && pending.id != restoredUnsentId &&
-            pending.mode == Mode.Chat && pending.environmentId == null && (pending.modelRoutes.isNullOrEmpty() || pending.modelRoutes == newRoutes()))
+            pending.mode == Mode.Chat && pending.environmentId == null && (pending.modelRoutes.isNullOrEmpty() || pending.modelRoutes == newRoutes(assistant(id)?.chatModel)))
     }
 
     fun removeEmptyAssistant(id: String) {
@@ -187,7 +211,7 @@ internal class ConversationSession(
         if (parked[item.assistantId]?.id == item.id) parked.remove(item.assistantId)
         if (history.any { it.id == item.id }) lastThreads[item.assistantId] = item.id
         else lastThreads.remove(item.assistantId)
-        showRoutes(item.modelRoutes)
+        showRoutes(item.modelRoutes, assistant(item.assistantId)?.chatModel)
         mutable.value = screen.copy(history = history, current = item, draft = drafts[item.id] ?: Draft())
     }
 
@@ -198,7 +222,7 @@ internal class ConversationSession(
         val next = routes + (mode to route)
         if (!screen.modeLocked) restoredUnsentId = current.id
         update(current.copy(modelRoutes = next))
-        showRoutes(next)
+        showRoutes(next, assistant(owner)?.chatModel)
         save()
     }
 
@@ -357,13 +381,15 @@ internal class ConversationSession(
 
     private fun generate(id: String, mode: Mode, response: Message, retry: Boolean = false) {
         val chat = requireNotNull(conversation(id))
+        val profile = assistant(chat.assistantId).takeIf { mode == Mode.Chat && response.imageInvocation == null }
         val throughPrompt = chat.messages.takeWhile { it.id != response.id }
-        val history = chat.contextStart?.let { anchor -> throughPrompt.dropWhile { it.id != anchor } } ?: throughPrompt
+        val context = chat.contextStart?.let { anchor -> throughPrompt.dropWhile { it.id != anchor } } ?: throughPrompt
+        val history = profile?.contextLimit?.let(context::takeLast) ?: context
         save()
         val job = scope.launch(start = CoroutineStart.LAZY) {
             val generation = coroutineContext[Job]
             try {
-                repository.generate(mode, response, retry, history).collect { message ->
+                repository.generate(mode, response, retry, history, profile?.systemPrompt.orEmpty()).collect { message ->
                     if (jobs[id] === generation) replaceReply(id, response.id, message)
                 }
             } catch (cancelled: CancellationException) {
