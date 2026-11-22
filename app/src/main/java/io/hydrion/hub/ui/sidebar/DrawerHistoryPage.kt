@@ -1,9 +1,12 @@
 package io.hydrion.hub.ui.sidebar
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.*
@@ -22,11 +25,14 @@ import androidx.compose.material.icons.outlined.*
 import io.hydrion.hub.model.LocalAssistant
 import io.hydrion.hub.model.Conversation
 
+internal fun List<HistorySection>.visibleConversation(id: String): Conversation? =
+    firstNotNullOfOrNull { section -> section.rows.find { it.id == id } }
+
 @Composable
 internal fun DrawerHistoryPage(
     history: List<Conversation>, currentId: String, assistant: LocalAssistant, multiple: Boolean, actions: DrawerActions,
     onBack: () -> Unit, onOpen: (String) -> Unit,
-    onRename: (String) -> Unit, onPin: (String) -> Unit, onDelete: (String) -> Unit,
+    onRename: (String) -> Unit, onPin: (String) -> Unit,
 ) {
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -36,8 +42,14 @@ internal fun DrawerHistoryPage(
     }
     val sections = remember(scoped, query) { historySections(scoped, query) }
     var clearIds by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
-    var menuId by rememberSaveable { mutableStateOf<String?>(null) }
+    var menuId by rememberSaveable(assistant.id, allOwners, query) { mutableStateOf<String?>(null) }
+    var pendingDeleteId by rememberSaveable(assistant.id, allOwners, query) { mutableStateOf<String?>(null) }
     val scroll = rememberLazyListState()
+    fun togglePin(id: String) {
+        // Keep the first section visible when its header appears or disappears.
+        if (!scroll.canScrollBackward) scroll.requestScrollToItem(0)
+        onPin(id)
+    }
     LaunchedEffect(query) { scroll.scrollToItem(0) }
     Dialog(onDismissRequest = onBack, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize().testTag("drawer-history-page")) {
@@ -78,8 +90,11 @@ internal fun DrawerHistoryPage(
                             SectionHeading(sectionLabel(section.date))
                         }
                         items(section.rows, key = { it.id }) { item ->
-                            DrawerConversation(item, item.id == currentId, actions.hasDraft(item.id), selected = null,
-                                onClick = { onOpen(item.id) }, onLongClick = { menuId = item.id })
+                            HistoryConversationCard(
+                                item, item.id == currentId, actions.hasDraft(item.id),
+                                onOpen = onOpen, onManage = { menuId = it },
+                                onPin = ::togglePin, onRequestDelete = { pendingDeleteId = it },
+                            )
                         }
                     }
                 }
@@ -93,13 +108,90 @@ internal fun DrawerHistoryPage(
             actions.delete(clearIds.intersect(eligible)); clearIds = arrayListOf()
         }
     }
-    history.find { it.id == menuId }?.let { item ->
-        DrawerActionSheet(item.title, { menuId = null }) {
-            DrawerAction(stringResource(R.string.drawer_rename), Icons.Outlined.Edit) { menuId = null; onRename(item.id) }
-            DrawerAction(stringResource(if (item.pinned) R.string.drawer_unpin else R.string.drawer_pin), Icons.Outlined.PushPin) {
-                menuId = null; onPin(item.id)
+    val actionId = pendingDeleteId ?: menuId
+    if (actionId != null) {
+        val item = sections.visibleConversation(actionId)
+        when {
+            item == null -> LaunchedEffect(actionId) {
+                pendingDeleteId = null
+                menuId = null
             }
-            DrawerAction(stringResource(R.string.drawer_delete), Icons.Outlined.DeleteOutline, destructive = true) { menuId = null; onDelete(item.id) }
+            pendingDeleteId != null -> ConfirmDrawerDelete(
+                stringResource(R.string.drawer_delete_one, item.title), { pendingDeleteId = null },
+            ) {
+                if (pendingDeleteId == item.id) {
+                    pendingDeleteId = null
+                    actions.delete(setOf(item.id))
+                }
+            }
+            else -> DrawerActionSheet(item.title, { menuId = null }) {
+                DrawerAction(stringResource(R.string.drawer_rename), Icons.Outlined.Edit) {
+                    menuId = null
+                    onRename(item.id)
+                }
+                DrawerAction(stringResource(if (item.pinned) R.string.drawer_unpin else R.string.drawer_pin), Icons.Outlined.PushPin) {
+                    menuId = null
+                    togglePin(item.id)
+                }
+                DrawerAction(stringResource(R.string.drawer_delete), Icons.Outlined.DeleteOutline, destructive = true) {
+                    menuId = null
+                    pendingDeleteId = item.id
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HistoryConversationCard(
+    item: Conversation, current: Boolean, hasDraft: Boolean,
+    onOpen: (String) -> Unit, onManage: (String) -> Unit,
+    onPin: (String) -> Unit, onRequestDelete: (String) -> Unit,
+) {
+    val requestDelete by rememberUpdatedState(onRequestDelete)
+    val swipe = rememberSwipeToDismissBoxState(
+        positionalThreshold = { width -> width * 0.4f },
+        confirmValueChange = { target ->
+            if (target == SwipeToDismissBoxValue.EndToStart) {
+                // The confirmation dialog owns deletion. Let the card settle back in place.
+                requestDelete(item.id)
+                false
+            } else true
+        },
+    )
+    val colors = MaterialTheme.colorScheme
+    SwipeToDismissBox(
+        state = swipe, modifier = Modifier.testTag("history-row-${item.id}"),
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            if (swipe.dismissDirection != SwipeToDismissBoxValue.Settled) {
+                Box(
+                    Modifier.fillMaxSize().padding(bottom = 4.dp)
+                        .background(colors.errorContainer, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Outlined.DeleteOutline, null, tint = colors.onErrorContainer)
+                        Text(stringResource(R.string.drawer_delete), color = colors.onErrorContainer)
+                    }
+                }
+            }
+        },
+    ) {
+        Box(Modifier.fillMaxWidth().background(colors.surface)) {
+            DrawerConversation(
+                item, current, hasDraft, selected = null,
+                onClick = { onOpen(item.id) }, onLongClick = { onManage(item.id) },
+                trailingAction = {
+                    FilterChip(
+                        selected = item.pinned, onClick = { onPin(item.id) },
+                        modifier = Modifier.padding(start = 6.dp), shape = CircleShape,
+                        label = { Text(stringResource(if (item.pinned) R.string.drawer_unpin else R.string.drawer_pin)) },
+                        leadingIcon = { Icon(Icons.Outlined.PushPin, null, Modifier.size(FilterChipDefaults.IconSize)) },
+                    )
+                },
+            )
         }
     }
 }

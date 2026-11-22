@@ -1,5 +1,6 @@
 package io.hydrion.hub.model
 
+import io.hydrion.hub.ui.sidebar.historySections
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -40,6 +41,29 @@ class DrawerOperationsTest {
         assertEquals(draft, cold.state.value.draft)
         cold.setPinned(ids, false)
         assertTrue(cold.state.value.history.none { it.pinned })
+    }
+
+    @Test fun sameTitleDeletionKeepsItsTargetAfterPinReordersTheFilteredHistory() = runBlocking {
+        val older = first.copy(title = "Same", updatedAt = 1_000)
+        val newer = second.copy(title = "Same", updatedAt = 2_000)
+        val foreign = other.copy(title = "Same", updatedAt = 3_000)
+        val session = ConversationSession(this, FakeGenerationRepository {}, {})
+        session.restore(saved.copy(history = listOf(newer, foreign, older)))
+        fun filteredIds() = historySections(session.state.value.history, " SAME ", owner.id)
+            .flatMap { it.rows }.map { it.id }
+
+        assertEquals(listOf(newer.id, older.id), filteredIds())
+        val pendingId = filteredIds().first()
+        session.togglePin(older.id)
+        assertEquals(listOf(older.id, newer.id), filteredIds())
+        session.deleteConversation(pendingId)
+
+        assertEquals(listOf(older.id), filteredIds())
+        val remaining = session.state.value.history.associateBy { it.id }
+        assertEquals(setOf(older.id, foreign.id), remaining.keys)
+        assertEquals(older.copy(pinned = true), remaining[older.id])
+        assertEquals(foreign, remaining[foreign.id])
+        assertEquals(draft, session.snapshot().drafts[older.id])
     }
 
     @Test fun duplicateHasIndependentIdsAndRepliesDeletionIsScoped() = runBlocking {

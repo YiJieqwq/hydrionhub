@@ -223,7 +223,7 @@ internal fun ConversationDrawer(
     if (showHistory) {
         DrawerHistoryPage(history, currentId, currentAssistant, assistants.size > 1, actions, onBack = { showHistory = false },
             onOpen = { showHistory = false; onOpen(it) }, onRename = { showHistory = false; onRename(it) },
-            onPin = onPin, onDelete = { showHistory = false; onDelete(it) })
+            onPin = onPin)
     }
     val colors = MaterialTheme.colorScheme
     ModalDrawerSheet(
@@ -401,7 +401,7 @@ internal fun SectionHeading(label: String) {
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun DrawerConversation(item: Conversation, current: Boolean, hasDraft: Boolean, selected: Boolean?,
-    onClick: () -> Unit, onLongClick: () -> Unit) {
+    trailingAction: (@Composable () -> Unit)? = null, onClick: () -> Unit, onLongClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val background = when {
         selected == true -> colors.primary.copy(alpha = .16f)
@@ -424,6 +424,7 @@ internal fun DrawerConversation(item: Conversation, current: Boolean, hasDraft: 
         if (hasDraft) Text(stringResource(R.string.drawer_draft), Modifier.padding(start = 6.dp),
             fontSize = 11.sp, color = colors.primary)
         if (item.messages.any { it.status.isActive }) DrawerLoadingDot()
+        trailingAction?.invoke()
     }
 }
 

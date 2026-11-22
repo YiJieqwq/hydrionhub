@@ -37,6 +37,20 @@ class DrawerHistoryTest {
         assertEquals(rows, historySections(rows, "").single().rows)
     }
 
+    @Test fun historyActionTargetMustStillMatchTheQueryAndAssistantById() {
+        val target = Conversation(id = "target", title = "Report", assistantId = "a")
+        val other = target.copy(id = "other")
+        fun targetIn(rows: List<Conversation>, owner: String?) =
+            historySections(rows, " report ", assistantId = owner).visibleConversation(target.id)
+
+        assertEquals(target, targetIn(listOf(target, other), "a"))
+        assertEquals(null, targetIn(listOf(target.copy(title = "Notes"), other), "a"))
+        val moved = target.copy(assistantId = "b")
+        assertEquals(null, targetIn(listOf(moved, other), "a"))
+        assertEquals(moved, targetIn(listOf(moved, other), null))
+        assertEquals(null, targetIn(listOf(other), null))
+    }
+
     @Test fun emptySearchClaimsEitherHorizontalDirectionAndTogglesOnlyOncePerDrag() {
         for (sign in listOf(-1f, 1f)) {
             fun SearchDrag.move(distance: Int, blank: Boolean = true) =
