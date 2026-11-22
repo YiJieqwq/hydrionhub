@@ -59,4 +59,5 @@
     <string name="turn_input_tokens">Input: %1$d</string>
     <string name="turn_output_tokens">Output: %1$d</string>
     <string name="turn_no_text">No text</string>
+    <string name="turn_stopped">Stopped</string>
 </resources>

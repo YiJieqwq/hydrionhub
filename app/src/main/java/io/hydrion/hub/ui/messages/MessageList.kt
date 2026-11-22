@@ -264,7 +264,7 @@ internal fun UserBubble(msg: Message, query: String, mode: Mode, modifier: Modif
 }
 
 @Composable
-private fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: HubViewModel, busy: Boolean,
+internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: HubViewModel, busy: Boolean,
     open: (Message, TurnSheet) -> Unit) {
     val mode = chat.mode
     val colors = MaterialTheme.colorScheme
@@ -322,7 +322,7 @@ private fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: H
                     style = MaterialTheme.typography.bodySmall)
                 if (mode == Mode.Image) TextButton(onClick = { vm.regenerate(msg.id) }, enabled = !busy) { Text("重试") }
             }
-            Generation.Stopped -> Text("已停止", color = colors.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+            Generation.Stopped -> Text(stringResource(R.string.turn_stopped), color = colors.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
             Generation.Completed -> Unit
         }
         if (mode == Mode.Chat) ChatTurnActions(msg, chat, vm, busy, open)

@@ -191,7 +191,7 @@ internal class ConversationSession(
     private fun conversation(id: String): Conversation? =
         if (screen.current.id == id) screen.current else screen.history.firstOrNull { it.id == id }
 
-    private fun update(item: Conversation, activity: Boolean = false) {
+    private fun update(item: Conversation, activity: Boolean = false, restoredDraft: Draft? = null) {
         val s = screen
         val index = s.history.indexOfFirst { it.id == item.id }
         val history = when {
@@ -200,11 +200,12 @@ internal class ConversationSession(
             else -> s.history
         }
         mutable.value = s.copy(current = if (s.current.id == item.id) item else s.current,
+            draft = if (s.current.id == item.id && restoredDraft != null) restoredDraft else s.draft,
             history = if (activity) history.sortedByDescending { it.updatedAt } else history)
     }
 
-    private fun touch(item: Conversation) {
-        update(item.copy(updatedAt = now()), activity = true)
+    private fun touch(item: Conversation, restoredDraft: Draft? = null) {
+        update(item.copy(updatedAt = now()), activity = true, restoredDraft = restoredDraft)
     }
 
     private fun choose(item: Conversation, history: List<Conversation> = screen.history) {
@@ -374,18 +375,17 @@ internal class ConversationSession(
             prompt.ifBlank { draft.attachments.first().name }.lineSequence().first().take(32) else s.current.title
         changeDraft(draft.copy(text = "", attachments = emptyList()))
         if (restoreDraftOnError) dictatedDrafts[s.current.id] = s.draft
-        touch(s.current.copy(title = title, messages = s.current.messages + user + response))
-        lastThreads[owner] = s.current.id
-        generate(s.current.id, s.current.mode, response)
+        lastThreads[s.current.assistantId] = s.current.id
+        generate(s.current.copy(title = title, messages = s.current.messages + user + response), response)
     }
 
-    private fun generate(id: String, mode: Mode, response: Message, retry: Boolean = false) {
-        val chat = requireNotNull(conversation(id))
+    private fun generate(chat: Conversation, response: Message, retry: Boolean = false) {
+        val id = chat.id
+        val mode = chat.mode
         val profile = assistant(chat.assistantId).takeIf { mode == Mode.Chat && response.imageInvocation == null }
         val throughPrompt = chat.messages.takeWhile { it.id != response.id }
         val context = chat.contextStart?.let { anchor -> throughPrompt.dropWhile { it.id != anchor } } ?: throughPrompt
         val history = profile?.contextLimit?.let(context::takeLast) ?: context
-        save()
         val job = scope.launch(start = CoroutineStart.LAZY) {
             val generation = coroutineContext[Job]
             try {
@@ -401,7 +401,10 @@ internal class ConversationSession(
                 replaceReply(id, response.id, partial.copy(status = Generation.Error, error = detail))
             }
         }
+        // An observer of Sending can stop or retry synchronously, before transport startup.
         jobs[id] = job
+        touch(chat)
+        save()
         job.start()
     }
 
@@ -413,15 +416,14 @@ internal class ConversationSession(
         if (reply.status.isActive) {
             update(updated)
         } else {
-            touch(updated)
+            // Release this attempt before observers can start another one for the same reply.
             jobs.remove(conversationId)
-            val dictated = dictatedDrafts.remove(conversationId)
-            if (reply.status == Generation.Error && dictated != null) {
-                drafts[conversationId] = dictated
-                if (screen.current.id == conversationId) mutable.value = screen.copy(draft = dictated)
-            }
+            val restoredDraft = dictatedDrafts.remove(conversationId)?.takeIf { reply.status == Generation.Error }
+            if (restoredDraft != null) drafts[conversationId] = restoredDraft
+            touch(updated, restoredDraft)
             save()
-            if (reply.status == Generation.Error) onGenerationError(conversationId, reply.error ?: "消息生成失败。")
+            if (reply.status == Generation.Error && conversation(conversationId)?.messages?.getOrNull(index) === reply)
+                onGenerationError(conversationId, reply.error ?: "消息生成失败。")
         }
     }
 
@@ -558,7 +560,6 @@ internal class ConversationSession(
             messages.add(messages.indexOfFirst { it.id == user.id } + 1, response)
             item.copy(messages = messages)
         }
-        touch(next)
-        generate(item.id, item.mode, response, retry = true)
+        generate(next, response, retry = true)
     }
 }

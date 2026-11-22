@@ -58,4 +58,5 @@
     <string name="turn_input_tokens">输入：%1$d</string>
     <string name="turn_output_tokens">输出：%1$d</string>
     <string name="turn_no_text">无文本</string>
+    <string name="turn_stopped">已停止</string>
 </resources>
