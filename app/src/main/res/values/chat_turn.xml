@@ -18,6 +18,9 @@
     <string name="turn_start">Context starts here</string>
     <string name="turn_previous">Previous version</string>
     <string name="turn_next">Next version</string>
+    <string name="turn_copy_markdown_source">Copy Markdown source</string>
+    <string name="turn_markdown_copied">Markdown source copied</string>
+    <string name="turn_copy_failed">Could not copy to clipboard</string>
     <string name="turn_select_copy">Select text to copy</string>
     <string name="turn_delete_version">Delete this version</string>
     <string name="turn_delete_others">Delete other versions</string>

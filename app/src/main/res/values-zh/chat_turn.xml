@@ -18,6 +18,9 @@
     <string name="turn_start">上下文起点</string>
     <string name="turn_previous">上一版本</string>
     <string name="turn_next">下一版本</string>
+    <string name="turn_copy_markdown_source">复制 Markdown 原文</string>
+    <string name="turn_markdown_copied">已复制 Markdown 原文</string>
+    <string name="turn_copy_failed">复制到剪贴板失败</string>
     <string name="turn_select_copy">选择文本复制</string>
     <string name="turn_delete_version">删除当前版本</string>
     <string name="turn_delete_others">删除其他版本</string>

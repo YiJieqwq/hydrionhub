@@ -6,7 +6,16 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
-class CodeBlockCopyTest {
+class MessageClipboardTest {
+    @Test fun fullMarkdownSourceReachesTheClipboardWithoutReformatting() {
+        val source = "  # Title  \r\n\r\n```kotlin\n\tval x = 1  \n```\n"
+        var copied: AnnotatedString? = null
+        var confirmations = 0
+        copyPlainTextToClipboard(source, 33, setText = { copied = it }, confirm = { confirmations++ })
+        assertEquals(AnnotatedString(source), copied)
+        assertEquals(0, confirmations)
+    }
+
     @Test fun writesPlainCodeBeforeShowingConfirmationOnOlderAndroid() {
         val body = "\t**literal**  \n\n```\nend  "
         val block = markdownBlocks("````markdown linenums=1\n$body\n````").single() as MarkdownBlock.Code
@@ -14,7 +23,7 @@ class CodeBlockCopyTest {
         for (sdk in listOf(32, 33, 35)) {
             val events = mutableListOf<String>()
             val written = mutableListOf<AnnotatedString>()
-            block.copyToClipboard(sdk, setText = {
+            copyPlainTextToClipboard(block.value, sdk, setText = {
                 written += it
                 events += "write"
             }, confirm = { events += "confirm" })
@@ -30,7 +39,7 @@ class CodeBlockCopyTest {
         val failure = IllegalStateException("clipboard unavailable")
         var confirmations = 0
         val thrown = assertThrows(IllegalStateException::class.java) {
-            block.copyToClipboard(32, setText = { throw failure }, confirm = { confirmations++ })
+            copyPlainTextToClipboard(block.value, 32, setText = { throw failure }, confirm = { confirmations++ })
         }
         assertSame(failure, thrown)
         assertEquals(0, confirmations)

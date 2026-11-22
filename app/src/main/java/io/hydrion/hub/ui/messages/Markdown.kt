@@ -1,7 +1,5 @@
 package io.hydrion.hub.ui.messages
 
-import android.os.Build
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -17,8 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -147,25 +143,15 @@ internal fun MarkdownBody(value: String, query: String, modifier: Modifier) {
     }
 }
 
-internal fun MarkdownBlock.Code.copyToClipboard(sdkInt: Int, setText: (AnnotatedString) -> Unit, confirm: () -> Unit) {
-    setText(AnnotatedString(value))
-    if (sdkInt < Build.VERSION_CODES.TIRAMISU) confirm()
-}
-
 @Composable
 private fun CodeBlock(block: MarkdownBlock.Code, query: String) {
-    val clipboard = LocalClipboardManager.current
-    val context = LocalContext.current
+    val copyText = rememberPlainTextCopier(R.string.turn_code_copied)
     val palette = LocalMessageStyle.current.renderPalette.assistant
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(palette.background.messageColor())) {
         Row(Modifier.fillMaxWidth().background(palette.border.messageColor().copy(alpha = .35f)).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(block.language.ifEmpty { stringResource(R.string.turn_code_label) }, Modifier.weight(1f),
                 style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            IconButton(onClick = {
-                block.copyToClipboard(Build.VERSION.SDK_INT, clipboard::setText) {
-                    Toast.makeText(context, R.string.turn_code_copied, Toast.LENGTH_SHORT).show()
-                }
-            }) {
+            IconButton(onClick = { copyText(block.value) }) {
                 Icon(Icons.Outlined.ContentCopy, stringResource(R.string.turn_copy_code), Modifier.size(16.dp))
             }
         }

@@ -146,9 +146,15 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
         TurnSheet.Selection -> ChatMessageSelection(chat, msg, close) { ids, all ->
             vm.deleteSelectedVersions(chat.id, ids, all)
         }
-        TurnSheet.SelectText -> AlertDialog(onDismissRequest = close, title = { Text(stringResource(R.string.turn_select_copy)) },
-            text = { SelectionContainer { Text(msg.text, Modifier.verticalScroll(rememberScrollState())) } },
-            confirmButton = { TextButton(onClick = close) { Text(stringResource(android.R.string.ok)) } })
+        TurnSheet.SelectText -> {
+            val copySource = rememberPlainTextCopier(R.string.turn_markdown_copied)
+            AlertDialog(onDismissRequest = close, title = { Text(stringResource(R.string.turn_select_copy)) },
+                text = { SelectionContainer { Text(msg.text, Modifier.verticalScroll(rememberScrollState())) } },
+                confirmButton = { TextButton(onClick = close) { Text(stringResource(android.R.string.ok)) } },
+                dismissButton = {
+                    TextButton(onClick = { copySource(msg.text) }) { Text(stringResource(R.string.turn_copy_markdown_source)) }
+                })
+        }
         TurnSheet.Fork, TurnSheet.Edit -> {
             val fork = sheet == TurnSheet.Fork
             val valid = !busy && (input.isNotBlank() || (!fork && user && msg.attachments.isNotEmpty()))
