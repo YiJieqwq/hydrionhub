@@ -168,7 +168,8 @@ internal fun DefaultModelsPage(store: ProviderStore, catalog: ModelCatalog, onBa
                             }
                         }
                         Spacer(Modifier.height(6.dp))
-                        Text(stringResource(R.string.model_settings_new_only), fontSize = 12.sp,
+                        Text(stringResource(if (mode == Mode.Chat) R.string.chat_model_global_default_hint
+                            else R.string.model_settings_new_only), fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = .7f))
                         Spacer(Modifier.height(12.dp))
                         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))

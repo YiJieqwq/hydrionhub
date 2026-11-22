@@ -8,8 +8,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -20,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import io.hydrion.hub.R
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
+
+private const val FOLLOW_DEFAULT_KEY = "follow-chat-default"
 
 private fun LazyListState.anchor(): PickerScrollAnchor {
     val index = firstVisibleItemIndex
@@ -89,7 +93,7 @@ internal fun LazyListScope.modelMenuItems(rows: List<ModelMenuRow>,
 
 @Composable
 internal fun ChatModelBrowsePage(
-    store: ProviderStore, picker: ChatModelPickerState, suspended: Boolean, hideForReturn: Boolean, composerPadding: Dp,
+    store: ProviderStore, picker: ChatModelPickerState, chatOverride: RemoteModel?, suspended: Boolean, hideForReturn: Boolean, composerPadding: Dp,
     onEditModel: (RemoteModel, PickerBrowseSnapshot) -> Unit, modifier: Modifier = Modifier,
 ) {
     val catalog by store.catalog.collectAsState()
@@ -105,6 +109,7 @@ internal fun ChatModelBrowsePage(
     val labels = modelGroupLabels(entries)
     val all = remember(entries, labels) { modelMenuRows(entries, "", labels) }
     val rows = remember(all, query) { if (query.isEmpty()) all else modelMenuRows(entries, query, labels) }
+    val showFollow = catalog.perChatModel && query.isEmpty()
     val browsingScroll = rememberLazyListState()
     val filteredScroll = rememberLazyListState()
     val scroll = if (query.isEmpty()) browsingScroll else filteredScroll
@@ -124,7 +129,8 @@ internal fun ChatModelBrowsePage(
     LaunchedEffect(restore, hideForReturn, interactive) {
         if (restore == null || (!interactive && !hideForReturn)) return@LaunchedEffect
         savedRoom = restore.menuHeightDp.takeIf { it > 0f }?.dp
-        val fullIndex = restore.browsing.resolveIndex(all.map { it.key })
+        val allKeys = if (catalog.perChatModel) listOf(FOLLOW_DEFAULT_KEY) + all.map { it.key } else all.map { it.key }
+        val fullIndex = restore.browsing.resolveIndex(allKeys)
         val resultIndex = restore.filtered.resolveIndex(rows.map { it.key })
         if (scroll === browsingScroll) {
             filteredScroll.requestScrollToItem(resultIndex, restore.filtered.offset)
@@ -141,6 +147,15 @@ internal fun ChatModelBrowsePage(
         val heldRoom = if (!interactive && saved != null) minOf(room, saved) else room
         LazyColumn(Modifier.fillMaxSize().testTag("chat-model-results"), state = scroll,
             contentPadding = PaddingValues(top = 8.dp, bottom = maxHeight - heldRoom)) {
+            if (showFollow) item(key = FOLLOW_DEFAULT_KEY) {
+                TextButton(
+                    onClick = { store.followChatDefault(); picker.open() },
+                    enabled = interactive && chatOverride != null,
+                    modifier = Modifier.fillMaxWidth().focusProperties { canFocus = false }.testTag("chat-model-follow-default"),
+                ) {
+                    Text(stringResource(if (chatOverride == null) R.string.chat_model_following_default else R.string.chat_model_follow_default))
+                }
+            }
             if (rows.isEmpty()) item(key = "empty") {
                 Text(stringResource(if (query.isEmpty()) R.string.chat_picker_no_models else R.string.chat_picker_search_empty),
                     Modifier.testTag("chat-model-search-empty").semantics { liveRegion = LiveRegionMode.Polite }
@@ -150,8 +165,7 @@ internal fun ChatModelBrowsePage(
                 if (!interactive || !picker.modelListNavigation) return@pick
                 val latest = store.catalog.value
                 val selected = latest.entries(Mode.Chat).find { it.route == route } ?: return@pick
-                if (latest.selectedEntry(Mode.Chat)?.route != route)
-                    store.configure(Mode.Chat, route, latest.parameters(selected.first, selected.second))
+                store.configure(Mode.Chat, route, latest.parameters(selected.first, selected.second))
                 picker.open()
             }, onEdit = { route ->
                 val page = picker.page

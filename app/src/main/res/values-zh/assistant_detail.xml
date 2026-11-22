@@ -8,7 +8,7 @@
     <string name="assistant_follow_global">使用全局默认模型</string>
     <string name="assistant_model_default">默认聊天模型</string>
     <string name="assistant_model_unavailable">已配置的模型当前不可用</string>
-    <string name="assistant_model_precedence">新会话采用此模型，已有会话保留自己的选择。关闭逐会话选模时，聊天优先使用助手默认模型，其次使用全局默认。</string>
+    <string name="assistant_model_precedence">未单独指定模型的会话使用助手模型。助手未指定模型时，使用全局默认模型。</string>
     <string name="assistant_discard">放弃对该助手资料的更改？</string>
     <string name="assistant_save_failed">无法保存。请确认所选模型仍然可用。</string>
     <string name="assistant_limit">限制上下文消息数</string>

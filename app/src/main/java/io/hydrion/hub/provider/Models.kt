@@ -46,10 +46,7 @@ data class ModelCatalog(
     /** Disabling per-chat selection hides the saved pin without modifying the conversation. */
     internal fun forConversation(routes: Map<Mode, RemoteModel>?, assistantDefault: RemoteModel? = null): ModelCatalog {
         val selected = routes ?: active
-        val available = entries(Mode.Chat)
-        val pinned = selected[Mode.Chat].takeIf { perChatModel && available.any { row -> row.route == it } }
-        val ownerRoute = assistantDefault?.takeIf { available.any { row -> row.route == it } }
-        val chat = pinned ?: ownerRoute
+        val chat = selected[Mode.Chat].takeIf { perChatModel } ?: assistantDefault
         return copy(active = if (chat == null) selected - Mode.Chat else selected + (Mode.Chat to chat))
     }
 
@@ -72,7 +69,9 @@ data class ModelCatalog(
 
     fun defaultEntry(mode: Mode): Pair<ProviderModel, Provider>? {
         val available = entries(mode)
-        return available.find { it.route == defaults[mode] } ?: available.firstOrNull()
+        val preferred = defaults[mode]
+        if (mode == Mode.Chat && preferred != null) return available.singleOrNull { it.route == preferred }
+        return available.find { it.route == preferred } ?: available.firstOrNull()
     }
 
     internal fun initialRoutes(): Map<Mode, RemoteModel> = Mode.entries.mapNotNull { mode ->
@@ -90,9 +89,7 @@ data class ModelCatalog(
 
     internal fun selectedEntry(mode: Mode, available: List<Pair<ProviderModel, Provider>>): Pair<ProviderModel, Provider>? {
         val preferred = active[mode] ?: defaults[mode]
-        if (mode == Mode.Image && preferred != null) return available.singleOrNull { it.route == preferred }
-        return available.find { it.route == active[mode] } ?: available.find { it.route == defaults[mode] }
-            ?: available.firstOrNull()
+        return if (preferred == null) available.firstOrNull() else available.singleOrNull { it.route == preferred }
     }
 
     fun selectedModel(mode: Mode): ProviderModel? = selectedEntry(mode)?.first
@@ -154,21 +151,17 @@ data class ModelCatalog(
     fun normalized(): ModelCatalog {
         // Disabled providers keep their route and parameter preferences until re-enabled.
         val declared = providers.flatMap { p -> p.models.map { m -> RemoteModel(p.id, m.id) to (m to p) } }.toMap()
-        fun belongs(mode: Mode, route: RemoteModel): Boolean {
-            val entry = declared[route]
-            if (entry != null) return (mode == Mode.Image && entry.second.mode == Mode.Image) ||
-                entry.first.selectableMode(entry.second) == mode
-            // Preserve a missing image route across saves. The user must select a replacement explicitly.
-            return mode == Mode.Image && providers.none { it.id == route.providerId && it.mode != Mode.Image }
-        }
+        // A missing or retyped chat model must stay unavailable until the user chooses a replacement.
+        fun keepRoute(mode: Mode, route: RemoteModel): Boolean = mode == Mode.Chat ||
+            providers.none { it.id == route.providerId && it.mode != mode }
         val validDefaults = Mode.entries.mapNotNull { mode ->
-            val route = defaults[mode]?.takeIf { belongs(mode, it) } ?: entries(mode).firstOrNull()?.route
+            val route = defaults[mode]?.takeIf { keepRoute(mode, it) } ?: entries(mode).firstOrNull()?.route
             route?.let { mode to it }
         }.toMap()
         val validOverrides = overrides.mapNotNull { (route, values) ->
             declared[route]?.let { (m, _) -> route to parameters(m, values) }
         }.toMap()
-        return copy(defaults = validDefaults, active = active.filter { (mode, route) -> belongs(mode, route) },
+        return copy(defaults = validDefaults, active = active.filter { (mode, route) -> keepRoute(mode, route) },
             overrides = validOverrides)
     }
 }

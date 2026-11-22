@@ -229,7 +229,7 @@ private fun Workspace(vm: HubViewModel) {
                     freezeTimelineDock = covered && editVisit == null, dockKey = chatPicker,
                     trackPickerAnchor = { editVisit == null && (chatPicker.page != null || modelBrowse.active || chatPicker.drawingBubble) },
                     picker = if (current.mode == Mode.Chat) {
-                        { ChatModelPicker(providers, chatPicker, suspended = editVisit != null, hideForReturn = returning,
+                        { ChatModelPicker(providers, chatPicker, chatOverride = current.modelRoutes?.get(Mode.Chat), suspended = editVisit != null, hideForReturn = returning,
                             modelBrowseProgress = { modelBrowse.progress }, modifier = Modifier.fillMaxSize()) }
                     } else null,
                     composer = {
@@ -319,7 +319,7 @@ private fun Workspace(vm: HubViewModel) {
                     modelBrowse.page?.let {
                         ChatSlidingPage({ modelVisitBrowseReveal(modelBrowse.progress, pageCover.value) }, modelBrowse.interactive && editVisit == null,
                             "chat-model-browse-surface") {
-                            ChatModelBrowsePage(providers, chatPicker, suspended = editVisit != null,
+                            ChatModelBrowsePage(providers, chatPicker, chatOverride = current.modelRoutes?.get(Mode.Chat), suspended = editVisit != null,
                                 hideForReturn = returning, composerPadding = panelDock,
                                 modifier = Modifier.clipSlidingPageContent(excessDockPx),
                                 onEditModel = edit@{ route, browse ->

@@ -17,15 +17,15 @@ internal class ConversationSession(
     private val repository: GenerationRepository,
     private val persist: (SavedWorkspace) -> Unit,
     private val now: () -> Long = System::currentTimeMillis,
-    private val newRoutes: (RemoteModel?) -> Map<Mode, RemoteModel>? = { null },
+    private val newRoutes: () -> Map<Mode, RemoteModel>? = { null },
     private val showRoutes: (Map<Mode, RemoteModel>?, RemoteModel?) -> Unit = { _, _ -> },
     private val allowSearch: () -> Boolean = { true },
     private val onGenerationError: (conversationId: String, detail: String) -> Unit = { _, _ -> }
 ) {
     private fun newChat(owner: String = LocalAssistant.Default.id) =
-        Conversation(assistantId = owner, modelRoutes = newRoutes(assistant(owner)?.chatModel))
+        Conversation(assistantId = owner, modelRoutes = newRoutes())
 
-    private val mutable = MutableStateFlow(HubState(current = Conversation(modelRoutes = newRoutes(null))))
+    private val mutable = MutableStateFlow(HubState(current = Conversation(modelRoutes = newRoutes())))
     val state: StateFlow<HubState> = mutable.asStateFlow()
     private val screen get() = mutable.value
     private val drafts = mutableMapOf<String, Draft>()
@@ -149,7 +149,7 @@ internal class ConversationSession(
         if (screen.history.any { it.assistantId == id }) return false
         val pending = if (id == owner) screen.current else parked[id]
         return pending == null || (pending.id !in drafts && pending.id != restoredUnsentId &&
-            pending.mode == Mode.Chat && pending.environmentId == null && (pending.modelRoutes.isNullOrEmpty() || pending.modelRoutes == newRoutes(assistant(id)?.chatModel)))
+            pending.mode == Mode.Chat && pending.environmentId == null && (pending.modelRoutes.isNullOrEmpty() || pending.modelRoutes == newRoutes()))
     }
 
     fun removeEmptyAssistant(id: String) {
@@ -216,11 +216,11 @@ internal class ConversationSession(
         mutable.value = screen.copy(history = history, current = item, draft = drafts[item.id] ?: Draft())
     }
 
-    fun selectModel(mode: Mode, route: RemoteModel) {
+    fun selectModel(mode: Mode, route: RemoteModel?) {
         val current = screen.current
         val routes = current.modelRoutes.orEmpty()
         if (routes[mode] == route) return
-        val next = routes + (mode to route)
+        val next = if (route == null) routes - mode else routes + (mode to route)
         if (!screen.modeLocked) restoredUnsentId = current.id
         update(current.copy(modelRoutes = next))
         showRoutes(next, assistant(owner)?.chatModel)

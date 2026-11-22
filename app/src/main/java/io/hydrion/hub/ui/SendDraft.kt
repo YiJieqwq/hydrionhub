@@ -1,5 +1,7 @@
 package io.hydrion.hub.ui
 
+import android.app.Application
+import io.hydrion.hub.R
 import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubState
 import io.hydrion.hub.model.ImageInvocation
@@ -23,6 +25,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 
+private const val CHAT_MODEL_REQUIRED = "Chat model unavailable"
+
 internal fun HubState.canSendDraft(submitted: HubState, liveCatalog: ModelCatalog, submittedCatalog: ModelCatalog): Boolean =
     !submitted.isGenerating && !isGenerating && current.id == submitted.current.id &&
         current.mode == submitted.current.mode && draft == submitted.draft && liveCatalog == submittedCatalog
@@ -35,6 +39,11 @@ internal suspend fun sendDraft(
     validateImage = vm::validateImage,
 ) { model, parameters, image, remoteModel ->
     vm.send(model, parameters, image = image, remoteModel = remoteModel, restoreDraftOnError = fromDictation)
+}.let { issue ->
+    if (issue == CHAT_MODEL_REQUIRED) {
+        val saved = Mode.Chat in catalog.active || Mode.Chat in catalog.defaults
+        vm.getApplication<Application>().getString(if (saved) R.string.model_settings_unavailable else R.string.chat_picker_no_models)
+    } else issue
 }
 
 internal suspend fun sendDraft(
@@ -50,7 +59,7 @@ internal suspend fun sendDraft(
     fun stillCurrent() = state.value.canSendDraft(before, providers.catalog.value, catalog)
     if (!stillCurrent()) return null
     val (model, provider) = catalog.selectedEntry(mode)
-        ?: return if (mode == Mode.Image) IMAGE_MODEL_REQUIRED else "请在设置中启用供应商并添加模型。"
+        ?: return if (mode == Mode.Image) IMAGE_MODEL_REQUIRED else CHAT_MODEL_REQUIRED
     model.inputIssue(before.draft)?.let { return it }
     provider.chatProtocolIssue()?.let { return it }
     val protocol = provider.chatProtocol()

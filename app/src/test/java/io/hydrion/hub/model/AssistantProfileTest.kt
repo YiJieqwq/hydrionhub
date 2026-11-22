@@ -14,7 +14,7 @@ class AssistantProfileTest {
     private val custom = RemoteModel("owner", "chat")
 
     @Test fun editingOtherOwnerPreservesConversationAndDraftAndSurvivesReload() = runBlocking {
-        fun session() = ConversationSession(this, FakeGenerationRepository {}, {}, newRoutes = { route -> mapOf(Mode.Chat to (route ?: global)) })
+        fun session() = ConversationSession(this, FakeGenerationRepository {}, {}, newRoutes = { emptyMap() })
         val live = session()
         live.setDraft("fixture draft")
         live.addAttachment(Attachment("file", "local"))
@@ -27,7 +27,8 @@ class AssistantProfileTest {
         assertFalse(live.updateAssistant("removed", "x", "", "", null))
         assertFalse(live.updateAssistant(b, "  ", "", "invalid", null))
         live.selectAssistant(b)
-        assertEquals(custom, live.state.value.current.modelRoutes?.get(Mode.Chat))
+        assertNull(live.state.value.current.modelRoutes?.get(Mode.Chat))
+        assertEquals(custom, live.state.value.assistants.single { it.id == b }.chatModel)
         live.selectModel(Mode.Chat, global)
         val pinned = live.state.value.current
         assertTrue(live.updateAssistant(b, "B", "🐈", "B updated", null, 8))
@@ -50,15 +51,24 @@ class AssistantProfileTest {
     @Test fun oldProfileAndFreshSingleAssistantResolveDefaultsWithoutReassigningHistory() = runBlocking {
         val old = decodeWorkspace(JSONObject("""{"assistants":[{"id":"default","name":"Old"}]}"""))
         assertEquals(LocalAssistant("default","Old"), old.assistants.single())
+        val model = ProviderModel("chat", "Fixture model")
+        val first = newProvider(Mode.Chat).copy(id = global.providerId, models = listOf(model))
+        val catalog = ModelCatalog(listOf(first, first.copy(id = custom.providerId)), defaults = mapOf(Mode.Chat to global))
+        var presented: RemoteModel? = null
         val existing = Conversation(id = "kept", modelRoutes = mapOf(Mode.Chat to global))
-        val live = ConversationSession(this, FakeGenerationRepository {}, {}, newRoutes = { mapOf(Mode.Chat to (it ?: global)) })
+        val live = ConversationSession(this, FakeGenerationRepository {}, {}, newRoutes = { emptyMap() },
+            showRoutes = { routes, assistantRoute ->
+                presented = catalog.forConversation(routes, assistantRoute).selectedEntry(Mode.Chat)?.route
+            })
         live.restore(old.copy(assistants = listOf(old.assistants.single().copy(chatModel = custom)), history = listOf(existing)))
-        assertEquals(custom, live.state.value.current.modelRoutes?.get(Mode.Chat))
+        assertNull(live.state.value.current.modelRoutes?.get(Mode.Chat))
+        assertEquals(custom, presented)
         live.openConversation("kept")
         assertEquals(global, live.state.value.current.modelRoutes?.get(Mode.Chat))
+        assertEquals(global, presented)
     }
 
-    @Test fun perChatPinThenAssistantThenGlobalPreserveImageAndMissingModelFallback() {
+    @Test fun explicitChatRouteWinsEvenWhenMissingAndImageSelectionStaysIndependent() {
         val catalog = demoCatalog().withDeepSeekPreset()
         val choices = catalog.entries(Mode.Chat).map { it.route }.distinct()
         val first = choices[0]; val owner = choices[1]; val pin = choices[2]
@@ -69,8 +79,14 @@ class AssistantProfileTest {
         assertEquals(pin, resolved(true, pins, owner))
         assertEquals(owner, resolved(false, pins, owner))
         assertEquals(owner, resolved(true, pins - Mode.Chat, owner))
-        assertEquals(owner, resolved(true, pins + (Mode.Chat to custom), owner))
-        assertEquals(first, resolved(false, pins, custom))
+        assertNull(resolved(true, pins + (Mode.Chat to custom), owner))
+        assertNull(resolved(false, pins, custom))
+        val disabledPin = defaults.copy(providers = defaults.providers.map { provider ->
+            if (provider.id == pin.providerId) provider.copy(enabled = false) else provider
+        }).normalized()
+        assertNull(disabledPin.forConversation(pins, owner).selectedEntry(Mode.Chat))
+        val restored = disabledPin.copy(providers = defaults.providers).normalized()
+        assertEquals(pin, restored.forConversation(pins, owner).selectedEntry(Mode.Chat)?.route)
         assertEquals(first, resolved(false, pins, null))
         assertEquals(pins[Mode.Image], defaults.forConversation(pins, owner).selectedEntry(Mode.Image)?.route)
     }

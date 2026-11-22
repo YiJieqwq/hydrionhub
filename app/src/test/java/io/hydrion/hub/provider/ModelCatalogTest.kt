@@ -29,7 +29,11 @@ class ModelCatalogTest {
         val deleted = newDefault.withEditedModel(target, null)
         assertEquals(listOf(first, second.copy(models = listOf(other))), deleted.providers)
         assertEquals(selected, deleted.selectedEntry(Mode.Chat)?.route)
-        assertNotEquals(target, deleted.defaults[Mode.Chat])
+        assertEquals(target, deleted.defaults[Mode.Chat])
+        assertNull(deleted.defaultEntry(Mode.Chat))
+        val restored = deleted.withProvider(second, emptyMap())
+        assertEquals(target, restored.defaultEntry(Mode.Chat)?.route)
+        assertEquals(selected, restored.selectedEntry(Mode.Chat)?.route)
     }
 
     @Test fun parametersOnlyIncludeDeclaredChoices() {
@@ -40,18 +44,24 @@ class ModelCatalogTest {
         assertFalse(catalog.selection(Mode.Chat).available)
     }
 
-    @Test fun deletingSelectedModelFallsBackWithinMode() {
+    @Test fun deletingAnExplicitChatModelBlocksUntilTheSameRouteReturns() {
         val catalog = demoCatalog()
-        val remaining = catalog.providers.map { p ->
-            if (p.mode == Mode.Chat) p.copy(models = p.models.drop(1)) else p
+        val route = RemoteModel("demo-chat", "demo-reason")
+        val remaining = catalog.providers.map { provider ->
+            if (provider.mode == Mode.Chat) provider.copy(models = provider.models.filterNot { it.id == route.modelId }) else provider
         }
-        val next = catalog.copy(providers = remaining, active = mapOf(Mode.Chat to RemoteModel("demo-chat", "demo-reason"))).normalized()
-        assertEquals("Hydrion Mini", next.selection(Mode.Chat).label)
-        assertEquals(mapOf(CONTEXT_WINDOW_PARAMETER to "128000"), next.selection(Mode.Chat).parameters)
+        val next = catalog.copy(providers = remaining, active = mapOf(Mode.Chat to route)).normalized()
+        assertEquals(route, next.active[Mode.Chat])
+        assertFalse(next.selection(Mode.Chat).available)
         assertEquals(catalog.selection(Mode.Image), next.selection(Mode.Image))
+
+        val reopened = decodeCatalog(encodeCatalog(next).toString())
+        assertEquals(route, reopened.active[Mode.Chat])
+        assertNull(reopened.selectedEntry(Mode.Chat))
+        assertEquals(route, reopened.copy(providers = catalog.providers).normalized().selectedEntry(Mode.Chat)?.route)
     }
 
-    @Test fun disablingProviderFallsBackAndReenablingRestoresItsPreferredModel() {
+    @Test fun disablingProviderBlocksItsExplicitChatRouteAndReenablingRestoresIt() {
         val original = demoCatalog().copy(active = mapOf(Mode.Chat to RemoteModel("demo-chat", "demo-quick")))
         val fallback = Provider("other", Mode.Chat, "备用", "local", "",
             listOf(ProviderModel("other-chat", "备用模型")))
@@ -60,7 +70,8 @@ class ModelCatalogTest {
         } + fallback).normalized()
 
         assertEquals(listOf("other-chat"), disabled.models(Mode.Chat).map { it.id })
-        assertEquals("备用模型", disabled.selection(Mode.Chat).label)
+        assertFalse(disabled.selection(Mode.Chat).available)
+        assertEquals(original.active[Mode.Chat], disabled.active[Mode.Chat])
         assertFalse(disabled.copy(providers = disabled.providers - fallback).normalized().selection(Mode.Chat).available)
         assertEquals(original.selection(Mode.Image), disabled.selection(Mode.Image))
         val restored = disabled.copy(providers = original.providers + fallback).normalized()
@@ -80,8 +91,9 @@ class ModelCatalogTest {
         assertEquals(second.id, catalog.selectedEntry(Mode.Chat)?.second?.id)
         assertEquals("B2", catalog.selection(Mode.Chat).parameters["style"])
         val disabled = catalog.copy(providers = listOf(second.copy(models = listOf(b.copy(enabled = false))), first)).normalized()
-        assertEquals(routeA, disabled.selectedEntry(Mode.Chat)?.route)
-        assertEquals("A2", disabled.selection(Mode.Chat).parameters["style"])
+        assertEquals(routeA, disabled.defaultEntry(Mode.Chat)?.route)
+        assertNull(disabled.selectedEntry(Mode.Chat))
+        assertFalse(disabled.selection(Mode.Chat).available)
         assertEquals(routeB, disabled.active[Mode.Chat])
         assertEquals(catalog.overrides, disabled.overrides)
         val disabledOwner = second.copy(enabled = false)

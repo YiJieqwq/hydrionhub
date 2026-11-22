@@ -17,6 +17,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -137,7 +138,7 @@ internal class ChatModelPickerState {
 
 @Composable
 internal fun ChatModelPicker(
-    store: ProviderStore, picker: ChatModelPickerState,
+    store: ProviderStore, picker: ChatModelPickerState, chatOverride: RemoteModel?,
     suspended: Boolean, hideForReturn: Boolean, modelBrowseProgress: () -> Float,
     modifier: Modifier = Modifier,
 ) {
@@ -182,8 +183,10 @@ internal fun ChatModelPicker(
             paneTitle = select,
         ) {
             if (entry == null) {
-                Text(stringResource(R.string.chat_picker_no_models), Modifier.padding(12.dp),
-                    style = MaterialTheme.typography.bodyMedium)
+                UnavailableChatModelChoices(catalog.entries(Mode.Chat).isNotEmpty(), catalog.perChatModel && chatOverride != null) {
+                    picker.open()
+                    picker.models()
+                }
             } else {
                 val (model, provider) = entry
                 val values = catalog.parameters(model, provider)
@@ -193,7 +196,7 @@ internal fun ChatModelPicker(
                         PickerList(chatCapabilityLabel(cap), selectedIndex = cap.choices.indexOf(values[cap.key])) {
                             items(cap.choices, key = { it }) { value ->
                                 PickerOption(chatOptionLabel(cap, value), values[cap.key] == value) {
-                                    store.configure(Mode.Chat, entry.route, model.choose(values, cap.key, value))
+                                    store.configureChatParameters(entry.route, model.choose(values, cap.key, value))
                                     picker.open()
                                 }
                             }
@@ -208,7 +211,7 @@ internal fun ChatModelPicker(
                                     // Back or a profile change can arrive while the rail still owns a pointer.
                                     if (picker.page == ChatModelPickerState.Page.Controls &&
                                         store.catalog.value.selectedEntry(Mode.Chat)?.route == entry.route) {
-                                        store.configure(Mode.Chat, entry.route, model.choose(values, capability.key, choice))
+                                        store.configureChatParameters(entry.route, model.choose(values, capability.key, choice))
                                     }
                                 },
                                 onOptions = picker::options,
@@ -220,6 +223,19 @@ internal fun ChatModelPicker(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UnavailableChatModelChoices(hasOptions: Boolean, canClearOverride: Boolean, onModels: () -> Unit) {
+    Column(Modifier.padding(12.dp)) {
+        Text(stringResource(if (hasOptions) R.string.model_settings_unavailable else R.string.chat_picker_no_models),
+            style = MaterialTheme.typography.bodyMedium)
+        if (hasOptions || canClearOverride) {
+            TextButton(onClick = onModels, modifier = Modifier.testTag("chat-model-select").focusProperties { canFocus = false }) {
+                Text(stringResource(R.string.chat_controls_select_model))
             }
         }
     }

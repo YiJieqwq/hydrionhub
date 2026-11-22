@@ -37,14 +37,12 @@ class ProviderStore internal constructor(private val storage: ProviderCatalogSto
     private var conversationRoutes: Map<Mode, RemoteModel>? = null
     private var assistantDefault: RemoteModel? = null
     internal var onAssistantModelPicked: ((RemoteModel) -> Unit)? = null
-    internal var onModelPicked: ((Mode, RemoteModel) -> Unit)? = null
+    internal var onModelPicked: ((Mode, RemoteModel?) -> Unit)? = null
     private val state = MutableStateFlow(stored.forConversation(null))
 
-    internal fun newThreadRoutes(ownerRoute: RemoteModel?): Map<Mode, RemoteModel> {
-        val defaults = stored.initialRoutes()
-        return if (ownerRoute != null && stored.entries(Mode.Chat).any { it.route == ownerRoute })
-            defaults + (Mode.Chat to ownerRoute) else defaults
-    }
+    // An absent chat pin follows the assistant or global default. Image routes retain their creation-time value.
+    internal fun newThreadRoutes(): Map<Mode, RemoteModel> = stored.initialRoutes() - Mode.Chat
+
     internal fun legacyRoutes(): Map<Mode, RemoteModel> = stored.initialRoutes() + stored.active
 
     internal fun showRoutes(routes: Map<Mode, RemoteModel>?, ownerRoute: RemoteModel?) {
@@ -111,6 +109,17 @@ class ProviderStore internal constructor(private val storage: ProviderCatalogSto
         return current.prepareOfficialImageGeneration(route, prompt, invocation.parameters, ::sessionKey)
     }
 
+    internal fun followChatDefault() {
+        if (stored.perChatModel && conversationRoutes?.containsKey(Mode.Chat) == true) {
+            onModelPicked?.invoke(Mode.Chat, null)
+        }
+    }
+
+    internal fun configureChatParameters(route: RemoteModel, parameters: Map<String, String>) {
+        val entry = state.value.selectedEntry(Mode.Chat)?.takeIf { it.route == route } ?: return
+        update(stored.copy(overrides = stored.overrides + (route to stored.parameters(entry.first, parameters))))
+    }
+
     fun configure(mode: Mode, modelId: String, parameters: Map<String, String>) {
         val owner = state.value.providers.singleOrNull { p -> p.mode == mode &&
             p.models.any { it.id == modelId && it.typeFor(p.mode).mode == mode } } ?: return
@@ -122,10 +131,9 @@ class ProviderStore internal constructor(private val storage: ProviderCatalogSto
         val entry = old.entries(mode).singleOrNull { it.route == route } ?: return
         val shared = mode == Mode.Chat && !old.perChatModel
         update(old.copy(active = if (shared) old.active else old.active + (mode to route),
-            defaults = if (shared && assistantDefault == null) old.defaults + (mode to route) else old.defaults,
             overrides = old.overrides + (route to old.parameters(entry.first, parameters))))
         if (!shared) onModelPicked?.invoke(mode, route)
-        else if (assistantDefault != null) onAssistantModelPicked?.invoke(route)
+        else onAssistantModelPicked?.invoke(route)
     }
 
     fun save(provider: Provider, sessionKey: String, defaultModelId: String?) {

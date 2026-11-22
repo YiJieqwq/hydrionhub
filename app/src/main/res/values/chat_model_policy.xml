@@ -1,7 +1,10 @@
 <resources>
     <string name="chat_model_per_conversation">Remember a model per conversation</string>
-    <string name="chat_model_per_conversation_hint">When off, model selection updates the assistant default if set, otherwise the global default. Turn on to restore saved conversation choices.</string>
+    <string name="chat_model_per_conversation_hint">When off, choosing a model updates the current assistant default. Turn on to restore saved conversation choices.</string>
     <string name="chat_provider_order">Reorder chat providers</string>
     <string name="chat_provider_up">Move provider up</string>
     <string name="chat_provider_down">Move provider down</string>
+    <string name="chat_model_follow_default">Follow assistant or global default</string>
+    <string name="chat_model_following_default">Following assistant or global default</string>
+    <string name="chat_model_global_default_hint">Used when neither the conversation nor its assistant specifies a chat model.</string>
 </resources>
