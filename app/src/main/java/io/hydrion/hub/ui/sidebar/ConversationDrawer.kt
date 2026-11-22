@@ -207,9 +207,13 @@ internal fun ConversationDrawer(
             actions.delete(deleteIds.toSet()); deleteIds = arrayListOf(); selected = null
         }
     }
-    val scroll = rememberLazyListState()
-    LaunchedEffect(filter, global, assistantId) { scroll.scrollToItem(0) }
-    LaunchedEffect(showAssistants) { if (showAssistants) scroll.animateScrollToItem(0) }
+    val topicsScroll = rememberLazyListState()
+    // A closed drawer gets empty history. Keep the submitted results' viewport away from the
+    // loading and empty rows so opening a different assistant's result preserves the return position.
+    val resultsScroll = key(global, submitted) { rememberLazyListState() }
+    val scroll = if (hits.isNotEmpty()) resultsScroll else topicsScroll
+    LaunchedEffect(filter, global, assistantId) { topicsScroll.requestScrollToItem(0) }
+    LaunchedEffect(showAssistants) { if (showAssistants && !global) topicsScroll.animateScrollToItem(0) }
     val easeOut = CubicBezierEasing(0.215f, 0.61f, 0.355f, 1f)
     val rotation by animateFloatAsState(if (showAssistants) 180f else 0f, tween(350, easing = easeOut),
         label = "Assistant disclosure")
@@ -260,7 +264,7 @@ internal fun ConversationDrawer(
                     }
                 }
             }
-            LazyColumn(Modifier.fillMaxWidth().weight(1f), state = scroll,
+            LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("drawer-conversation-list"), state = scroll,
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 12.dp)) {
                 item(key = "assistants") {
                     val sizeSpec = tween<androidx.compose.ui.unit.IntSize>(260,

@@ -75,7 +75,7 @@ internal class ConversationSession(
                 (item.id in drafts || item.id == restoredUnsentId || (hasSeveral && item.mode != Mode.Chat))
         }
         pending.forEach { savedDrafts[it.id] = drafts[it.id] ?: Draft() }
-        val resume = if (hasSeveral || includeUnsent) history.filter { lastThreads[it.assistantId] == it.id }
+        val resume = if (hasSeveral || includeUnsent || pending.isNotEmpty()) history.filter { lastThreads[it.assistantId] == it.id }
             .associate { it.assistantId to it.id } else emptyMap()
         return SavedWorkspace(history, savedDrafts, pending.find { it.assistantId == owner }, screen.assistants,
             owner, pending.filter { it.assistantId != owner }.sortedBy { it.assistantId }, resume)
@@ -229,18 +229,23 @@ internal class ConversationSession(
 
     fun newConversation() {
         if (!screen.modeLocked) drafts.remove(screen.current.id)
-        val discardImported = !screen.modeLocked && screen.current.id == restoredUnsentId
-        choose(parked[owner] ?: newChat(owner))
-        if (hasSeveral || discardImported) save()
+        val discardRetained = !screen.modeLocked && screen.current.id == restoredUnsentId
+        if (discardRetained) restoredUnsentId = null
+        val pending = parked[owner]
+        choose(pending ?: newChat(owner))
+        if (hasSeveral || discardRetained || pending != null) save()
     }
 
     fun openConversation(id: String) {
         val item = screen.history.firstOrNull { it.id == id } ?: return
         if (id == screen.current.id) return
-        if (screen.modeLocked || screen.draft != Draft() || screen.current.mode != Mode.Chat ||
-            screen.current.environmentId != null || item.assistantId != owner) rememberCurrent()
+        val keepPending = !screen.modeLocked && (screen.draft != Draft() || screen.current.mode != Mode.Chat ||
+            screen.current.environmentId != null || screen.current.id == restoredUnsentId)
+        // Visiting history parks a single assistant's pending work just as switching assistants does.
+        if (keepPending && !hasSeveral) restoredUnsentId = screen.current.id
+        if (screen.modeLocked || keepPending || item.assistantId != owner) rememberCurrent()
         choose(item)
-        if (hasSeveral) save()
+        if (hasSeveral || owner in parked) save()
     }
 
     fun setMode(mode: Mode) {

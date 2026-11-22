@@ -1,5 +1,6 @@
 package io.hydrion.hub.model
 
+import io.hydrion.hub.ui.sidebar.globalDrawerHits
 import io.hydrion.hub.ui.sidebar.historySections
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -16,6 +17,85 @@ class DrawerOperationsTest {
     private val draft = Draft("draft", listOf(Attachment("picked", "sample")))
     private val saved = SavedWorkspace(history = listOf(first, second, other), drafts = mapOf(first.id to draft),
         assistants = listOf(owner, alt), lastThreads = mapOf(owner.id to first.id))
+
+    @Test fun openingAHistoryHitParksTheSingleAssistantsDraftAndRestoresBothLocations() = runBlocking {
+        val writes = mutableListOf<SavedWorkspace>()
+        fun session() = ConversationSession(this, FakeGenerationRepository {}, { writes += it })
+        fun restart() = session().apply { restore(decodeWorkspace(encodeWorkspace(writes.last()))) }
+        val live = session()
+        live.restore(SavedWorkspace(history = listOf(first, second), drafts = mapOf(first.id to draft)))
+        live.setDraft("Continue writing")
+        live.addAttachment(Attachment("figure", "fixture.png", mimeType = "image/png"))
+        val pendingId = live.state.value.current.id
+        val pendingDraft = live.state.value.draft
+
+        live.openConversation("removed-result")
+        assertEquals(pendingId, live.state.value.current.id)
+        assertTrue(writes.isEmpty())
+        val hit = globalDrawerHits(live.state.value.history, "question").single()
+        live.openConversation(hit.id)
+        assertEquals(first.id, live.state.value.current.id)
+        assertEquals(draft, live.state.value.draft)
+        assertEquals(pendingId, writes.single().unsent?.id)
+
+        val reopened = restart()
+        assertEquals(first.id, reopened.state.value.current.id)
+        assertEquals(draft, reopened.state.value.draft)
+        reopened.openConversation(second.id)
+        val next = restart()
+        assertEquals(second.id, next.state.value.current.id)
+        assertEquals(Draft(), next.state.value.draft)
+        next.newConversation()
+        assertEquals(pendingId, next.state.value.current.id)
+        assertEquals(pendingDraft, next.state.value.draft)
+        val resumed = restart()
+        assertEquals(pendingId, resumed.state.value.current.id)
+        assertEquals(pendingDraft, resumed.state.value.draft)
+
+        resumed.newConversation()
+        assertNull(writes.last().unsent)
+        assertFalse(pendingId in writes.last().drafts)
+        assertEquals(draft, writes.last().drafts[first.id])
+        assertEquals(Draft(), restart().state.value.draft)
+    }
+
+    @Test fun aHistoryVisitFromAnUntouchedNewChatDoesNotCreateAPendingDraft() = runBlocking {
+        val writes = mutableListOf<SavedWorkspace>()
+        val live = ConversationSession(this, FakeGenerationRepository {}, { writes += it })
+        live.restore(SavedWorkspace(history = listOf(first)))
+        live.openConversation(first.id)
+        assertTrue(writes.isEmpty())
+        assertTrue(live.snapshot().pending.isEmpty())
+        val reopened = ConversationSession(this, FakeGenerationRepository {}, {})
+        reopened.restore(decodeWorkspace(encodeWorkspace(live.snapshot())))
+        assertFalse(reopened.state.value.modeLocked)
+        assertEquals(Draft(), reopened.state.value.draft)
+    }
+
+    @Test fun crossAssistantGlobalHitRestoresTheOwnersThreadAndKeepsBothDrafts() = runBlocking {
+        val writes = mutableListOf<SavedWorkspace>()
+        fun session() = ConversationSession(this, FakeGenerationRepository {}, { writes += it })
+        val live = session()
+        val target = other.copy(messages = listOf(Message(role = Role.User, text = "shared reference")))
+        live.restore(saved.copy(history = listOf(first, target), drafts = mapOf(target.id to draft)))
+        live.newConversation()
+        live.addAttachment(Attachment("pending", "unsent.txt"))
+        val pending = live.state.value.current.id
+        val contents = live.state.value.draft
+
+        val hit = globalDrawerHits(live.state.value.history, "reference").single()
+        live.openConversation(hit.id)
+        val cold = session().apply { restore(decodeWorkspace(encodeWorkspace(writes.last()))) }
+        assertEquals(target.id, cold.state.value.current.id)
+        assertEquals(alt.id, cold.state.value.current.assistantId)
+        assertEquals(draft, cold.state.value.draft)
+        cold.selectAssistant(owner.id)
+        assertEquals(pending, cold.state.value.current.id)
+        assertEquals(contents, cold.state.value.draft)
+        cold.selectAssistant(alt.id)
+        assertEquals(target.id, cold.state.value.current.id)
+        assertEquals(draft, cold.state.value.draft)
+    }
 
     @Test fun mixedPinsAndMovesAreEachOneWriteAndKeepDraftsOnTheirThreads() = runBlocking {
         val writes = mutableListOf<SavedWorkspace>()

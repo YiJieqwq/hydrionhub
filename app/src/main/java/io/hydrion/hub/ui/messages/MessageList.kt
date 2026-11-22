@@ -76,14 +76,14 @@ fun MessageList(
     vm: HubViewModel,
     state: HubState,
     searchQuery: String,
-    matchIndex: Int,
+    match: String?,
+    searchJump: Long,
     modifier: Modifier = Modifier,
     floatingBars: PaddingValues = PaddingValues(0.dp),
     composerBoundsInWindow: () -> IntRect? = { null },
 ) {
     val messages = state.current.messages
     val needle = searchQuery.trim()
-    val match = remember(messages, needle, matchIndex) { matchingMessages(state, needle).getOrNull(matchIndex) }
     val list = rememberLazyListState()
     var followBottom by rememberSaveable { mutableStateOf(true) }
     // A drag/fling away from the end takes ownership of the viewport until the user returns.
@@ -92,7 +92,7 @@ fun MessageList(
             if (moving) followBottom = !hasMore
         }
     }
-    LaunchedEffect(match, needle) {
+    LaunchedEffect(match, needle, searchJump) {
         if (match != null) {
             followBottom = false
             val index = messages.indexOfFirst { it.id == match }

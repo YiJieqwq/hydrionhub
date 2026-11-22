@@ -66,6 +66,25 @@ import io.hydrion.hub.ui.theme.ProviderTheme
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+internal data class ConversationFind(
+    val open: Boolean = false,
+    val query: String = "",
+    val messageId: String? = null,
+    // Reopening the same result must scroll again even when its message and query are unchanged.
+    val jump: Long = 0,
+) : java.io.Serializable {
+    fun matchIndex(matches: List<String>): Int = messageId?.let(matches::indexOf) ?: 0
+
+    fun openHit(conversation: Conversation, hit: DrawerHit): ConversationFind {
+        if (conversation.id != hit.id) return this
+        val needle = hit.needle ?: return ConversationFind()
+        val message = conversation.messages.find { it.id == hit.messageId } ?: return ConversationFind()
+        val stillVisible = message.text.contains(needle, ignoreCase = true) ||
+            (message.imageKeys.isNotEmpty() && message.prompt.contains(needle, ignoreCase = true))
+        return if (stillVisible) ConversationFind(true, needle, message.id, jump + 1) else ConversationFind()
+    }
+}
+
 @Composable
 fun HydrionApp() {
     HydrionTheme {
@@ -120,29 +139,19 @@ private fun Workspace(vm: HubViewModel) {
     var assistantEditor by rememberSaveable { mutableStateOf<String?>(null) }
     var settings by rememberSaveable { mutableStateOf(false) }
     var configure by rememberSaveable { mutableStateOf(false) }
-    var finding by rememberSaveable(current.id) { mutableStateOf(false) }
-    var query by rememberSaveable(current.id) { mutableStateOf("") }
-    var matchIndex by rememberSaveable(query, current.id) { mutableIntStateOf(0) }
+    var find by key(current.id) { rememberSaveable { mutableStateOf(ConversationFind()) } }
     var drawerHit by remember { mutableStateOf<DrawerHit?>(null) }
     LaunchedEffect(current.id, drawerHit) {
         val hit = drawerHit ?: return@LaunchedEffect
-        if (hit.id == current.id && hit.needle != null) {
-            finding = true
-            query = hit.needle
-        }
-    }
-    // matchIndex is keyed by the query. Position the match once that query has been applied.
-    LaunchedEffect(current.id, query, drawerHit) {
-        val hit = drawerHit ?: return@LaunchedEffect
-        if (hit.id == current.id && hit.needle == query) {
-            matchIndex = matchingMessages(state, query).indexOf(hit.messageId).coerceAtLeast(0)
+        if (hit.id == current.id) {
+            find = find.openHit(current, hit)
+            drawerHit = null
+        } else if (vm.state.value.current.id != hit.id) {
             drawerHit = null
         }
     }
-    val hits = remember(query, current.messages, finding) {
-        if (finding && query.isNotBlank()) matchingMessages(state, query) else emptyList()
-    }
-    val index = matchIndex.coerceIn(0, (hits.size - 1).coerceAtLeast(0))
+    val hits = remember(find.query, current.messages) { matchingMessages(state, find.query) }
+    val index = find.matchIndex(hits)
     var renameId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
     val drawer = rememberDrawerState(DrawerValue.Closed)
@@ -175,8 +184,8 @@ private fun Workspace(vm: HubViewModel) {
         vm.newConversation()
     }
     val drawerOpening = drawer.isOpen || (current.mode == Mode.Chat && drawer.targetValue == DrawerValue.Open)
-    BackHandler(enabled = !settings && (drawerOpening || finding)) {
-        if (drawerOpening) closeDrawer() else { finding = false; query = "" }
+    BackHandler(enabled = !settings && (drawerOpening || find.open)) {
+        if (drawerOpening) closeDrawer() else find = ConversationFind()
     }
 
     if (toolsPage != null && toolsActive && !settings) ChatModelPickerBack(toolsPage::close)
@@ -203,7 +212,10 @@ private fun Workspace(vm: HubViewModel) {
                     onOpen = { id -> leaveDrawer { vm.openConversation(id) } },
                     onSettings = { closeDrawer(); settings = true }, onAssistantSettings = { assistantEditor = it },
                     onRename = { renameId = it }, onPin = vm::togglePin, onDelete = { deleteId = it }, actions = drawerActions,
-                    onHit = { hit -> leaveDrawer { vm.openConversation(hit.id); drawerHit = hit.takeIf { it.needle != null } } }
+                    onHit = { hit -> leaveDrawer {
+                        vm.openConversation(hit.id)
+                        drawerHit = hit.takeIf { it.id == vm.state.value.current.id }
+                    } }
                 )
             }
         ) {
@@ -251,7 +263,7 @@ private fun Workspace(vm: HubViewModel) {
                                     modelEditorBridge = composerBridge,
                                     chatTools = toolsPage,
                                     modelBrowseProgress = { modelBrowse.progress },
-                                    allowImeReturn = !blockEditorFocus && !drawerOpening && !configure && !finding && renameId == null && deleteId == null,
+                                    allowImeReturn = !blockEditorFocus && !drawerOpening && !configure && !find.open && renameId == null && deleteId == null,
                                     toolsAvailable = selectedEntry?.second?.chatProtocol() == null,
                                     onConfigure = { focus.clearFocus(); configure = true },
                                     onSend = { fromDictation ->
@@ -284,13 +296,17 @@ private fun Workspace(vm: HubViewModel) {
                                         onMode = vm::setMode, onNew = ::newChat,
                                         onDrawer = { focus.clearFocus(); scope.launch { drawer.open() } },
                                         onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },
-                                        onFind = { finding = true }, onDelete = { deleteId = current.id }
+                                        onFind = { find = find.copy(open = true) }, onDelete = { deleteId = current.id }
                                     )
                                 }
-                                if (finding) FindBar(query, { query = it }, index, hits.size,
-                                    previous = { if (hits.isNotEmpty()) matchIndex = (index - 1 + hits.size) % hits.size },
-                                    next = { if (hits.isNotEmpty()) matchIndex = (index + 1) % hits.size },
-                                    onClose = { finding = false; query = ""; focus.clearFocus() })
+                                if (find.open) FindBar(find.query, { find = find.copy(query = it, messageId = null) }, index, hits.size,
+                                    previous = {
+                                        if (hits.isNotEmpty()) find = find.copy(messageId = hits[if (index <= 0) hits.lastIndex else index - 1])
+                                    },
+                                    next = {
+                                        if (hits.isNotEmpty()) find = find.copy(messageId = hits[(index + 1) % hits.size])
+                                    },
+                                    onClose = { find = ConversationFind(); focus.clearFocus() })
                             }
                         },
                         bottomBar = { Spacer(Modifier.height(timelineDock)) },
@@ -298,7 +314,7 @@ private fun Workspace(vm: HubViewModel) {
                     ) { bars ->
                         if (current.messages.isNotEmpty()) {
                             timelines.SaveableStateProvider(current.id) {
-                                MessageList(vm, state, if (finding) query else "", index, modifier = chatReveal, floatingBars = bars,
+                                MessageList(vm, state, find.query, hits.getOrNull(index), find.jump, modifier = chatReveal, floatingBars = bars,
                                     composerBoundsInWindow = { chatPicker.composerBounds })
                             }
                         } else if (current.mode == Mode.Image && !state.modeLocked &&
