@@ -27,21 +27,28 @@ class ModelProfileTest {
         assertEquals("Paint", catalog.selection(Mode.Image).label)
     }
 
-    @Test fun changingTypePrunesStaleSelectionAndCannotReplaceAnotherModesDefault() {
+    @Test fun retypingAChatModelPreservesItsUnavailableRouteAndTheIndependentImageDefault() {
         val other = ProviderModel("other", "Other")
+        val chatRoute = RemoteModel(mixed.id, legacy.id)
+        val imageRoute = RemoteModel(imageProvider.id, image.id)
+        val defaults = mapOf(Mode.Chat to chatRoute, Mode.Image to imageRoute)
         val start = ModelCatalog(listOf(mixed.copy(models = listOf(legacy, other)), imageProvider),
-            defaults = mapOf(Mode.Chat to RemoteModel(mixed.id, legacy.id), Mode.Image to RemoteModel(imageProvider.id, image.id)), active = mapOf(Mode.Chat to RemoteModel(mixed.id, legacy.id)))
+            defaults = defaults, active = mapOf(Mode.Chat to chatRoute))
         val switched = legacy.copy(profile = ModelProfile(type = ModelType.Image))
         val changed = mixed.copy(models = listOf(switched, embed, other))
         val next = start.withProvider(changed, mapOf(Mode.Chat to switched.id))
-        assertEquals(other, next.defaultModel(Mode.Chat))
-        assertEquals(image, next.defaultModel(Mode.Image))
-        assertNull(next.active[Mode.Chat])
+
+        assertEquals(listOf(other), next.models(Mode.Chat))
+        assertEquals(defaults, next.defaults)
+        assertEquals(chatRoute, next.active[Mode.Chat])
+        assertNull(next.defaultEntry(Mode.Chat))
+        assertNull(next.selectedEntry(Mode.Chat))
+
         val preferred = next.withProvider(changed, mapOf(Mode.Image to switched.id))
-        assertEquals(RemoteModel(imageProvider.id, image.id), preferred.defaults[Mode.Image])
-        assertEquals(image, preferred.defaultModel(Mode.Image))
-        assertEquals(other, preferred.defaultModel(Mode.Chat))
-        assertEquals(preferred.defaults, preferred.withProvider(changed, mapOf(Mode.Chat to embed.id)).defaults)
+        assertEquals(defaults, preferred.defaults)
+        assertEquals(imageRoute, preferred.defaultEntry(Mode.Image)?.route)
+        assertEquals(image, preferred.selectedModel(Mode.Image))
+        assertEquals(defaults, preferred.withProvider(changed, mapOf(Mode.Chat to embed.id)).defaults)
     }
 
     @Test fun reasoningLevelsDefaultAndDisableFollowTheSavedProfile() {

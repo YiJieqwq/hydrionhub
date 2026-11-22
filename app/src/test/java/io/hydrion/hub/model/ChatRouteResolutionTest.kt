@@ -286,6 +286,35 @@ class ChatRouteResolutionTest {
         f.delivered("After deletion", f.b)
     }
 
+    @Test fun retypedModelBlocksInheritedAndPinnedThreadsUntilTheirSelectionIsReplaced() = runBlocking {
+        val f = Fixture(this)
+        f.delivered("Follow global A", f.a)
+        val following = f.chat.state.value.current.id
+        f.chat.newConversation()
+        f.pick(f.a)
+        f.delivered("Pin A", f.a)
+        val pinned = f.chat.state.value.current.id
+
+        val retyped = f.model.copy(profile = f.model.profile.copy(type = ModelType.Image))
+        f.store.editModel(f.route(f.a), retyped, f.a.credentialOrigin())
+        f.chat.setDraft("Pinned draft")
+        f.blocked()
+
+        f.chat.openConversation(following)
+        f.chat.setDraft("Following draft")
+        f.blocked()
+        f.default(f.b)
+        assertEquals("Following draft", f.chat.state.value.draft.text)
+        f.delivered("Following draft", f.b)
+
+        f.chat.openConversation(pinned)
+        assertEquals("Pinned draft", f.chat.state.value.draft.text)
+        f.blocked()
+        f.pick(f.b)
+        assertEquals("Pinned draft", f.chat.state.value.draft.text)
+        f.delivered("Pinned draft", f.b)
+    }
+
     @Test fun deletedGlobalDefaultSurvivesRestartUntilUserChoosesAnotherProvider() = runBlocking {
         val f = Fixture(this)
         f.delivered("Follow global A", f.a)
