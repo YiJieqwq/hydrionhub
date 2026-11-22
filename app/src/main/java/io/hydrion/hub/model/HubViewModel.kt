@@ -236,7 +236,8 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     internal fun chooseMessageVersion(id: String, ordinal: Int) = session.chooseMessageVersion(id, ordinal)
     internal fun deleteSelectedVersions(chatId: String, ids: Set<String>, allVersions: Boolean) =
         session.deleteSelectedVersions(chatId, ids, allVersions)
-    internal fun deleteChatVersion(id: String, otherVersions: Boolean = false) = session.deleteChatVersion(id, otherVersions)
+    internal fun deleteChatVersion(id: String, otherVersions: Boolean = false, expectedGroup: MessageVersions? = null) =
+        session.deleteChatVersion(id, otherVersions, expectedGroup)
     internal fun deleteChatMessage(id: String) {
         if (state.value.current.mode == Mode.Chat && !state.value.isGenerating) session.deleteMessage(id)
     }

@@ -30,7 +30,10 @@
     <string name="turn_delete_pair">Delete this message and its reply, including their versions?</string>
     <string name="turn_delete_reply_all">Delete this reply and all its versions?</string>
     <string name="turn_confirm_one">Delete the displayed version and switch to another?</string>
-    <string name="turn_confirm_others">Keep the displayed version and delete the others?</string>
+    <plurals name="turn_confirm_others">
+        <item quantity="one">Keep the displayed version and permanently delete %1$d other version?</item>
+        <item quantity="other">Keep the displayed version and permanently delete %1$d other versions?</item>
+    </plurals>
     <string name="turn_prompt">Edit image prompt</string>
     <string name="turn_fork_hint">The new conversation will include the displayed versions through this message. Your original conversation will stay in history.</string>
     <string name="turn_selection">Select messages</string>

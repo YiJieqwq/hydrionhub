@@ -487,12 +487,12 @@ internal class ConversationSession(
         if (next !== item) { touch(next); save() }
     }
 
-    fun deleteChatVersion(id: String, otherVersions: Boolean = false) {
+    fun deleteChatVersion(id: String, otherVersions: Boolean = false, expectedGroup: MessageVersions? = null) {
         val item = screen.current
         if (item.mode != Mode.Chat || screen.isGenerating) return
         val group = item.versions[id]
         if (otherVersions) {
-            if (group == null) return
+            if (group == null || (expectedGroup != null && group != expectedGroup)) return
             touch(item.copy(versions = item.versions - id))
         } else if (group != null) {
             touch(item.withVersion(id, group.selected.coerceAtMost(group.others.lastIndex), deleteCurrent = true))

@@ -137,6 +137,42 @@ class ChatMessageActionsTest {
         assertTrue(writes.last().history.single().versions.isEmpty())
     }
 
+    @Test fun deletingOtherVersionsRequiresTheConfirmedVersionGroup() = runBlocking {
+        val writes = mutableListOf<SavedWorkspace>()
+        val session = ConversationSession(this, FakeGenerationRepository {}, { writes += it })
+        session.restore(SavedWorkspace(listOf(original)))
+        session.openConversation(original.id)
+        assertTrue(session.editMessage(b.id, "first edit"))
+        val firstGroup = session.state.value.current.versions.getValue(b.id)
+        assertTrue(session.editMessage(b.id, "second edit"))
+        val afterEdit = session.state.value.current
+        val writesAfterEdit = writes.size
+        session.deleteChatVersion(b.id, otherVersions = true, expectedGroup = firstGroup)
+        assertEquals(afterEdit, session.state.value.current)
+        assertEquals(writesAfterEdit, writes.size)
+
+        session.chooseMessageVersion(b.id, 1)
+        val beforeDelete = session.state.value.current
+        val confirmed = beforeDelete.versions.getValue(b.id)
+        assertEquals(2, confirmed.others.size)
+        assertEquals("first edit", beforeDelete.messages[1].text)
+        val writesBeforeDelete = writes.size
+        session.deleteChatVersion(b.id, otherVersions = true, expectedGroup = afterEdit.versions.getValue(b.id))
+        assertEquals(beforeDelete, session.state.value.current)
+        assertEquals(writesBeforeDelete, writes.size)
+
+        session.deleteChatVersion(b.id, otherVersions = true, expectedGroup = confirmed)
+        val kept = session.state.value.current
+        assertEquals(beforeDelete.messages, kept.messages)
+        assertFalse(b.id in kept.versions)
+        assertEquals(writesBeforeDelete + 1, writes.size)
+        assertEquals(kept, writes.last().history.single())
+
+        session.deleteChatVersion(b.id, otherVersions = true, expectedGroup = confirmed)
+        assertEquals(kept, session.state.value.current)
+        assertEquals(writesBeforeDelete + 1, writes.size)
+    }
+
     @Test fun assistantEditsKeepOriginalMetadataOnlyOnOriginalAndPersistSelection() = runBlocking {
         val session = ConversationSession(this, FakeGenerationRepository {}, {})
         session.restore(SavedWorkspace(listOf(original)))

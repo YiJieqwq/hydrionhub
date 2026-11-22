@@ -30,7 +30,9 @@
     <string name="turn_delete_pair">删除这条消息及其回复的所有版本？</string>
     <string name="turn_delete_reply_all">删除这条回复的所有版本？</string>
     <string name="turn_confirm_one">删除当前显示的版本，并切换到另一版本？</string>
-    <string name="turn_confirm_others">保留当前显示的版本并删除其他版本？</string>
+    <plurals name="turn_confirm_others">
+        <item quantity="other">保留当前版本并永久删除其他 %1$d 个版本？</item>
+    </plurals>
     <string name="turn_prompt">修改图片提示词</string>
     <string name="turn_fork_hint">新会话将包含截至这条消息的可见版本。原会话保留在历史记录中。</string>
     <string name="turn_selection">选择消息</string>

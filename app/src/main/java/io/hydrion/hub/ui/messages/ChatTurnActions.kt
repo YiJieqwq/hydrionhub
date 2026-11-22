@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
@@ -178,19 +179,26 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
             val action = sheet
             val retry = action == TurnSheet.Retry
             val message = when {
-                retry -> R.string.turn_retry_explanation
-                action == TurnSheet.DeleteOthers -> R.string.turn_confirm_others
-                action == TurnSheet.Delete && group != null -> R.string.turn_confirm_one
-                user -> R.string.turn_delete_pair
-                group != null -> R.string.turn_delete_reply_all
-                else -> R.string.turn_delete_reply
+                retry -> stringResource(R.string.turn_retry_explanation)
+                action == TurnSheet.DeleteOthers -> {
+                    if (group == null) {
+                        LaunchedEffect(msg.id) { close() }
+                        return
+                    }
+                    val count = group.others.size
+                    pluralStringResource(R.plurals.turn_confirm_others, count, count)
+                }
+                action == TurnSheet.Delete && group != null -> stringResource(R.string.turn_confirm_one)
+                user -> stringResource(R.string.turn_delete_pair)
+                group != null -> stringResource(R.string.turn_delete_reply_all)
+                else -> stringResource(R.string.turn_delete_reply)
             }
-            AlertDialog(onDismissRequest = close, text = { Text(stringResource(message)) }, confirmButton = {
+            AlertDialog(onDismissRequest = close, text = { Text(message) }, confirmButton = {
                 TextButton(enabled = !busy, onClick = {
                     when (action) {
                         TurnSheet.Retry -> vm.regenerate(msg.id)
                         TurnSheet.Delete -> vm.deleteChatVersion(msg.id)
-                        TurnSheet.DeleteOthers -> vm.deleteChatVersion(msg.id, otherVersions = true)
+                        TurnSheet.DeleteOthers -> vm.deleteChatVersion(msg.id, otherVersions = true, expectedGroup = group)
                         TurnSheet.DeleteAll -> vm.deleteChatMessage(msg.id)
                         else -> Unit
                     }
