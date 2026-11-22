@@ -104,11 +104,6 @@ internal fun rememberGeneratedPreview(key: String, width: Int, height: Int, maxE
 }
 
 @Composable
-internal fun AttachmentPicture(uri: String, modifier: Modifier = Modifier) {
-    BitmapPreview(rememberAttachmentPreview(uri), "图片附件", modifier, fit = false)
-}
-
-@Composable
 internal fun rememberAttachmentPreview(uri: String): PicturePreview {
     val context = LocalContext.current.applicationContext
     return rememberBitmapPreview("attachment/$uri") { decodeAttachment(context, Uri.parse(uri), 640) }

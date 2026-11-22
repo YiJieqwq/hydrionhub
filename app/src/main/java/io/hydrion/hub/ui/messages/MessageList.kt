@@ -401,10 +401,16 @@ private fun ImageMessageActions(msg: Message, vm: HubViewModel, busy: Boolean) {
     }
 }
 
+internal fun isMessageAttachmentTarget(scheme: String?, authority: String?): Boolean =
+    scheme == "content" && !authority.isNullOrEmpty() && !authority.endsWith('@') &&
+        authority.none { it.isWhitespace() || it.isISOControl() }
+
 @Composable
-private fun MessageAttachment(attachment: Attachment, query: String) {
+internal fun MessageAttachment(attachment: Attachment, query: String) {
     val context = LocalContext.current
-    val uri = attachment.uri
+    val uri = remember(attachment.uri) {
+        attachment.uri?.let(Uri::parse)?.takeIf { isMessageAttachmentTarget(it.scheme, it.authority) }
+    }
     val imageKey = attachment.imageKey
     if (imageKey != null) {
         val width = attachment.width?.coerceAtLeast(1) ?: 1024
@@ -413,21 +419,19 @@ private fun MessageAttachment(attachment: Attachment, query: String) {
         val aspect = size?.let { it.width.toFloat() / it.height } ?: 1f
         GeneratedPicture(imageKey, width, height, attachment.name,
             Modifier.width(100.dp).aspectRatio(aspect.coerceIn(.67f, 1.75f)).clip(RoundedCornerShape(10.dp)))
-    } else if (uri != null && attachment.mimeType?.startsWith("image/") == true) {
-        AttachmentPicture(uri, Modifier.width(128.dp).height(90.dp).clip(RoundedCornerShape(10.dp)))
+    } else if (attachment.mimeType?.startsWith("image/") == true) {
+        val preview = if (uri == null) PicturePreview.Failed else rememberAttachmentPreview(uri.toString())
+        BitmapPreview(preview, attachment.name, Modifier.width(128.dp).height(90.dp).clip(RoundedCornerShape(10.dp)), fit = false)
     }
     Row(
         modifier = if (uri == null) Modifier else Modifier.clip(RoundedCornerShape(8.dp)).clickable {
-            val fileUri = Uri.parse(uri)
-            if (fileUri.scheme == "content") {
-                try {
-                    context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(fileUri, attachment.mimeType ?: "*/*")
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-                } catch (_: ActivityNotFoundException) {
-                    Toast.makeText(context, "未找到可打开附件的应用", Toast.LENGTH_SHORT).show()
-                } catch (_: SecurityException) {
-                    Toast.makeText(context, "附件访问权限已失效", Toast.LENGTH_SHORT).show()
-                }
+            try {
+                context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, attachment.mimeType ?: "*/*")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(context, "未找到可打开附件的应用", Toast.LENGTH_SHORT).show()
+            } catch (_: SecurityException) {
+                Toast.makeText(context, "附件访问权限已失效", Toast.LENGTH_SHORT).show()
             }
         },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)
