@@ -1,4 +1,6 @@
 <resources>
+    <string name="turn_attachment_no_viewer">未找到可打开附件的应用</string>
+    <string name="turn_attachment_access_denied">附件访问权限已失效</string>
     <string name="turn_code_label">代码</string>
     <string name="turn_copy_code">复制代码</string>
     <string name="turn_code_copied">代码已复制</string>

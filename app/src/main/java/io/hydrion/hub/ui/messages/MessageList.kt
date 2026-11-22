@@ -405,6 +405,16 @@ internal fun isMessageAttachmentTarget(scheme: String?, authority: String?): Boo
     scheme == "content" && !authority.isNullOrEmpty() && !authority.endsWith('@') &&
         authority.none { it.isWhitespace() || it.isISOControl() }
 
+internal fun openMessageAttachment(launch: () -> Unit, onFailure: (Int) -> Unit) {
+    try {
+        launch()
+    } catch (_: ActivityNotFoundException) {
+        onFailure(R.string.turn_attachment_no_viewer)
+    } catch (_: SecurityException) {
+        onFailure(R.string.turn_attachment_access_denied)
+    }
+}
+
 @Composable
 internal fun MessageAttachment(attachment: Attachment, query: String) {
     val context = LocalContext.current
@@ -425,14 +435,13 @@ internal fun MessageAttachment(attachment: Attachment, query: String) {
     }
     Row(
         modifier = if (uri == null) Modifier else Modifier.clip(RoundedCornerShape(8.dp)).clickable {
-            try {
-                context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, attachment.mimeType ?: "*/*")
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-            } catch (_: ActivityNotFoundException) {
-                Toast.makeText(context, "未找到可打开附件的应用", Toast.LENGTH_SHORT).show()
-            } catch (_: SecurityException) {
-                Toast.makeText(context, "附件访问权限已失效", Toast.LENGTH_SHORT).show()
-            }
+            openMessageAttachment(
+                launch = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, attachment.mimeType ?: "*/*")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                },
+                onFailure = { message -> Toast.makeText(context, message, Toast.LENGTH_SHORT).show() },
+            )
         },
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
