@@ -11,6 +11,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.R
 import io.hydrion.hub.model.*
@@ -69,6 +70,10 @@ internal fun BackupSettings(vm: HubViewModel, onBack: () -> Unit) {
         operation = scope.launch {
             try { block() }
             catch (cancelled: CancellationException) { throw cancelled }
+            catch (mismatch: ArchiveScopeMismatch) {
+                info = if (mismatch.isApplicationArchive) R.string.backup_use_application else R.string.backup_use_chat
+                clear()
+            }
             catch (missing: UnreadableOriginals) { absent = missing.names; clear() }
             catch (_: Exception) { info = R.string.backup_failed; clear() }
             finally { busy = false }
@@ -125,7 +130,7 @@ internal fun BackupSettings(vm: HubViewModel, onBack: () -> Unit) {
             FilterChip(application, { application = true; info = 0; absent = emptySet() },
                 label = { Text(stringResource(R.string.app_backup_label)) }, enabled = available)
             FilterChip(!application, { application = false; info = 0; absent = emptySet() },
-                label = { Text("Chat ZIP") }, enabled = available)
+                label = { Text(stringResource(R.string.backup_chat_label)) }, enabled = available)
         }
         Text(stringResource(if (application) R.string.app_backup_scope else R.string.backup_scope))
         if (application && pendingRestart) {
@@ -161,17 +166,14 @@ internal fun BackupSettings(vm: HubViewModel, onBack: () -> Unit) {
                 if (missing > 0) Text(stringResource(R.string.app_backup_missing_models, missing))
                 Text(stringResource(R.string.app_backup_impact))
                 Button(enabled = !busy, onClick = { confirmReplace = true }) { Text(stringResource(R.string.app_backup_restore)) }
+                TextButton(enabled = !busy, onClick = ::clear) { Text(stringResource(android.R.string.cancel)) }
             } else {
-                Text(stringResource(R.string.backup_summary, candidate.workspace.history.size, candidate.workspace.drafts.size,
-                    candidate.blobs.size))
-                Button(enabled = !busy && (candidate.workspace.history.isNotEmpty() || candidate.workspace.pending.isNotEmpty() ||
-                    candidate.workspace.assistants.size > 1), onClick = { task {
+                ChatBackupPreview(candidate, busy, onImport = { task {
                     vm.applyBackup(candidate)
                     clear()
                     info = R.string.backup_restored
-                } }) { Text(stringResource(R.string.backup_apply)) }
+                } }, onCancel = ::clear)
             }
-            TextButton(enabled = !busy, onClick = ::clear) { Text(stringResource(android.R.string.cancel)) }
         }
         if (!application && canUndo && !pendingRestart) OutlinedButton(enabled = !busy && staging == null && documentSource == null, onClick = { undo = true }) {
             Text(stringResource(R.string.backup_undo))
@@ -193,4 +195,26 @@ internal fun BackupSettings(vm: HubViewModel, onBack: () -> Unit) {
         confirmButton = { TextButton(onClick = { undo = false; task { vm.undoBackup(); info = R.string.backup_undone } }) {
             Text(stringResource(android.R.string.ok))
         } }, dismissButton = { TextButton(onClick = { undo = false }) { Text(stringResource(android.R.string.cancel)) } })
+}
+
+@Composable
+internal fun ChatBackupPreview(archive: InspectedChatArchive, busy: Boolean, onImport: () -> Unit, onCancel: () -> Unit) {
+    val workspace = archive.workspace
+    val history = workspace.history
+    val canImport = history.isNotEmpty() || workspace.drafts.isNotEmpty() ||
+        workspace.pending.isNotEmpty() || workspace.assistants.size > 1
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.backup_chat_version, archive.formatVersion), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.backup_summary, history.size, workspace.drafts.size, archive.blobs.size))
+        val titles = history.take(3)
+        titles.forEach { chat ->
+            Text(chat.title.ifBlank { stringResource(R.string.backup_untitled) }, Modifier.fillMaxWidth(),
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (history.size > titles.size) {
+            Text(stringResource(R.string.backup_more_chats, history.size - titles.size), style = MaterialTheme.typography.bodySmall)
+        }
+        Button(enabled = !busy && canImport, onClick = onImport) { Text(stringResource(R.string.backup_apply)) }
+        TextButton(enabled = !busy, onClick = onCancel) { Text(stringResource(android.R.string.cancel)) }
+    }
 }

@@ -186,10 +186,14 @@ class AppBackupTest {
     @Test fun chatZipAndApplicationZipHaveSeparateReadersAndRestoreScopes() {
         val state = SavedWorkspace(assistants = listOf(LocalAssistant.Default, owner))
         val legacy = export(state, null)
-        assertEquals("", inspect(legacy, false).workspace.assistants.last().systemPrompt)
-        assertThrows(Exception::class.java) { inspect(legacy) }
+        val chatPreview = inspect(legacy, false)
+        assertEquals(2, chatPreview.formatVersion)
+        assertEquals("", chatPreview.workspace.assistants.last().systemPrompt)
+        assertFalse(assertThrows(ArchiveScopeMismatch::class.java) { inspect(legacy) }.isApplicationArchive)
         val app = export(state)
-        assertEquals(owner, inspect(app).workspace.assistants.last())
-        assertThrows(Exception::class.java) { inspect(app, false) }
+        val appPreview = inspect(app)
+        assertEquals(1, appPreview.formatVersion)
+        assertEquals(owner, appPreview.workspace.assistants.last())
+        assertTrue(assertThrows(ArchiveScopeMismatch::class.java) { inspect(app, false) }.isApplicationArchive)
     }
 }

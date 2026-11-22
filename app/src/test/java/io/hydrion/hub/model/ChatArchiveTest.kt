@@ -1,5 +1,7 @@
 package io.hydrion.hub.model
 
+import io.hydrion.hub.provider.ModelCatalog
+import io.hydrion.hub.ui.messages.MessageStyle
 import java.io.*
 import java.util.Base64
 import java.util.zip.*
@@ -88,6 +90,28 @@ class ChatArchiveTest {
         assertEquals("old draft", reopened.state.value.draft.text)
         assertEquals(key, reopened.state.value.current.messages.single().imageKeys.single())
         assertEquals(file, reopened.state.value.current.messages.single().attachments.single())
+    }
+
+    @Test fun bothExportFormatsNameMissingOriginalsBeforeReadingMedia() {
+        val archived = Message(role = Role.User, text = "old revision",
+            attachments = listOf(Attachment("archive", "archived.txt")))
+        val visible = archived.copy(attachments = listOf(picked, Attachment("visible", "visible.txt")))
+        val thread = Conversation(messages = listOf(archived)).appendVersion(archived, visible)
+        val pending = Conversation()
+        val draft = Draft("not sent", listOf(Attachment("draft", "draft.txt", uri = "  ")))
+        val source = SavedWorkspace(listOf(thread), mapOf(pending.id to draft), pending)
+        val appSettings = AppBackupSettings(ModelCatalog(emptyList()), MessageStyle())
+
+        for (settings in listOf(null, appSettings)) {
+            val dir = root.newFolder()
+            val failure = assertThrows(UnreadableOriginals::class.java) { runBlocking {
+                ChatArchive.write(dir, source, settings,
+                    { throw AssertionError("Unexpected attachment read") },
+                    { _, _ -> throw AssertionError("Unexpected image read") })
+            } }
+            assertEquals(setOf("archived.txt", "visible.txt", "draft.txt"), failure.names)
+            assertEquals(emptyList<String>(), dir.list()?.toList())
+        }
     }
 
     @Test fun reportsUnreadableOriginalBeforeProducingAnyBackup() = runBlocking {

@@ -28,8 +28,11 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
-internal class GeneratedImageStore(context: Context) {
-    private val root = File(context.filesDir, "generated-images")
+internal class GeneratedImageStore(
+    private val root: File,
+    private val canDecodePng: (ByteArray, Int) -> Boolean = ::androidCanDecodePng,
+) {
+    constructor(context: Context) : this(File(context.filesDir, "generated-images"))
 
     companion object {
         private const val PREFIX = "generated:"
@@ -310,11 +313,15 @@ internal class GeneratedImageStore(context: Context) {
             inflater.end()
         }
         if (!ended) invalid()
-        val options = BitmapFactory.Options().apply {
-            inSampleSize = Integer.highestOneBit((maxOf(size.first, size.second) / 128).coerceAtLeast(1))
-        }
-        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: invalid()
-        decoded.recycle()
+        val sampleSize = Integer.highestOneBit((maxOf(size.first, size.second) / 128).coerceAtLeast(1))
+        if (!canDecodePng(bytes, sampleSize)) invalid()
         return size
     }
+}
+
+private fun androidCanDecodePng(bytes: ByteArray, sampleSize: Int): Boolean {
+    val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+    val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return false
+    decoded.recycle()
+    return true
 }

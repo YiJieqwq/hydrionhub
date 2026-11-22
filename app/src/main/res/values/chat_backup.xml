@@ -13,4 +13,10 @@
     <string name="backup_failed">Could not complete this operation. Check the file, available storage and access permissions.</string>
     <string name="backup_conflict">There is a matching conversation ID, a conflicting unsent draft, or an active reply. No chats were imported.</string>
     <string name="backup_missing">These originals could not be read. The operation was stopped:\n%1$s</string>
+    <string name="backup_chat_label">Chat ZIP</string>
+    <string name="backup_chat_version">Chat ZIP format version %1$d</string>
+    <string name="backup_untitled">Untitled chat</string>
+    <string name="backup_more_chats">And %1$d more</string>
+    <string name="backup_use_application">This ZIP is an application backup. Select Application backup and preview it again.</string>
+    <string name="backup_use_chat">This ZIP is a chat backup. Select Chat ZIP and preview it again.</string>
 </resources>

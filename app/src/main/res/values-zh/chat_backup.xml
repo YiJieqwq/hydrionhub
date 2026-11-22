@@ -13,4 +13,10 @@
     <string name="backup_failed">未能完成操作。请检查文件、可用空间和文件访问权限。</string>
     <string name="backup_conflict">已有相同标识的会话、未发送草稿冲突，或仍有回复正在生成。未导入会话。</string>
     <string name="backup_missing">以下原件无法读取，本次操作已停止：\n%1$s</string>
+    <string name="backup_chat_label">聊天 ZIP</string>
+    <string name="backup_chat_version">聊天 ZIP 格式版本 %1$d</string>
+    <string name="backup_untitled">未命名会话</string>
+    <string name="backup_more_chats">另有 %1$d 个会话</string>
+    <string name="backup_use_application">这是应用备份。请选择“应用备份”，然后重新预览该 ZIP。</string>
+    <string name="backup_use_chat">这是聊天备份。请选择“聊天 ZIP”，然后重新预览该 ZIP。</string>
 </resources>

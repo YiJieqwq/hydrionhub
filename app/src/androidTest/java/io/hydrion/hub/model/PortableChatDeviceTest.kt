@@ -120,7 +120,7 @@ internal object PortableChatDeviceProbe {
         val vm = withContext(Dispatchers.Main) { HubViewModel(app) }
         val pending = Conversation()
         val addition = SavedWorkspace(drafts = mapOf(pending.id to Draft("fresh draft")), unsent = pending)
-        val incoming = InspectedChatArchive(addition, emptyMap(), emptyMap())
+        val incoming = InspectedChatArchive(addition, emptyMap(), emptyMap(), formatVersion = 1)
         check(withTimeoutOrNull(20_000) {
             while (withContext(Dispatchers.Main) { runCatching { vm.backupSnapshot() }.isFailure }) delay(10)
             true

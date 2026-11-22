@@ -170,12 +170,12 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun commitBackup(before: SavedWorkspace, after: SavedWorkspace, rollback: java.io.File?) {
         historyLock.withLock {
-            val staged = backups.stageHistory(historyFile.path, after)
+            val staged = stageBackupHistory(historyFile.path, after)
             try {
                 withContext(Dispatchers.Main.immediate) {
                     check(loaded && session.snapshot(includeUnsent = true) == before)
                     rollback?.let(backups::publishRollback)
-                    backups.publishHistory(staged, historyFile.path)
+                    publishBackupFile(staged, historyFile.path)
                     storageEpoch++
                     session.adoptBackup(after)
                 }

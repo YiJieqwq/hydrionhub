@@ -123,9 +123,11 @@ private fun SavedWorkspace.checkIds() {
     }
 }
 
+internal class ArchiveScopeMismatch(val isApplicationArchive: Boolean) : IllegalArgumentException()
+
 internal data class InspectedChatArchive(
     val workspace: SavedWorkspace, val blobs: Map<String, File>, val generated: Map<String, String>,
-    val settings: AppBackupSettings? = null,
+    val formatVersion: Int, val settings: AppBackupSettings? = null,
 ) {
     fun restored(pickedUri: (String) -> String, imageKey: (String) -> String): SavedWorkspace =
         workspace.transform(settings != null, { a -> a.copy(uri = a.uri?.let { pickedUri(it.removePrefix("blob:")) },
@@ -141,6 +143,11 @@ internal object ChatArchive {
 
     suspend fun write(work: File, source: SavedWorkspace, settings: AppBackupSettings?,
         openPicked: (String) -> InputStream, copyImage: suspend (String, OutputStream) -> Unit): File {
+        val attachments = (source.history.asSequence().flatMap { c -> c.allStoredMessages().flatMap { it.attachments.asSequence() } } +
+            source.drafts.values.asSequence().flatMap { it.attachments.asSequence() }).toList()
+        val missingSources = attachments.filter { it.uri.isNullOrBlank() && it.imageKey.isNullOrBlank() }
+            .mapTo(linkedSetOf()) { it.name }
+        if (missingSources.isNotEmpty()) throw UnreadableOriginals(missingSources)
         source.checkIds()
         val blobs = linkedMapOf<String, File>()
         val picked = mutableMapOf<String, String>()
@@ -165,8 +172,6 @@ internal object ChatArchive {
             } else temp.delete()
             return id
         }
-        val attachments = (source.history.asSequence().flatMap { c -> c.allStoredMessages().flatMap { it.attachments.asSequence() } } +
-            source.drafts.values.asSequence().flatMap { it.attachments.asSequence() }).toList()
         for (a in attachments.distinctBy { it.uri }) {
             val uri = a.uri ?: continue
             val temp = File.createTempFile("picked-", null, work)
@@ -237,15 +242,17 @@ internal object ChatArchive {
                 }.also { require(it.size.toLong() == entry.size) }
             }
             val manifest = parseObject(read("manifest.json"))
+            val appArchive = when (manifest.getString("format")) {
+                "hydrion.app" -> { require(manifest.get("version") == 1); true }
+                "hydrion.chat" -> { require(manifest.get("version") in listOf(1, 2, 3)); false }
+                else -> throw IllegalArgumentException("Unsupported backup format")
+            }
+            if (appArchive != application) throw ArchiveScopeMismatch(appArchive)
             val settings = if (application) {
-                require(manifest.getString("format") == "hydrion.app" && manifest.get("version") == 1)
                 val bytes = read("settings.json")
                 require(digest(bytes) == manifest.getString("settingsSha256"))
                 AppBackupSettings.decode(parseObject(bytes))
-            } else {
-                require(manifest.getString("format") == "hydrion.chat" && manifest.get("version") in listOf(1, 2, 3))
-                null
-            }
+            } else null
             val state = read("workspace.json")
             require(digest(state) == manifest.getString("workspaceSha256"))
             val json = parseObject(state)
@@ -316,7 +323,7 @@ internal object ChatArchive {
                 require(sha.digest().asHex() == id)
                 target
             }
-            InspectedChatArchive(clean, blobs, generated, settings)
+            InspectedChatArchive(clean, blobs, generated, version, settings)
         }
     }
 }

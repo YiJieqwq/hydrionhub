@@ -11,6 +11,8 @@ import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.security.MessageDigest
 import org.json.JSONObject
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -55,6 +57,75 @@ internal fun installBackupFile(source: File, dest: File) {
         source.inputStream().use { input -> temp.outputStream().use { input.copyTo(it); it.fd.sync() } }
         Files.move(temp.toPath(), dest.toPath(), ATOMIC_MOVE)
     } finally { temp.delete() }
+}
+
+/** The caller serializes imports; only files installed by this attempt belong to its rollback. */
+internal suspend fun restoreChatMedia(
+    archive: InspectedChatArchive,
+    dest: File,
+    pickedUri: (File) -> String,
+    installGenerated: (String, File) -> Boolean,
+    discardGenerated: (List<String>) -> Unit,
+    beforeWrite: (SavedWorkspace) -> Unit = {},
+    commit: suspend (SavedWorkspace) -> Unit,
+) {
+    val caller = currentCoroutineContext()
+    caller.ensureActive()
+    val picked = linkedMapOf<String, File>()
+    val state = archive.restored({ sha -> pickedUri(picked.getOrPut(sha) { File(dest, sha) }) }, { it })
+    caller.ensureActive()
+    beforeWrite(state)
+    caller.ensureActive()
+
+    val filesAdded = mutableListOf<File>()
+    val imagesAdded = mutableListOf<String>()
+    var committed = false
+    try {
+        Files.createDirectories(dest.toPath())
+        require(Files.isDirectory(dest.toPath(), NOFOLLOW_LINKS))
+        for ((key, sha) in archive.generated) {
+            caller.ensureActive()
+            if (installGenerated(key, archive.blobs.getValue(sha))) imagesAdded += key
+        }
+        for ((sha, file) in picked) {
+            caller.ensureActive()
+            val source = archive.blobs.getValue(sha)
+            if (Files.exists(file.toPath(), NOFOLLOW_LINKS)) {
+                require(Files.isRegularFile(file.toPath(), NOFOLLOW_LINKS) && sameBackupBytes(source, file))
+            } else {
+                installBackupFile(source, file)
+                filesAdded += file
+            }
+        }
+        caller.ensureActive()
+        withContext(NonCancellable) {
+            commit(state)
+            committed = true
+        }
+    } finally {
+        if (!committed) {
+            try {
+                discardGenerated(imagesAdded)
+            } finally {
+                filesAdded.forEach(File::delete)
+            }
+        }
+    }
+}
+
+internal fun stageBackupHistory(target: File, state: SavedWorkspace): File =
+    stageBackupJson(target, encodeWorkspace(state))
+
+private fun stageBackupJson(target: File, json: JSONObject): File {
+    val tmp = File.createTempFile(".chat-restore-", null, target.parentFile)
+    try {
+        tmp.outputStream().use { it.write(json.toString().toByteArray()); it.fd.sync() }
+        return tmp
+    } catch (failure: Throwable) { tmp.delete(); throw failure }
+}
+
+internal fun publishBackupFile(file: File, target: File) {
+    Files.move(file.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
 }
 
 internal class LocalChatBackup(private val app: Context, private val images: GeneratedImageStore) {
@@ -111,61 +182,21 @@ internal class LocalChatBackup(private val app: Context, private val images: Gen
         beforeWrite: (SavedWorkspace) -> Unit = {},
         commit: suspend (SavedWorkspace) -> Unit,
     ) = importLock.withLock {
-        val dest = File(app.filesDir, "restored-attachments")
-        val filesAdded = mutableListOf<File>()
-        val imagesAdded = mutableListOf<String>()
-        val picked = linkedMapOf<String, File>()
-        val state = archive.restored({ sha ->
-            val file = picked.getOrPut(sha) { File(dest, sha) }
-            FileProvider.getUriForFile(app, app.packageName + ".images", file).toString()
-        }, { it })
-        beforeWrite(state)
-        var committed = false
-        try {
-            Files.createDirectories(dest.toPath())
-            require(Files.isDirectory(dest.toPath(), NOFOLLOW_LINKS))
-            for ((key, sha) in archive.generated) {
-                if (images.installArchivePng(key, archive.blobs.getValue(sha))) imagesAdded += key
-            }
-            for ((sha, file) in picked) {
-                val source = archive.blobs.getValue(sha)
-                if (Files.exists(file.toPath(), NOFOLLOW_LINKS)) {
-                    require(Files.isRegularFile(file.toPath(), NOFOLLOW_LINKS) && sameBackupBytes(source, file))
-                } else {
-                    installBackupFile(source, file)
-                    filesAdded += file
-                }
-            }
-            withContext(NonCancellable) { commit(state); committed = true }
-        } finally {
-            if (!committed) {
-                images.discard(imagesAdded)
-                filesAdded.forEach(File::delete)
-            }
-        }
+        restoreChatMedia(
+            archive, File(app.filesDir, "restored-attachments"),
+            pickedUri = { FileProvider.getUriForFile(app, app.packageName + ".images", it).toString() },
+            installGenerated = images::installArchivePng, discardGenerated = images::discard,
+            beforeWrite = beforeWrite, commit = commit,
+        )
     }
-
-    fun stageHistory(target: File, state: SavedWorkspace): File =
-        stage(target, encodeWorkspace(state))
 
     fun stageRollback(before: SavedWorkspace, after: SavedWorkspace): File =
-        stage(rollback, JSONObject().put("before", encodeWorkspace(before)).put("after", encodeWorkspace(after)))
-
-    private fun stage(target: File, json: JSONObject): File {
-        val tmp = File.createTempFile(".chat-restore-", null, target.parentFile)
-        try {
-            tmp.outputStream().use { it.write(json.toString().toByteArray()); it.fd.sync() }
-            return tmp
-        } catch (failure: Throwable) { tmp.delete(); throw failure }
-    }
+        stageBackupJson(rollback, JSONObject().put("before", encodeWorkspace(before)).put("after", encodeWorkspace(after)))
 
     fun rollbackPoint(): Pair<SavedWorkspace, SavedWorkspace> {
         val json = JSONObject(rollback.readText())
         return decodeWorkspace(json.getJSONObject("before")) to decodeWorkspace(json.getJSONObject("after"))
     }
 
-    fun publishRollback(file: File) = publishHistory(file, rollback)
-    fun publishHistory(file: File, target: File) {
-        Files.move(file.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
-    }
+    fun publishRollback(file: File) = publishBackupFile(file, rollback)
 }
