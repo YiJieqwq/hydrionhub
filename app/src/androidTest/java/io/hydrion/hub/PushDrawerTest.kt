@@ -1,12 +1,17 @@
 package io.hydrion.hub
 
 import androidx.activity.compose.setContent
+import androidx.compose.material3.Button
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.*
 import io.hydrion.hub.model.LocalAssistant
 import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.ui.sidebar.DrawerActions
 import io.hydrion.hub.ui.sidebar.ConversationDrawer
+import io.hydrion.hub.ui.sidebar.WorkspaceDrawer
 import android.view.View
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -19,6 +24,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -83,6 +89,67 @@ class PushDrawerTest {
         topics.assertIsDisplayed().assertTextContains("query")
         screen.onNodeWithContentDescription(screen.activity.getString(R.string.drawer_assistants)).performClick()
         screen.onNodeWithTag("assistant-row-default").assertIsDisplayed()
+    }
+
+    @Test fun reopeningGlobalSearchKeepsOnlyTheLastHitSelectedUntilTheQueryIsClearedOrScopeChanges() {
+        val first = Conversation(id = "search-one", title = "Orchid sketch")
+        val second = Conversation(id = "search-two", title = "Orchid journal")
+        val chats = listOf(first, second)
+        val owner = LocalAssistant.Default
+        screen.runOnUiThread { screen.activity.setContent {
+            MaterialTheme {
+                val drawer = rememberDrawerState(DrawerValue.Open)
+                val scope = rememberCoroutineScope()
+                var current by remember { mutableStateOf(first.id) }
+                WorkspaceDrawer(Mode.Chat, drawer, onClose = { scope.launch { drawer.close() } },
+                    drawerContent = { width, visible ->
+                        ConversationDrawer(width, MaterialTheme.colorScheme.surface, if (visible) chats else emptyList(),
+                            current, listOf(owner), owner.id, {}, { _, _ -> false }, true,
+                            {}, {}, {}, {}, {}, {}, actions, onHit = { hit ->
+                                current = hit.id
+                                scope.launch { drawer.close() }
+                            }, onAssistantSettings = {})
+                    }) {
+                    Button(onClick = { scope.launch { drawer.open() } }) { Text("Reopen $current") }
+                }
+            }
+        } }
+
+        fun control(id: Int) = screen.onNodeWithContentDescription(screen.activity.getString(id))
+        val field = screen.onNode(hasSetTextAction() and
+            hasContentDescription(screen.activity.getString(R.string.drawer_global_search)))
+        fun card(chat: Conversation) = hasText(chat.title) and hasClickAction()
+        fun assertSelection(selected: Conversation?) {
+            screen.waitUntil(timeoutMillis = 5_000) {
+                screen.onAllNodes(card(second)).fetchSemanticsNodes().size == 1
+            }
+            for (chat in chats) {
+                val row = screen.onNode(card(chat))
+                if (selected?.id == chat.id) row.assertIsSelected() else row.assertIsNotSelected()
+            }
+        }
+        fun submit() {
+            field.performClick().performTextReplacement("Orchid")
+            field.performImeAction()
+            assertSelection(null)
+        }
+        fun openAndReturn(chat: Conversation) {
+            screen.onNode(card(chat)).performClick()
+            screen.onNode(hasText("Reopen ${chat.id}") and hasClickAction()).assertIsDisplayed().performClick()
+            field.assertTextContains("Orchid")
+            assertSelection(chat)
+        }
+
+        control(R.string.drawer_switch_global).performClick()
+        submit()
+        openAndReturn(second)
+        openAndReturn(first)
+        control(R.string.drawer_clear_search).performClick()
+        submit()
+        openAndReturn(second)
+        control(R.string.drawer_switch_topics).performClick()
+        control(R.string.drawer_switch_global).performClick()
+        submit()
     }
 
     @Test fun selectingAnInlineAssistantCollapsesThePickerAndScopesTheTopics() {

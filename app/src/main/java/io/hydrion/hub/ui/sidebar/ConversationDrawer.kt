@@ -108,9 +108,8 @@ internal fun ConversationDrawer(
     onRename: (String) -> Unit, onPin: (String) -> Unit, onDelete: (String) -> Unit,
     actions: DrawerActions, onHit: (DrawerHit) -> Unit, onAssistantSettings: (String) -> Unit,
 ) {
-    var query by rememberSaveable { mutableStateOf("") }
-    var global by rememberSaveable { mutableStateOf(false) }
-    var submitted by rememberSaveable { mutableStateOf<String?>(null) }
+    var search by rememberSaveable { mutableStateOf(DrawerSearchState()) }
+    val (query, global, submitted) = search
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var showAssistants by rememberSaveable { mutableStateOf(false) }
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -215,11 +214,6 @@ internal fun ConversationDrawer(
     val rotation by animateFloatAsState(if (showAssistants) 180f else 0f, tween(350, easing = easeOut),
         label = "Assistant disclosure")
     val assistantState = stringResource(if (showAssistants) R.string.drawer_expanded else R.string.drawer_collapsed)
-    val toggleScope = {
-        global = !global
-        query = ""
-        submitted = null
-    }
     if (showHistory) {
         DrawerHistoryPage(history, currentId, currentAssistant, assistants.size > 1, actions, onBack = { showHistory = false },
             onOpen = { showHistory = false; onOpen(it) }, onRename = { showHistory = false; onRename(it) },
@@ -237,9 +231,9 @@ internal fun ConversationDrawer(
                 }) else {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 10.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    DrawerSearch(query, onQuery = { query = it; submitted = null }, modifier = Modifier.weight(1f),
-                        global = global, onToggleScope = toggleScope, onSubmit = {
-                            submitted = query.trim().takeIf { it.isNotEmpty() }
+                    DrawerSearch(query, onQuery = { search = search.edit(it) }, modifier = Modifier.weight(1f),
+                        global = global, onToggleScope = { search = search.toggleScope() }, onSubmit = {
+                            search = search.submit()
                             focus.clearFocus()
                         })
                     IconButton({ focus.clearFocus(); showHistory = true }) {
@@ -297,7 +291,12 @@ internal fun ConversationDrawer(
                 if (global && submitted != null && hits.isNotEmpty()) {
                     item { Text(stringResource(R.string.drawer_result_count, hits.size),
                         Modifier.padding(horizontal = 14.dp, vertical = 6.dp), fontSize = 12.sp, color = colors.onSurfaceVariant) }
-                    items(hits, key = { it.id }) { hit -> DrawerSearchResult(hit, tokens) { onHit(hit) } }
+                    items(hits, key = { it.id }) { hit ->
+                        DrawerSearchResult(hit, tokens, selected = hit.id == search.selectedResultId) {
+                            search = search.selectResult(hit.id)
+                            onHit(hit)
+                        }
+                    }
                 }
                 sections.forEach { group ->
                     item(key = "group-${group.key}") { SectionHeading(sectionLabel(group.date)) }

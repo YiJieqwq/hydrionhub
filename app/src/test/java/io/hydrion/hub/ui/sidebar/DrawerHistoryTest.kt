@@ -62,6 +62,60 @@ class DrawerHistoryTest {
         assertEquals(first.text, hits.first().snippet)
     }
 
+    @Test fun openingGlobalHitsSelectsOnlyTheLastConversationAndRetainsTheSearchOnReturn() {
+        val current = Conversation(id = "current", title = "Plan")
+        val other = current.copy(id = "other")
+        val history = listOf(current, other)
+
+        fun selectedRows(state: DrawerSearchState, rows: List<Conversation>) =
+            globalDrawerHits(rows, state.submitted.orEmpty()).map { it.id }.filter { it == state.selectedResultId }
+
+        val results = DrawerSearchState().toggleScope().edit(" Plan ").submit()
+        assertEquals(setOf(current.id, other.id), globalDrawerHits(history, results.submitted.orEmpty()).map { it.id }.toSet())
+        assertEquals(emptyList<String>(), selectedRows(results, history))
+
+        val first = results.selectResult(current.id)
+        assertEquals(listOf(current.id), selectedRows(first, history))
+        val second = first.selectResult(other.id)
+        // A closed drawer receives empty history. Reopening supplies the conversations again.
+        assertEquals(emptyList<String>(), selectedRows(second, emptyList()))
+        assertEquals(" Plan ", second.query)
+        assertEquals("Plan", second.submitted)
+        assertEquals(listOf(other.id), selectedRows(second, history))
+    }
+
+    @Test fun editingGlobalSearchKeepsTheLastHitUntilTheQueryOrScopeIsCleared() {
+        val alpha = Conversation(id = "a", title = "Trip Alpha")
+        val beta = Conversation(id = "b", title = "Trip Beta")
+        val history = listOf(alpha, beta)
+        fun selectedRow(state: DrawerSearchState) =
+            globalDrawerHits(history, state.submitted.orEmpty()).singleOrNull { it.id == state.selectedResultId }?.id
+
+        val selected = DrawerSearchState().toggleScope().edit("Trip").submit().selectResult(beta.id)
+        val editing = selected.edit("Alpha")
+        assertEquals(null, editing.submitted)
+        assertEquals(beta.id, editing.selectedResultId)
+        assertEquals(null, selectedRow(editing.submit()))
+        val visibleAgain = editing.submit().edit("Beta").submit()
+        assertEquals(beta.id, selectedRow(visibleAgain))
+
+        val cleared = visibleAgain.edit("")
+        assertEquals(null, cleared.submitted)
+        assertEquals(null, cleared.selectedResultId)
+        assertEquals(null, selectedRow(cleared.edit("Trip").submit()))
+
+        val topics = visibleAgain.toggleScope()
+        assertEquals(false, topics.global)
+        assertEquals("", topics.query)
+        assertEquals(null, topics.submitted)
+        assertEquals(null, topics.selectedResultId)
+        val global = topics.edit("Alpha").toggleScope()
+        assertEquals(true, global.global)
+        assertEquals("", global.query)
+        assertEquals(null, global.submitted)
+        assertEquals(null, selectedRow(global.edit("Trip").submit()))
+    }
+
     @Test fun assistantTopicsAreScopedWhileGlobalSearchAndHistoryIncludeAllOwners() {
         val first = Conversation(id = "one", title = "work", assistantId = "a")
         val second = first.copy(id = "two", assistantId = "b")

@@ -1,5 +1,8 @@
 package io.hydrion.hub.ui.sidebar
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -7,6 +10,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -14,6 +20,24 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.model.Conversation
+
+internal data class DrawerSearchState(
+    val query: String = "",
+    val global: Boolean = false,
+    val submitted: String? = null,
+    val selectedResultId: String? = null,
+) : java.io.Serializable {
+    fun toggleScope() = DrawerSearchState(global = !global)
+
+    fun edit(text: String) = copy(
+        query = text,
+        submitted = null,
+        selectedResultId = if (text.isBlank()) null else selectedResultId,
+    )
+
+    fun submit() = copy(submitted = query.trim().ifEmpty { null })
+    fun selectResult(id: String) = copy(selectedResultId = id)
+}
 
 internal data class DrawerHit(val id: String, val title: String, val snippet: String, val messageId: String?,
     val needle: String?, val score: Long, val updatedAt: Long)
@@ -67,8 +91,12 @@ internal fun globalDrawerHits(history: List<Conversation>, query: String): List<
 }
 
 @Composable
-internal fun DrawerSearchResult(hit: DrawerHit, tokens: List<String>, open: () -> Unit) {
+internal fun DrawerSearchResult(hit: DrawerHit, tokens: List<String>, selected: Boolean, open: () -> Unit) {
     val colors = MaterialTheme.colorScheme
+    val background = animateColorAsState(
+        if (selected) colors.primary.copy(alpha = .16f) else Color.Transparent,
+        tween(120), label = "Search result selection",
+    )
     val highlight = SpanStyle(background = colors.primary.copy(alpha = .20f))
     fun marked(value: String) = buildAnnotatedString {
         append(value)
@@ -80,7 +108,8 @@ internal fun DrawerSearchResult(hit: DrawerHit, tokens: List<String>, open: () -
             }
         }
     }
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = open)
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(background.value)
+        .clickable(onClick = open).semantics { this.selected = selected }
         .heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 9.dp)) {
         Text(marked(hit.title), fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (hit.snippet.isNotEmpty()) Text(marked(hit.snippet), fontSize = 12.5.sp, lineHeight = 17.5.sp,
