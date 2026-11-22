@@ -21,11 +21,14 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.*
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.hydrion.hub.R
 
 private val inline = Regex("""(`[^`\n]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_|~~[^~\n]+~~|\[[^\]\n]+]\(https?://[^\s)]+\))""")
 
@@ -147,7 +150,8 @@ private fun CodeBlock(block: MarkdownBlock.Code, query: String) {
     val palette = LocalMessageStyle.current.renderPalette.assistant
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(palette.background.messageColor())) {
         Row(Modifier.fillMaxWidth().background(palette.border.messageColor().copy(alpha = .35f)).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(block.language.ifBlank { "代码" }, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+            Text(block.language.ifEmpty { stringResource(R.string.turn_code_label) }, Modifier.weight(1f),
+                style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             IconButton(onClick = { clipboard.setText(AnnotatedString(block.value)) }) {
                 Icon(Icons.Outlined.ContentCopy, "复制代码", Modifier.size(16.dp))
             }

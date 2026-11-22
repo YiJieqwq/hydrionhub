@@ -14,6 +14,21 @@ class MessageFormattingTest {
         ), markdownBlocks(text))
     }
 
+    @Test fun fencedCodeUsesTheFirstInfoWordAsItsLanguage() {
+        val body = "  int main() {  \n\treturn 0;\n}  "
+        val text = "```  C++\tlinenums=1 file=main.cpp\n$body\n```\n``` \t \n  plain text\n```"
+        assertEquals(listOf(
+            MarkdownBlock.Code("C++", body),
+            MarkdownBlock.Code("", "  plain text")
+        ), markdownBlocks(text))
+    }
+
+    @Test fun streamingCodePreservesTheLanguageAndUnfinishedBody() {
+        val body = "\tval a = 1  \n  val b = "
+        val text = "```\tKotlIN title=Sample.kt\n$body"
+        assertEquals(listOf(MarkdownBlock.Code("KotlIN", body)), markdownBlocks(text))
+    }
+
     @Test fun quotesAndTextAfterCodeRemainSeparate() {
         val text = "> 甲\n> 乙\n\n```\n- 字面内容\n```\n正文"
         assertEquals(listOf(

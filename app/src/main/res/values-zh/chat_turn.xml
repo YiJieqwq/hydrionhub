@@ -1,4 +1,5 @@
 <resources>
+    <string name="turn_code_label">代码</string>
     <string name="turn_copy">复制消息</string>
     <string name="turn_copy_reply">复制回复</string>
     <string name="turn_more">消息操作</string>

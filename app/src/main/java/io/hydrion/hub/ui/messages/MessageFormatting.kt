@@ -32,7 +32,8 @@ internal fun markdownBlocks(markdown: String): List<MarkdownBlock> = buildList {
                 val code = mutableListOf<String>()
                 while (pos < lines.size && !lines[pos].trimStart().startsWith("```")) code += lines[pos++]
                 if (pos < lines.size) pos++
-                add(MarkdownBlock.Code(trimmed.removePrefix("```").trim(), code.joinToString("\n")))
+                val language = trimmed.removePrefix("```").trimStart().takeWhile { !it.isWhitespace() }
+                add(MarkdownBlock.Code(language, code.joinToString("\n")))
             }
             title != null -> {
                 flush()
