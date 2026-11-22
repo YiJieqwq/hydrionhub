@@ -55,7 +55,7 @@ internal suspend fun sendDraft(
     provider.chatProtocolIssue()?.let { return it }
     val protocol = provider.chatProtocol()
     if (mode == Mode.Chat && protocol != null) {
-        provider.chatKeyIssue(model, providers.sessionKey(provider.id))?.let { return it }
+        provider.chatKeyIssue(model, providers.sessionKey(provider))?.let { return it }
         val selection = catalog.selection(mode)
         val parameters = selection.parameters + mapOf("model" to model.externalModelId, CHAT_PROTOCOL_PARAMETER to protocol.name)
         send(selection.label, parameters, null, RemoteModel(provider.id, model.id))

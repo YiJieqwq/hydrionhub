@@ -35,9 +35,9 @@ class ChatProtocolRoutingTest {
     private class Dispatch(var catalog: ModelCatalog) {
         val keys = mutableListOf<String>()
         val prepared = mutableListOf<Pair<ChatProtocol, LocalModelRequest>>()
-        val repository = ChatGenerationRepository({ catalog }, { id ->
-            keys += id
-            "fixture-for-$id"
+        val repository = ChatGenerationRepository({ catalog }, { provider ->
+            keys += provider.id
+            "fixture-for-${provider.id}"
         }, { _, _ -> emptyMap() }) { protocol, request, message ->
             prepared += protocol to request
             flowOf(message.copy(status = Generation.Completed, text = "answer"))

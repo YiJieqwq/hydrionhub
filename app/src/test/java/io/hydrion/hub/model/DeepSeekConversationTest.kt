@@ -104,9 +104,9 @@ class DeepSeekConversationTest {
         var catalog = demoCatalog().withDeepSeekPreset().withProvider(open, emptyMap())
         val sent = mutableListOf<LocalModelRequest>()
         val keys = mutableListOf<String>()
-        val repository = ChatGenerationRepository({ catalog }, { id ->
-            keys += id
-            "fixture-for-$id"
+        val repository = ChatGenerationRepository({ catalog }, { provider ->
+            keys += provider.id
+            "fixture-for-${provider.id}"
         }, { _, _ -> emptyMap() }) { _, prepared, reply ->
             sent += prepared
             flowOf(reply.copy(text = "received", status = Generation.Completed))

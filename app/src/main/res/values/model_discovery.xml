@@ -1,0 +1,10 @@
+<resources>
+    <string name="model_discovery_fetch">Fetch models</string>
+    <string name="model_discovery_loading">Fetching models…</string>
+    <string name="model_discovery_error">Could not fetch models. Check the provider URL, API key, and connection.</string>
+    <string name="model_discovery_retry">Retry</string>
+    <string name="model_discovery_empty">This provider returned no models.</string>
+    <string name="model_discovery_search">Search model IDs</string>
+    <string name="model_discovery_add_selected">Add selected</string>
+    <string name="model_discovery_changed_server">The server has changed. Enter any API key and model request headers for the new server.</string>
+</resources>

@@ -62,7 +62,7 @@ internal fun ModelCatalog.prepareImageGeneration(prompt: String, parentImageLimi
 
 /** Prepare a request for the saved route, regardless of subsequent changes to the active image selection. */
 internal fun ModelCatalog.prepareOfficialImageGeneration(
-    route: RemoteModel, prompt: String, parameters: Map<String, String>, sessionKey: (String) -> String
+    route: RemoteModel, prompt: String, parameters: Map<String, String>, sessionKey: (Provider) -> String
 ): LocalModelRequest {
     val (model, provider) = requireNotNull(entries(Mode.Image).singleOrNull { it.route == route }) {
         "原图像生成模型或供应商已停用或移除，请恢复该配置后重试。"
@@ -75,7 +75,7 @@ internal fun ModelCatalog.prepareOfficialImageGeneration(
     require(custom.all { (name, value) -> name.lowercase() in allowed && value.all { it.code in 32..126 } }) {
         "图像服务的请求头无效或不受支持。"
     }
-    val headers = chatHeaders(custom, sessionKey(provider.id), provider.name) + ("Accept" to "application/json")
+    val headers = chatHeaders(custom, sessionKey(provider), provider.name) + ("Accept" to "application/json")
     val authorization = headers.entries.single { it.key.equals("Authorization", true) }.value
     require(Regex("(?i)Bearer [!-~]+").matches(authorization)) { "OpenAI 图像服务需要 Bearer 授权。" }
     return LocalModelRequest(model.name, headers, body, parameters, endpoint)

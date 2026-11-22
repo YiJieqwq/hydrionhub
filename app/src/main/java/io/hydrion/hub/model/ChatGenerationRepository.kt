@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
 
 internal class ChatGenerationRepository(
     private val currentCatalog: () -> ModelCatalog,
-    private val sessionKey: (String) -> String,
+    private val sessionKey: (Provider) -> String,
     private val attachmentSources: suspend (List<Attachment>, Provider) -> Map<Attachment, String>,
     private val stream: (ChatProtocol, LocalModelRequest, Message) -> Flow<Message> = ChatTransports::stream
 ) : GenerationRepository {
@@ -42,7 +42,7 @@ internal class ChatGenerationRepository(
                 require(model.externalModelId == originalModel) { "此回复使用的模型 ID 已更改，请恢复原模型 ID 后重试。" }
             }
             provider.chatProtocolIssue()?.let { error(it) }
-            val key = sessionKey(provider.id)
+            val key = sessionKey(provider)
             provider.chatKeyIssue(model, key)?.let { error(it) }
             val transcript = history.responsesHistory()
             val prepared = withContext(Dispatchers.IO) {

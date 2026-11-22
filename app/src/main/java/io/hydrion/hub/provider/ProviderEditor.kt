@@ -26,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import io.hydrion.hub.model.Mode
 import java.net.URI
 
+private val modelDiscovery by lazy { ModelDiscovery() }
+
 @Composable
 internal fun ProviderEditor(store: ProviderStore, edit: ProviderDraft, onBack: () -> Unit) {
     val draft = edit.provider
@@ -46,10 +48,10 @@ internal fun ProviderEditor(store: ProviderStore, edit: ProviderDraft, onBack: (
         RequestTemplate.sample(previewModel, draft.models)
     }
     val save = {
-        val cleaned = draft.copy(name = draft.name.trim(), protocol = draft.protocol.trim(), baseUrl = draft.baseUrl.trim())
+        val cleaned = edit.providerForSave()
         error = validateProvider(cleaned, sample)
         if (error == null) {
-            store.saveDefaults(cleaned, edit.apiKey, edit.defaults)
+            store.saveDefaults(cleaned, edit.keyForCurrentAddress(cleaned), edit.defaults)
             focus.clearFocus()
             onBack()
         } else changeTab(EditorTab.Config)
@@ -77,6 +79,10 @@ internal fun ProviderEditor(store: ProviderStore, edit: ProviderDraft, onBack: (
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (edit.dirty || !edit.existing) TextButton(onClick = save) { Text(stringResource(R.string.settings_save)) }
             }
+            if (edit.tab == EditorTab.Config && edit.needsNewCredentials) {
+                Text(stringResource(R.string.model_discovery_changed_server),
+                    Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
+            }
             error?.let {
                 Text(stringResource(it), Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                     color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -90,7 +96,8 @@ internal fun ProviderEditor(store: ProviderStore, edit: ProviderDraft, onBack: (
                             onModels = { changeTab(EditorTab.Models) },
                             onDelete = { delete = true })
                         EditorTab.Models -> ProviderModelsTab(draft, edit.defaults.values.toSet(), edit::replaceModels,
-                            onEdit = { edit.editingModel = it }, modifier = Modifier.fillMaxSize())
+                            onEdit = { edit.editingModel = edit.modelForCurrentAddress(it) }, modifier = Modifier.fillMaxSize(),
+                            fetchModels = { modelDiscovery.fetch(draft, edit.keyForCurrentAddress(draft)) })
                     }
                 }
             }

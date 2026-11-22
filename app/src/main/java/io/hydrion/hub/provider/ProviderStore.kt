@@ -83,9 +83,18 @@ class ProviderStore internal constructor(private val storage: ProviderCatalogSto
     }
     val catalog = state.asStateFlow()
 
-    // The key is held in this store for the current session.
-    private val sessionKeys = mutableMapOf<String, String>()
-    fun sessionKey(providerId: String): String = sessionKeys[providerId].orEmpty()
+    private class SessionCredential(val origin: String, val value: String)
+
+    private val sessionKeys = mutableMapOf<String, SessionCredential>()
+
+    fun sessionKey(providerId: String): String =
+        state.value.providers.singleOrNull { it.id == providerId }?.let(::sessionKey).orEmpty()
+
+    @Synchronized
+    internal fun sessionKey(provider: Provider): String {
+        val saved = sessionKeys[provider.id] ?: return ""
+        return if (saved.origin == provider.credentialOrigin()) saved.value else ""
+    }
 
     fun selection(mode: Mode): ModelSelection = state.value.selection(mode)
 
@@ -125,26 +134,40 @@ class ProviderStore internal constructor(private val storage: ProviderCatalogSto
         saveDefaults(provider, sessionKey, defaults)
     }
 
+    @Synchronized
     fun saveDefaults(provider: Provider, sessionKey: String, defaults: Map<Mode, String>) {
-        sessionKeys[provider.id] = sessionKey
-        update(stored.withProvider(provider, defaults))
+        val previous = stored.providers.singleOrNull { it.id == provider.id }
+        val cleaned = previous?.let(provider::withoutInheritedHeaders) ?: provider
+        val origin = provider.credentialOrigin()
+        val old = sessionKeys[provider.id]
+        val inheritedKey = old != null && old.origin != origin && old.value.trim() == sessionKey.trim()
+        update(stored.withProvider(cleaned, defaults)) {
+            if (origin == null || sessionKey.isBlank() || inheritedKey) sessionKeys.remove(provider.id)
+            else sessionKeys[provider.id] = SessionCredential(origin, sessionKey)
+        }
     }
 
-    internal fun editModel(route: RemoteModel, model: ProviderModel?, makeDefault: Boolean = false) {
+    @Synchronized
+    internal fun editModel(route: RemoteModel, model: ProviderModel?, expectedOrigin: String?, makeDefault: Boolean = false) {
         val current = stored
+        val provider = current.providers.singleOrNull { it.id == route.providerId } ?: return
+        if (provider.credentialOrigin() != expectedOrigin) return
         val edited = current.withEditedModel(route, model, makeDefault)
         if (edited != current) update(edited)
     }
 
+    @Synchronized
     fun remove(providerId: String) {
-        sessionKeys.remove(providerId)
-        update(stored.copy(providers = stored.providers.filterNot { it.id == providerId }))
+        update(stored.copy(providers = stored.providers.filterNot { it.id == providerId })) {
+            sessionKeys.remove(providerId)
+        }
     }
 
-    private fun update(catalog: ModelCatalog) {
+    private fun update(catalog: ModelCatalog, onStored: () -> Unit = {}) {
         val next = catalog.normalized()
         storage.write(storageKey, encodeCatalog(next).toString())
         stored = next
+        onStored()
         showRoutes(conversationRoutes, assistantDefault)
     }
 }

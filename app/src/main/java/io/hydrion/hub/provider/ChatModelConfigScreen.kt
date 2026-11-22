@@ -40,7 +40,8 @@ internal fun ChatModelConfigScreen(store: ProviderStore, route: RemoteModel, ret
         return
     }
 
-    key(route) {
+    val origin = provider.credentialOrigin()
+    key(route, origin) {
         val draft = remember {
             ModelEditDraft(model, provider.mode, catalog.defaults[provider.mode] == route)
         }
@@ -67,10 +68,10 @@ internal fun ChatModelConfigScreen(store: ProviderStore, route: RemoteModel, ret
                     .testTag("chat-model-form").padding(horizontal = 16.dp)) {
                     ModelEditor(draft, exists = true, otherModels = provider.models, onBack = onBack,
                         onSave = { edited, makeDefault ->
-                            store.editModel(route, edited, makeDefault && !draft.currentDefault)
+                            store.editModel(route, edited, origin, makeDefault && !draft.currentDefault)
                             onBack()
                         },
-                        onDelete = { store.editModel(route, null); onBack() }, fadeScrollEdges = true)
+                        onDelete = { store.editModel(route, null, origin); onBack() }, fadeScrollEdges = true)
                 }
             }
         }

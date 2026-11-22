@@ -34,30 +34,44 @@ internal fun ProviderModelsTab(
     defaultIds: Set<String>,
     onModelsChange: (List<ProviderModel>) -> Unit,
     onEdit: (ProviderModel) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    fetchModels: suspend () -> List<String>,
 ) {
     var choosing by rememberSaveable(provider.id) { mutableStateOf(false) }
     val customOnlineChat = provider.id != DEEPSEEK_PROVIDER_ID && provider.chatProtocol() != null
     val presetLabel = if (customOnlineChat) R.string.provider_models_local_presets else R.string.chat_controls_select_model
-    Box(modifier.fillMaxSize()) {
-        if (provider.models.isEmpty()) {
-            Text(stringResource(R.string.model_none_added), Modifier.align(Alignment.Center),
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 6.dp, bottom = 84.dp)) {
-                items(provider.models, key = { it.id }) { model ->
-                    val edit = { onEdit(model) }
-                    ModelLine(model, provider.mode, model.id in defaultIds, Modifier.clickable(onClick = edit)) {
-                        IconButton(onClick = edit) {
-                            Icon(Icons.Outlined.Tune, stringResource(R.string.model_configure_named, model.name), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    Column(modifier.fillMaxSize()) {
+        if (provider.supportsModelDiscovery()) {
+            key(provider.id, provider.baseUrl, provider.protocol) {
+                var discovering by remember { mutableStateOf(false) }
+                OutlinedButton(onClick = { discovering = true }, modifier = Modifier.align(Alignment.End).padding(horizontal = 12.dp)) {
+                    Text(stringResource(R.string.model_discovery_fetch))
+                }
+                if (discovering) RemoteModelPicker(provider, fetchModels, onAdd = { selected ->
+                    onModelsChange(addDiscoveredModels(provider, selected))
+                    discovering = false
+                }, onDismiss = { discovering = false })
+            }
+        }
+        Box(Modifier.fillMaxWidth().weight(1f)) {
+            if (provider.models.isEmpty()) {
+                Text(stringResource(R.string.model_none_added), Modifier.align(Alignment.Center),
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 6.dp, bottom = 8.dp)) {
+                    items(provider.models, key = { it.id }) { model ->
+                        val edit = { onEdit(model) }
+                        ModelLine(model, provider.mode, model.id in defaultIds, Modifier.clickable(onClick = edit)) {
+                            IconButton(onClick = edit) {
+                                Icon(Icons.Outlined.Tune, stringResource(R.string.model_configure_named, model.name), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     }
                 }
             }
         }
-
         Surface(
-            modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 8.dp, vertical = 12.dp).capsuleEdge(),
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(horizontal = 8.dp, vertical = 12.dp).capsuleEdge(),
             shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Row(Modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {

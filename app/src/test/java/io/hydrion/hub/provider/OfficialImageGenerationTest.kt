@@ -18,7 +18,7 @@ class OfficialImageGenerationTest {
         val catalog = ModelCatalog(listOf(chat, other, provider), active = mapOf(Mode.Image to RemoteModel(other.id, model.id)))
         val lookedUp = mutableListOf<String>()
         val req = catalog.prepareOfficialImageGeneration(route, "revised composition", params) {
-            lookedUp.add(it)
+            lookedUp.add(it.id)
             "fixture-session"
         }
         assertEquals(listOf(provider.id), lookedUp)
