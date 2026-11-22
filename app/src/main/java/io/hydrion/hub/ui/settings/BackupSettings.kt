@@ -29,6 +29,10 @@ internal fun BackupSettings(vm: HubViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     val store = vm.backups
     val scope = rememberCoroutineScope()
+    var application by rememberSaveable { mutableStateOf(true) }
+    var confirmReplace by remember { mutableStateOf(false) }
+    var pendingRestart by remember { mutableStateOf(vm.appRestores.pendingRestart()) }
+    var choosing by rememberSaveable { mutableStateOf(false) }
     var staging by remember { mutableStateOf<File?>(null) }
     var inspected by remember { mutableStateOf<InspectedChatArchive?>(null) }
     var documentSource by rememberSaveable { mutableStateOf<String?>(null) }
@@ -43,7 +47,7 @@ internal fun BackupSettings(vm: HubViewModel, onBack: () -> Unit) {
         CoroutineScope(Dispatchers.IO).launch { dir.deleteRecursively() }
     }
     fun clear() {
-        val dir = staging ?: store.preparedExport(documentSource)?.parentFile
+        val dir = staging ?: store.preparedExport(documentSource, application)?.parentFile
         staging = null
         inspected = null
         documentSource = null
@@ -78,7 +82,7 @@ internal fun BackupSettings(vm: HubViewModel, onBack: () -> Unit) {
         }
     }
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        val file = store.preparedExport(documentSource)
+        val file = store.preparedExport(documentSource, application)
         if (uri == null) clear()
         else if (file == null) { clear(); info = R.string.backup_failed }
         else task {
@@ -93,10 +97,11 @@ internal fun BackupSettings(vm: HubViewModel, onBack: () -> Unit) {
         }
     }
     val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        choosing = false
         if (uri != null) task {
             stage { dir ->
-                val verified = withContext(Dispatchers.IO) { store.inspect(dir, uri) }
-                try { mergeBackup(vm.backupSnapshot(), verified.workspace) }
+                val verified = withContext(Dispatchers.IO) { store.inspect(dir, uri, application) }
+                try { if (!application) mergeBackup(vm.backupSnapshot(), verified.workspace) }
                 catch (_: IllegalArgumentException) { info = R.string.backup_conflict; return@stage }
                 inspected = verified
             }
@@ -114,38 +119,75 @@ internal fun BackupSettings(vm: HubViewModel, onBack: () -> Unit) {
     }
     Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Header(stringResource(R.string.backup_title), onBack)
-        Text(stringResource(R.string.backup_scope))
-        Button(enabled = !busy && staging == null && documentSource == null, onClick = { task {
+        Header(stringResource(R.string.app_backup_page), onBack)
+        val available = !busy && !choosing && staging == null && documentSource == null
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(application, { application = true; info = 0; absent = emptySet() },
+                label = { Text(stringResource(R.string.app_backup_label)) }, enabled = available)
+            FilterChip(!application, { application = false; info = 0; absent = emptySet() },
+                label = { Text("Chat ZIP") }, enabled = available)
+        }
+        Text(stringResource(if (application) R.string.app_backup_scope else R.string.backup_scope))
+        if (application && pendingRestart) {
+            Text(stringResource(R.string.app_backup_pending))
+            TextButton(enabled = available, onClick = { task {
+                withContext(Dispatchers.IO) { vm.appRestores.cancelPending() }; pendingRestart = false
+            } }) { Text(stringResource(R.string.app_backup_cancel_pending)) }
+        }
+        Button(enabled = available && !pendingRestart, onClick = { task {
             val snapshot = vm.backupSnapshot()
-            stage { dir -> withContext(Dispatchers.IO) { store.export(dir, snapshot) } }
+            val settings = if (application) vm.appBackupSettings() else null
+            stage { dir -> withContext(Dispatchers.IO) { store.export(dir, snapshot, settings) } }
             documentSource = requireNotNull(staging).name
-            save.launch("HydrionHub-chats.zip")
+            save.launch(if (application) "HydrionHub-app-v1.zip" else "HydrionHub-chats.zip")
         } }) { Text(stringResource(R.string.backup_export)) }
-        OutlinedButton(enabled = !busy && staging == null && documentSource == null, onClick = {
-            try { open.launch(arrayOf("application/zip", "application/octet-stream")) }
-            catch (_: android.content.ActivityNotFoundException) { info = R.string.backup_failed }
+        OutlinedButton(enabled = available && !pendingRestart, onClick = {
+            try { choosing = true; open.launch(arrayOf("application/zip", "application/octet-stream")) }
+            catch (_: android.content.ActivityNotFoundException) { choosing = false; info = R.string.backup_failed }
         }) {
             Text(stringResource(R.string.backup_preview))
         }
+        if (application && !pendingRestart) vm.appRestores.previousBackup?.let { prior ->
+            TextButton(enabled = available, onClick = { task {
+                stage { dir -> inspected = withContext(Dispatchers.IO) { prior.inputStream().use { store.inspect(dir, it, true) } } }
+            } }) { Text(stringResource(R.string.app_backup_previous)) }
+        }
         inspected?.let { candidate ->
-            Text(stringResource(R.string.backup_summary, candidate.workspace.history.size, candidate.workspace.drafts.size,
-                candidate.blobs.size))
-            Button(enabled = !busy && (candidate.workspace.history.isNotEmpty() || candidate.workspace.pending.isNotEmpty() ||
-                candidate.workspace.assistants.size > 1), onClick = { task {
-                vm.applyBackup(candidate)
-                clear()
-                info = R.string.backup_restored
-            } }) { Text(stringResource(R.string.backup_apply)) }
+            val settings = candidate.settings
+            if (settings != null) {
+                Text(stringResource(R.string.app_backup_summary, candidate.workspace.history.size, candidate.workspace.drafts.size,
+                    candidate.workspace.assistants.size, settings.catalog.providers.size, candidate.blobs.size))
+                val missing = remember(candidate) { candidate.missingModelReferences() }
+                if (missing > 0) Text(stringResource(R.string.app_backup_missing_models, missing))
+                Text(stringResource(R.string.app_backup_impact))
+                Button(enabled = !busy, onClick = { confirmReplace = true }) { Text(stringResource(R.string.app_backup_restore)) }
+            } else {
+                Text(stringResource(R.string.backup_summary, candidate.workspace.history.size, candidate.workspace.drafts.size,
+                    candidate.blobs.size))
+                Button(enabled = !busy && (candidate.workspace.history.isNotEmpty() || candidate.workspace.pending.isNotEmpty() ||
+                    candidate.workspace.assistants.size > 1), onClick = { task {
+                    vm.applyBackup(candidate)
+                    clear()
+                    info = R.string.backup_restored
+                } }) { Text(stringResource(R.string.backup_apply)) }
+            }
             TextButton(enabled = !busy, onClick = ::clear) { Text(stringResource(android.R.string.cancel)) }
         }
-        if (canUndo) OutlinedButton(enabled = !busy && staging == null && documentSource == null, onClick = { undo = true }) {
+        if (!application && canUndo && !pendingRestart) OutlinedButton(enabled = !busy && staging == null && documentSource == null, onClick = { undo = true }) {
             Text(stringResource(R.string.backup_undo))
         }
         if (busy) LinearProgressIndicator()
         if (info != 0) Text(stringResource(info))
         if (absent.isNotEmpty()) Text(stringResource(R.string.backup_missing, absent.joinToString("\n")))
     }
+    if (confirmReplace) AlertDialog(onDismissRequest = { confirmReplace = false },
+        title = { Text(stringResource(R.string.app_backup_restore)) }, text = { Text(stringResource(R.string.app_backup_impact)) },
+        confirmButton = { TextButton(onClick = {
+            confirmReplace = false
+            val verified = inspected ?: return@TextButton
+            task { vm.replaceFromAppBackup(verified); pendingRestart = true; clear() }
+        }) { Text(stringResource(R.string.app_backup_confirm)) } },
+        dismissButton = { TextButton(onClick = { confirmReplace = false }) { Text(stringResource(android.R.string.cancel)) } })
     if (undo) AlertDialog(onDismissRequest = { undo = false }, title = { Text(stringResource(R.string.backup_undo)) },
         text = { Text(stringResource(R.string.backup_undo_detail)) },
         confirmButton = { TextButton(onClick = { undo = false; task { vm.undoBackup(); info = R.string.backup_undone } }) {

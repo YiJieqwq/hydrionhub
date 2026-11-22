@@ -10,7 +10,7 @@ internal data class LocalStorageUsage(
 )
 
 internal class LocalStorageFiles(private val files: File, private val cache: File, private val preferences: File,
-    private val noBackup: File) {
+    private val noBackup: File, private val location: AppRestoreStore? = null) {
     private fun File.regular() = Files.isRegularFile(toPath(), NOFOLLOW_LINKS)
     private fun File.children(): List<File> = if (Files.isDirectory(toPath(), NOFOLLOW_LINKS))
         (listFiles() ?: throw java.io.IOException("Directory unavailable")).toList() else emptyList()
@@ -23,14 +23,15 @@ internal class LocalStorageFiles(private val files: File, private val cache: Fil
     fun usage(now: Long = System.currentTimeMillis(), protectedNames: Set<String> = emptySet()): LocalStorageUsage {
         val copies = copies()
         return LocalStorageUsage(
-            File(files, "conversation-history-v1.json").bytes(),
+            (location?.history(files) ?: File(files, "conversation-history-v1.json")).bytes(),
             File(files, "generated-images").children().sumOf { dir -> dir.children().sumOf { it.bytes() } },
             File(files, "restored-attachments").children().sumOf { it.bytes() },
             listOf("message_style", "local_profile", "model_catalog_v1", "chat_dictation").sumOf {
-                File(preferences, "$it.xml").bytes()
-            },
+                val name = if (it == "message_style" || it == "model_catalog_v1") location?.preference(it) ?: it else it
+                File(preferences, "$name.xml").bytes()
+            } + (location?.directory?.let { File(it, "settings.json").bytes() } ?: 0L),
             copies.sumOf { it.bytes() }, copies.filter { it.expired(now) && it.name !in protectedNames }.sumOf { it.bytes() },
-            File(noBackup, "chat-import-undo.json").bytes(),
+            File(location?.directory ?: noBackup, "chat-import-undo.json").bytes() + (location?.previousBackup?.bytes() ?: 0L),
         )
     }
 

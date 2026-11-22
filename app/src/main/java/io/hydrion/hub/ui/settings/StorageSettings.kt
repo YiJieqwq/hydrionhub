@@ -25,7 +25,7 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun StorageSettings(vm: HubViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
-    val files = remember(context) { LocalStorageFiles(context.filesDir, context.cacheDir, File(context.applicationInfo.dataDir, "shared_prefs"), context.noBackupFilesDir) }
+    val files = remember(context) { LocalStorageFiles(context.filesDir, context.cacheDir, File(context.applicationInfo.dataDir, "shared_prefs"), context.noBackupFilesDir, vm.appRestores) }
     val scope = rememberCoroutineScope()
     var usage by remember { mutableStateOf<LocalStorageUsage?>(null) }
     var busy by remember { mutableStateOf(false) }

@@ -9,7 +9,7 @@ import org.json.JSONObject
 
 /** The local demo history is replaced atomically. The codec is used only on Dispatchers.IO. */
 internal class HistoryFile(context: Context) {
-    val path = File(context.filesDir, "conversation-history-v1.json")
+    val path = AppRestoreStore.current(context).history(context.filesDir)
     private val file = AtomicFile(path)
 
     fun load(): SavedWorkspace {

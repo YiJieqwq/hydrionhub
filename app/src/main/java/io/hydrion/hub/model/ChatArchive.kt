@@ -1,5 +1,6 @@
 package io.hydrion.hub.model
 
+import io.hydrion.hub.provider.ChatProtocol
 import java.io.*
 import java.security.DigestInputStream
 import java.security.MessageDigest
@@ -52,7 +53,7 @@ private fun parseObject(bytes: ByteArray): JSONObject {
     return JSONObject(text)
 }
 
-private fun SavedWorkspace.transform(attachment: (Attachment) -> Attachment, image: (String) -> String): SavedWorkspace {
+private fun SavedWorkspace.transform(application: Boolean, attachment: (Attachment) -> Attachment, image: (String) -> String): SavedWorkspace {
     // Project explicit portable fields. New fields in the internal history format require an opt-in here.
     fun route(r: RemoteModel?) = r?.let { RemoteModel(it.providerId, it.modelId) }
     fun portableAttachment(a: Attachment) = attachment(Attachment(a.id, a.name, a.uri, a.imageKey, a.mimeType, a.width, a.height))
@@ -60,6 +61,9 @@ private fun SavedWorkspace.transform(attachment: (Attachment) -> Attachment, ima
         id = m.id, role = m.role, text = m.text, createdAt = m.createdAt, model = m.model,
         status = if (m.status.isActive) Generation.Stopped else m.status,
         attachments = m.attachments.map(::portableAttachment), prompt = m.prompt, thought = m.thought,
+        parameters = if (application) m.parameters.filter { (key, value) ->
+            key == CHAT_PROTOCOL_PARAMETER && ChatProtocol.entries.any { it.name == value }
+        } else emptyMap(),
         tool = m.tool, imageKeys = m.imageKeys.map(image), replyTo = m.replyTo, remoteModel = route(m.remoteModel),
         imageInvocation = m.imageInvocation?.let { ImageInvocation(it.model, emptyMap(), route(it.remoteModel)) },
         totalTokens = m.totalTokens, usage = m.usage?.let {
@@ -72,7 +76,10 @@ private fun SavedWorkspace.transform(attachment: (Attachment) -> Attachment, ima
         modelRoutes = c.modelRoutes?.mapValues { (_, r) -> RemoteModel(r.providerId, r.modelId) })
     return SavedWorkspace(history.map(::conversation), drafts.mapValues { (_, d) ->
         Draft(d.text, d.attachments.map(::portableAttachment), d.search, d.imageTool)
-    }, unsent?.let(::conversation), assistants.map { LocalAssistant(it.id, it.name, it.sidebarGroup) }, selectedAssistant,
+    }, unsent?.let(::conversation), assistants.map {
+        if (application) LocalAssistant(it.id, it.name, it.sidebarGroup, it.systemPrompt, route(it.chatModel), it.avatarText, it.contextLimit)
+        else LocalAssistant(it.id, it.name, it.sidebarGroup)
+    }, selectedAssistant,
         otherUnsent.map(::conversation), lastThreads.toMap())
 }
 
@@ -118,9 +125,10 @@ private fun SavedWorkspace.checkIds() {
 
 internal data class InspectedChatArchive(
     val workspace: SavedWorkspace, val blobs: Map<String, File>, val generated: Map<String, String>,
+    val settings: AppBackupSettings? = null,
 ) {
     fun restored(pickedUri: (String) -> String, imageKey: (String) -> String): SavedWorkspace =
-        workspace.transform({ a -> a.copy(uri = a.uri?.let { pickedUri(it.removePrefix("blob:")) },
+        workspace.transform(settings != null, { a -> a.copy(uri = a.uri?.let { pickedUri(it.removePrefix("blob:")) },
             imageKey = a.imageKey?.let(imageKey)) }, imageKey)
 }
 
@@ -129,7 +137,10 @@ internal object ChatArchive {
     suspend fun export(
         work: File, source: SavedWorkspace, openPicked: (String) -> InputStream,
         copyImage: suspend (String, OutputStream) -> Unit,
-    ): File {
+    ): File = write(work, source, null, openPicked, copyImage)
+
+    suspend fun write(work: File, source: SavedWorkspace, settings: AppBackupSettings?,
+        openPicked: (String) -> InputStream, copyImage: suspend (String, OutputStream) -> Unit): File {
         source.checkIds()
         val blobs = linkedMapOf<String, File>()
         val picked = mutableMapOf<String, String>()
@@ -180,7 +191,7 @@ internal object ChatArchive {
             generated[key] = record(temp)
         }
         if (unavailable.isNotEmpty()) throw UnreadableOriginals(unavailable)
-        val clean = source.transform({ a ->
+        val clean = source.transform(settings != null, { a ->
             require(a.uri != null || a.imageKey != null)
             val id = if (stableId(a.id)) a.id else UUID.nameUUIDFromBytes(a.id.toByteArray()).toString()
             a.copy(id = id, uri = a.uri?.let { "blob:" + picked.getValue(it) })
@@ -192,25 +203,30 @@ internal object ChatArchive {
             clean.assistants == listOf(LocalAssistant.Default) -> 1
             else -> 2
         }
-        val manifest = JSONObject().put("format", "hydrion.chat").put("version", version)
+        val config = settings?.encode()?.toString()?.toByteArray()
+        require(config == null || config.size <= MaxMetadata)
+        val manifest = JSONObject().put("format", if (settings == null) "hydrion.chat" else "hydrion.app")
+            .put("version", if (settings == null) version else 1)
+            .put("settingsSha256", config?.let(::digest))
             .put("workspaceSha256", digest(state)).put("generated", JSONObject(generated))
-        val zip = File(work, "chats.zip")
+        val zip = File(work, if (settings == null) "chats.zip" else "application.zip")
         ZipOutputStream(zip.outputStream().buffered()).use { output ->
             fun add(name: String, write: () -> Unit) {
                 output.putNextEntry(ZipEntry(name)); write(); output.closeEntry()
             }
             add("manifest.json") { output.write(manifest.toString().toByteArray()) }
             add("workspace.json") { output.write(state) }
+            if (config != null) add("settings.json") { output.write(config) }
             blobs.forEach { (key, temp) -> add("blobs/$key") { temp.inputStream().use { it.copyTo(output) } } }
         }
         return zip
     }
 
-    fun inspect(work: File, input: InputStream): InspectedChatArchive {
+    fun inspect(work: File, input: InputStream, application: Boolean = false): InspectedChatArchive {
         val zip = File(work, "input.zip")
-        zip.outputStream().use { input.copyLimited(it, MaxData + 2 * MaxMetadata) }
+        zip.outputStream().use { input.copyLimited(it, MaxData + (if (application) 4 else 2) * MaxMetadata) }
         return ZipFile(zip).use { file ->
-            require(file.size() in 2..(MaxBlobs + 2))
+            require(file.size() in 2..(MaxBlobs + if (application) 3 else 2))
             val entries = file.entries().toList()
             require(entries.none { it.isDirectory } && entries.map { it.name }.distinct().size == entries.size)
             fun read(name: String): ByteArray {
@@ -221,17 +237,34 @@ internal object ChatArchive {
                 }.also { require(it.size.toLong() == entry.size) }
             }
             val manifest = parseObject(read("manifest.json"))
-            require(manifest.getString("format") == "hydrion.chat" && manifest.get("version") in listOf(1, 2, 3))
+            val settings = if (application) {
+                require(manifest.getString("format") == "hydrion.app" && manifest.get("version") == 1)
+                val bytes = read("settings.json")
+                require(digest(bytes) == manifest.getString("settingsSha256"))
+                AppBackupSettings.decode(parseObject(bytes))
+            } else {
+                require(manifest.getString("format") == "hydrion.chat" && manifest.get("version") in listOf(1, 2, 3))
+                null
+            }
             val state = read("workspace.json")
             require(digest(state) == manifest.getString("workspaceSha256"))
             val json = parseObject(state)
             json.getJSONArray("history")
             json.getJSONObject("drafts")
+            if (application) {
+                val owners = json.getJSONArray("assistants")
+                require(owners.length() > 0)
+                for (i in 0 until owners.length()) {
+                    val owner = owners.getJSONObject(i)
+                    require(LocalAssistant.validPrompt(owner.optString("systemPrompt")) && LocalAssistant.validAvatar(owner.optString("avatarText")))
+                    require(owner.isNull("contextLimit") || owner.getInt("contextLimit") in LocalAssistant.ContextLimits)
+                }
+            }
             val workspace = decodeWorkspace(json)
             workspace.checkIds()
             val version = manifest.getInt("version")
-            require(version >= 2 || workspace.assistants == listOf(LocalAssistant.Default))
-            require(version >= 3 || workspace.history.none { it.contextStart != null || it.versions.isNotEmpty() })
+            require(application || version >= 2 || workspace.assistants == listOf(LocalAssistant.Default))
+            require(application || version >= 3 || workspace.history.none { it.contextStart != null || it.versions.isNotEmpty() })
             val imageMap = manifest.getJSONObject("generated")
             val generated = imageMap.keys().asSequence().associateWith { id ->
                 GeneratedImageStore.dimensions(id)
@@ -246,7 +279,7 @@ internal object ChatArchive {
                 }
                 return id
             }
-            val clean = workspace.transform({ a ->
+            val clean = workspace.transform(application, { a ->
                 require(stableId(a.id) && (a.uri != null || a.imageKey != null))
                 a.uri?.let { uri ->
                     require(uri.startsWith("blob:"))
@@ -257,8 +290,9 @@ internal object ChatArchive {
             }, ::image)
             require(usedImages == generated.keys)
             val expected = usedBlobs.mapTo(mutableSetOf()) { "blobs/$it" } + setOf("manifest.json", "workspace.json")
+            val allowed = if (application) expected + "settings.json" else expected
             val actual = entries.mapTo(mutableSetOf()) { it.name }
-            val missing = expected - actual
+            val missing = allowed - actual
             if (missing.isNotEmpty()) {
                 val attachments = clean.history.flatMap { c -> c.allStoredMessages().flatMap { it.attachments }.toList() } +
                     clean.drafts.values.flatMap { it.attachments }
@@ -267,7 +301,7 @@ internal object ChatArchive {
                 generated.filterValues { "blobs/$it" in missing }.keys.forEach(names::add)
                 throw UnreadableOriginals(names)
             }
-            require(actual == expected)
+            require(actual == allowed)
             var total = 0L
             val blobs = usedBlobs.associateWith { id ->
                 val entry = file.getEntry("blobs/$id")
@@ -282,7 +316,7 @@ internal object ChatArchive {
                 require(sha.digest().asHex() == id)
                 target
             }
-            InspectedChatArchive(clean, blobs, generated)
+            InspectedChatArchive(clean, blobs, generated, settings)
         }
     }
 }

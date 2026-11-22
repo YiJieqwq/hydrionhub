@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_backup_page">数据备份</string>
+    <string name="app_backup_label">应用备份</string>
+    <string name="app_backup_scope">包含会话、草稿、消息版本、助手及人格、可读取的附件和生成图片、模型标识与默认选择、按会话选模型和消息外观。ZIP 未加密，对话正文和附件按原样保存。自定义地址、请求模板、凭据、高级请求参数、会话的环境绑定、账户资料、语言、记忆、工具和工作区不导出。自定义服务地址需重新配置。单个媒体最大 32 MiB，合计最大 256 MiB。</string>
+    <string name="app_backup_summary">%1$d 个会话 · %2$d 份草稿 · %3$d 个助手 · %4$d 个供应商 · %5$d 个媒体文件</string>
+    <string name="app_backup_impact">下次冷启动时，备份中的会话、草稿、助手、模型目录和消息外观将替换本机对应数据。恢复前先自动保存同一范围的本机快照。确认后的新编辑不会进入替换版本。其他设置和按助手保存的记忆、工具仍留在本机。</string>
+    <string name="app_backup_restore">从备份替换数据</string>
+    <string name="app_backup_confirm">确认替换</string>
+    <string name="app_backup_pending">已准备好恢复数据。请完全退出应用并重新打开，替换才会生效。</string>
+    <string name="app_backup_cancel_pending">取消待生效的替换</string>
+    <string name="app_backup_previous">预览恢复前的本机快照</string>
+    <string name="app_backup_missing_models">备份中有 %1$d 个被引用的模型缺少定义。会话和助手仍保留原模型标识。</string>
+</resources>

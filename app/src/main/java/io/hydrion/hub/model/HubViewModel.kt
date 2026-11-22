@@ -1,6 +1,7 @@
 package io.hydrion.hub.model
 
 import android.app.Application
+import io.hydrion.hub.ui.messages.MessageStyleStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.hydrion.hub.provider.WebSearchStore
@@ -38,7 +39,9 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     internal val providers = ProviderStore(app)
     internal val webSearch = WebSearchStore(app)
     internal val environments by lazy { ProotEnvironmentStore(app) }
+    internal val appRestores = AppRestoreStore.current(app)
     private val images = GeneratedImageStore(app)
+    internal val backups by lazy { LocalChatBackup(getApplication(), images) }
     private val generation = ImageGenerationRepository(
         ChatGenerationRepository({ providers.catalog.value }, providers::sessionKey, app::responsesImageSources),
         ::prepareImage, OpenAiImagesTransport()::generate, images::saveBatch, images::discard
@@ -92,7 +95,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
                 val retained = saved.imageReferences() + session.snapshot().imageReferences() +
                     state.value.draft.attachments.mapNotNull { it.imageKey }
                 try {
-                    images.pruneUnreferenced(retained)
+                    backups.pruneIfCurrent(retained, appRestores)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
@@ -112,7 +115,37 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         return session.snapshot(includeUnsent = true)
     }
 
-    internal val backups by lazy { LocalChatBackup(getApplication(), images) }
+    internal fun appBackupSettings() = AppBackupSettings(providers.backupCatalog().portableCatalog(),
+        MessageStyleStore.shared(getApplication()).style.value)
+
+    internal suspend fun replaceFromAppBackup(preview: InspectedChatArchive) {
+        initialMediaScan.await()
+        val settings = requireNotNull(preview.settings)
+        val before = backupSnapshot()
+        check(before.history.none { c -> c.messages.any { it.status.isActive } })
+        val oldSettings = appBackupSettings()
+        withContext(Dispatchers.IO) {
+            appRestores.reclaim(getApplication())
+            check(!appRestores.pendingRestart())
+            val dest = appRestores.stage()
+            val scratch = backups.workDirectory()
+            try {
+                // The rollback ZIP owns its media, even if the old generated files are later pruned.
+                val rollback = backups.export(scratch, before, oldSettings)
+                rollback.inputStream().use { backups.inspect(scratch, it, application = true) }
+                backups.withMedia(preview) { incoming ->
+                    appRestores.prepare(dest, incoming, settings, rollback)
+                    withContext(Dispatchers.Main.immediate) {
+                        check(backupSnapshot() == before && appBackupSettings() == oldSettings)
+                        appRestores.publish(dest)
+                    }
+                }
+            } finally {
+                dest.deleteRecursively()
+                scratch.deleteRecursively()
+            }
+        }
+    }
 
     internal suspend fun applyBackup(preview: InspectedChatArchive) {
         initialMediaScan.await()

@@ -58,8 +58,12 @@ internal fun installBackupFile(source: File, dest: File) {
 }
 
 internal class LocalChatBackup(private val app: Context, private val images: GeneratedImageStore) {
-    private val rollback = File(app.noBackupFilesDir, "chat-import-undo.json")
-    private val importLock = Mutex()
+    private val rollback = File(AppRestoreStore.current(app).directory ?: app.noBackupFilesDir, "chat-import-undo.json")
+    private companion object { val importLock = Mutex() }
+
+    suspend fun pruneIfCurrent(retained: Set<String>, location: AppRestoreStore) = importLock.withLock {
+        if (!location.pendingRestart()) images.pruneUnreferenced(retained)
+    }
 
     fun workDirectory(): File {
         val root = File(app.cacheDir, "chat-transfer")
@@ -75,24 +79,28 @@ internal class LocalChatBackup(private val app: Context, private val images: Gen
         return Files.createTempDirectory(root.toPath(), "stage-").toFile()
     }
     /** Reconnect a document picker result after Android recreates the settings screen. */
-    fun preparedExport(name: String?): File? {
+    fun preparedExport(name: String?, application: Boolean = false): File? {
         if (name == null || !name.matches(Regex("stage-[A-Za-z0-9_-]+"))) return null
         val root = File(app.cacheDir, "chat-transfer")
         val dir = File(root, name)
-        val file = File(dir, "chats.zip")
+        val file = File(dir, if (application) "application.zip" else "chats.zip")
         return file.takeIf { Files.isDirectory(root.toPath(), NOFOLLOW_LINKS) &&
             Files.isDirectory(dir.toPath(), NOFOLLOW_LINKS) && Files.isRegularFile(it.toPath(), NOFOLLOW_LINKS) }
     }
 
     fun hasRollback() = rollback.isFile
 
-    suspend fun export(work: File, state: SavedWorkspace) = ChatArchive.export(work, state, { raw ->
+    suspend fun export(work: File, state: SavedWorkspace, settings: AppBackupSettings? = null) = ChatArchive.write(work, state, settings, { raw ->
         requireNotNull(app.contentResolver.openInputStream(Uri.parse(raw)))
     }, images::copyPng)
 
-    suspend fun inspect(work: File, uri: Uri): InspectedChatArchive {
+    suspend fun inspect(work: File, uri: Uri, application: Boolean = false): InspectedChatArchive {
         require(uri.scheme == "content")
-        val archive = requireNotNull(app.contentResolver.openInputStream(uri)).use { ChatArchive.inspect(work, it) }
+        return requireNotNull(app.contentResolver.openInputStream(uri)).use { inspect(work, it, application) }
+    }
+
+    suspend fun inspect(work: File, input: InputStream, application: Boolean): InspectedChatArchive {
+        val archive = ChatArchive.inspect(work, input, application)
         for ((key, sha) in archive.generated) images.checkArchivePng(key, archive.blobs.getValue(sha))
         return archive
     }

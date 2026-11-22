@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_backup_page">Data backup</string>
+    <string name="app_backup_label">Application backup</string>
+    <string name="app_backup_scope">Saves chats, drafts, versions, assistants and their prompts, readable attachments and generated images, model identities and defaults, per-chat selection and message appearance. This ZIP is unencrypted. Chat text and attachments are included as written. Custom endpoints, request templates, credentials, advanced request options, environment bindings, account profile, language, memory, tools and workspaces are excluded. Custom endpoints need configuring again. Media limits: 32 MiB per file, 256 MiB total.</string>
+    <string name="app_backup_summary">%1$d chats · %2$d drafts · %3$d assistants · %4$d providers · %5$d media files</string>
+    <string name="app_backup_impact">At the next cold start, the imported chats, drafts, assistants, model catalog and message appearance will replace the current ones. A local copy of the current backup scope is saved first. Edits made after confirmation do not enter the replacement. Other settings and assistant-scoped notes and tools stay on this device.</string>
+    <string name="app_backup_restore">Replace from backup</string>
+    <string name="app_backup_confirm">Confirm replacement</string>
+    <string name="app_backup_pending">Replacement is ready. Fully close the app and reopen it to use the restored data.</string>
+    <string name="app_backup_cancel_pending">Cancel pending replacement</string>
+    <string name="app_backup_previous">Preview the pre-restore snapshot</string>
+    <string name="app_backup_missing_models">%1$d referenced models have no definition in this backup. Their IDs are retained in chats and assistants.</string>
+</resources>

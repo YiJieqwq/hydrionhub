@@ -1,6 +1,7 @@
 package io.hydrion.hub.provider
 
 import android.content.Context
+import io.hydrion.hub.model.AppRestoreStore
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
 import java.util.UUID
@@ -13,7 +14,9 @@ private const val DEEPSEEK_CATALOG_FORMAT = 4
 private const val CATALOG_FORMAT = 6
 
 class ProviderStore(context: Context) {
-    private val preferences = context.applicationContext.getSharedPreferences("model_catalog_v1", Context.MODE_PRIVATE)
+    private val location = AppRestoreStore.current(context)
+    private val preferences = context.applicationContext.getSharedPreferences(location.preference("model_catalog_v1"), Context.MODE_PRIVATE)
+    internal fun backupCatalog() = stored
     private var storageKey = "catalog"
     private var stored = loadCatalog()
     private var conversationRoutes: Map<Mode, RemoteModel>? = null
@@ -49,7 +52,7 @@ class ProviderStore(context: Context) {
     }
 
     private fun loadCatalog(): ModelCatalog {
-        val raw = preferences.getString("catalog", null) ?: return demoCatalog().withDeepSeekPreset()
+        val raw = preferences.getString("catalog", null) ?: return location.initialSettings()?.catalog ?: demoCatalog().withDeepSeekPreset()
         val json = runCatching { JSONObject(raw) }.getOrNull()
         val loaded = json?.let { runCatching { decodeCatalog(it) }.getOrNull() }
         if (json == null || loaded == null || json.optInt("formatVersion") > CATALOG_FORMAT) {

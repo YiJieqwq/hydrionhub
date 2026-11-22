@@ -1,6 +1,7 @@
 package io.hydrion.hub.ui.messages
 
 import android.content.Context
+import io.hydrion.hub.model.AppRestoreStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -97,8 +98,11 @@ internal fun readMessageStyle(fields: Map<String, *>, fallback: MessageStyle = M
 }
 
 class MessageStyleStore(context: Context) {
-    private val preferences = context.applicationContext.getSharedPreferences("message_style", Context.MODE_PRIVATE)
-    private val mutable = MutableStateFlow(readMessageStyle(preferences.all))
+    private val location = AppRestoreStore.current(context)
+    private val preferences = context.applicationContext.getSharedPreferences(location.preference("message_style"), Context.MODE_PRIVATE)
+    private val mutable = MutableStateFlow(readMessageStyle(preferences.all.ifEmpty {
+        location.initialSettings()?.appearance?.toPreferences().orEmpty()
+    }))
     val style: StateFlow<MessageStyle> = mutable.asStateFlow()
 
     @Synchronized
