@@ -95,16 +95,26 @@ internal fun MessageCard(
     }
 }
 
+internal fun chatBubbleShape(role: Role) = RoundedCornerShape(
+    topStart = if (role == Role.Assistant) 6.dp else 24.dp,
+    topEnd = if (role == Role.User) 6.dp else 24.dp,
+    bottomStart = 24.dp, bottomEnd = 24.dp
+)
+
 @Composable
-internal fun AssistantBody(text: String, query: String) {
+internal fun AssistantBody(text: String, query: String, mode: Mode) {
     val style = LocalMessageStyle.current
     val colors = style.renderPalette.assistant
     if (style.assistantBubble) {
-        MessageCard(colors, Modifier.testTag("message-assistant-body"), shape = RoundedCornerShape(19.dp)) {
-            Box(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) { MarkdownBody(text, query) }
+        val chat = mode == Mode.Chat
+        val shape = if (chat) chatBubbleShape(Role.Assistant) else RoundedCornerShape(19.dp)
+        MessageCard(colors, Modifier.testTag("message-assistant-body"), shape = shape) {
+            Box(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                MarkdownBody(text, query, if (chat) Modifier else Modifier.fillMaxWidth())
+            }
         }
     } else CompositionLocalProvider(LocalContentColor provides colors.text.messageColor()) {
-        Box(Modifier.testTag("message-assistant-body")) { MarkdownBody(text, query) }
+        Box(Modifier.testTag("message-assistant-body")) { MarkdownBody(text, query, Modifier.fillMaxWidth()) }
     }
 }
 
@@ -118,7 +128,7 @@ fun MessageStylePreview(style: MessageStyle, modifier: Modifier = Modifier) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) { UserBubble(user, "", Mode.Chat) }
             Thought(assistant, "", expanded) { expanded = !expanded }
-            AssistantBody(assistant.text, "")
+            AssistantBody(assistant.text, "", Mode.Chat)
         }
     }
 }

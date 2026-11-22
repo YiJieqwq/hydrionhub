@@ -16,6 +16,8 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
@@ -119,11 +121,12 @@ class ChatTurnActionsTest {
 
         turnControl(0, userCopy).performClick()
         awaitClipboard { it == prompt }
-        turnControl(0, hasContentDescription(screen.activity.getString(R.string.turn_edit))).performClick()
+        turnControl(0, hasTestTag("message-user-bubble")).performClick()
         screen.onNode(hasSetTextAction() and hasText(prompt)).performTextReplacement("discarded")
         screen.onNodeWithText(screen.activity.getString(R.string.settings_cancel)).performClick()
         turnControl(0, hasText(prompt))
-        turnControl(0, hasContentDescription(screen.activity.getString(R.string.turn_edit))).performClick()
+        turnControl(0, hasTestTag("message-user-bubble")).performTouchInput { longClick() }
+        screen.onNodeWithText(screen.activity.getString(R.string.turn_edit)).performScrollTo().performClick()
         screen.onNode(hasSetTextAction() and hasText(prompt)).performTextReplacement(edited)
         screen.onNodeWithText(screen.activity.getString(R.string.settings_save)).assertIsEnabled().performClick()
         turnControl(0, hasText(edited))
@@ -134,6 +137,12 @@ class ChatTurnActionsTest {
         turnControl(1, hasContentDescription(screen.activity.getString(R.string.turn_retry))).performClick()
         screen.onNodeWithText(screen.activity.getString(R.string.turn_retry)).performClick()
         awaitReply(edited)
+        val replyId = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java].state.value.current.messages.last().id }
+        val inReply = hasAnyAncestor(hasTestTag("message-turn-$replyId"))
+        turnControl(1, inReply and hasContentDescription(screen.activity.getString(R.string.turn_previous))).performClick()
+        turnControl(1, inReply and hasText("「$prompt」", substring = true))
+        turnControl(1, inReply and hasContentDescription(screen.activity.getString(R.string.turn_next))).performClick()
+        turnControl(1, hasText("「$edited」", substring = true))
         turnControl(1, hasContentDescription(screen.activity.getString(R.string.turn_copy_reply))).performClick()
         awaitClipboard { it.contains("「$edited」") }
 

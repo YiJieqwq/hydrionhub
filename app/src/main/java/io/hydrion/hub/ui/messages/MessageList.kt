@@ -37,7 +37,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -129,7 +128,7 @@ fun MessageList(
         } else Modifier
         LazyColumn(
             state = list, modifier = Modifier.fillMaxSize().testTag("message-timeline").then(edges), contentPadding = padding,
-            verticalArrangement = Arrangement.spacedBy(if (state.current.mode == Mode.Chat) 24.dp else 14.dp)
+            verticalArrangement = Arrangement.spacedBy(if (state.current.mode == Mode.Chat) 12.dp else 14.dp)
         ) {
             itemsIndexed(messages, key = { _, msg -> msg.id }, contentType = { _, msg -> msg.role }) { _, msg ->
                 val selected = msg.id == match
@@ -207,32 +206,30 @@ private fun UserTurn(msg: Message, chat: Conversation, query: String, vm: HubVie
     open: (Message, TurnSheet) -> Unit) {
     val mode = chat.mode
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(if (mode == Mode.Chat) 4.dp else 0.dp)) {
         if (mode == Mode.Chat) {
             val context = LocalContext.current
             val profile by remember(context) { LocalProfileStore.shared(context).profile }.collectAsState()
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(Modifier.weight(1f, fill = false), horizontalAlignment = Alignment.End) {
-                    Text(profile.name.ifBlank { stringResource(R.string.drawer_you) }, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                    Text(messageTime(msg.createdAt), fontSize = 11.sp, color = colors.onSurfaceVariant)
-                }
-                ProfileAvatar(profile, Modifier.size(30.dp))
+                Text(profile.name.ifBlank { stringResource(R.string.drawer_you) }, Modifier.weight(1f, fill = false),
+                    style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                ProfileAvatar(profile, Modifier.size(28.dp))
             }
-            Spacer(Modifier.height(8.dp))
             if (msg.attachments.isNotEmpty()) {
-                Column(Modifier.widthIn(max = (LocalConfiguration.current.screenWidthDp * .75f).dp),
-                    horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.padding(start = 24.dp), horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     msg.attachments.forEach { MessageAttachment(it, query) }
                 }
-                Spacer(Modifier.height(8.dp))
             }
-            ChatTurnActions(msg, chat, vm, busy, open) { showMenu ->
-                if (msg.text.isNotEmpty()) UserBubble(msg, query, mode, Modifier.combinedClickable(
-                    onClickLabel = stringResource(R.string.turn_more), onClick = showMenu,
-                    onLongClickLabel = stringResource(R.string.turn_more), onLongClick = showMenu
+            if (msg.text.isNotEmpty()) {
+                UserBubble(msg, query, mode, Modifier.combinedClickable(
+                    onClickLabel = stringResource(if (busy) R.string.turn_more else R.string.turn_edit),
+                    onClick = { open(msg, if (busy) TurnSheet.More else TurnSheet.Edit) },
+                    onLongClickLabel = stringResource(R.string.turn_more), onLongClick = { open(msg, TurnSheet.More) }
                 ))
             }
+            ChatTurnActions(msg, chat, vm, busy, open)
         } else {
             UserBubble(msg, query, mode)
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -245,15 +242,17 @@ private fun UserTurn(msg: Message, chat: Conversation, query: String, vm: HubVie
 
 @Composable
 internal fun UserBubble(msg: Message, query: String, mode: Mode, modifier: Modifier = Modifier) {
-    val bubble = if (mode == Mode.Chat) RoundedCornerShape(16.dp) else RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
-    val available = LocalConfiguration.current.screenWidthDp
-    val width = if (mode == Mode.Chat) .75f else .81f
+    val chat = mode == Mode.Chat
+    val bubble = if (chat) chatBubbleShape(Role.User) else RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
+    val bounds = if (chat) Modifier.padding(start = 24.dp)
+        else Modifier.widthIn(max = (LocalConfiguration.current.screenWidthDp * .81f).dp)
     MessageCard(
         colors = LocalMessageStyle.current.renderPalette.user,
-        modifier = Modifier.widthIn(max = (available * width).dp).testTag("message-user-bubble").clip(bubble).then(modifier),
+        modifier = bounds.testTag("message-user-bubble").clip(bubble).then(modifier),
         shape = bubble
     ) {
-        Column(Modifier.padding(if (mode == Mode.Chat) PaddingValues(12.dp) else PaddingValues(horizontal = 16.dp, vertical = 10.dp)), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(horizontal = if (chat) 14.dp else 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (mode == Mode.Image) msg.attachments.forEach { MessageAttachment(it, query) }
             if (msg.text.isNotEmpty()) {
                 val text = highlighted(msg.text, query)
@@ -269,8 +268,8 @@ private fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: H
     open: (Message, TurnSheet) -> Unit) {
     val mode = chat.mode
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().padding(horizontal = if (mode == Mode.Chat) 4.dp else 0.dp),
-        verticalArrangement = Arrangement.spacedBy(if (mode == Mode.Chat) 8.dp else 7.dp)) {
+    Column(Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(if (mode == Mode.Chat) 4.dp else 7.dp)) {
         if (mode == Mode.Image) Row(verticalAlignment = Alignment.CenterVertically) {
             IonMark(26.dp)
             Spacer(Modifier.width(8.dp))
@@ -280,17 +279,13 @@ private fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: H
             ImageMessageActions(msg, vm, busy)
         } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (msg.remoteModel?.providerId == DEEPSEEK_PROVIDER_ID) {
-                Box(Modifier.size(30.dp).clip(CircleShape).background(colors.surfaceContainerHigh),
+                Box(Modifier.size(28.dp).clip(CircleShape).background(colors.surfaceContainerHigh),
                     contentAlignment = Alignment.Center) {
                     Image(painterResource(R.drawable.deepseek_whale), "DeepSeek", Modifier.size(21.dp))
                 }
-            } else IonMark(30.dp)
-            Column(Modifier.weight(1f)) {
-                Text(msg.model.ifBlank { "HydrionHub" }, style = MaterialTheme.typography.labelMedium,
-                    fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(messageTime(msg.createdAt), color = colors.onSurfaceVariant, fontSize = 11.sp,
-                    style = MaterialTheme.typography.labelSmall)
-            }
+            } else IonMark(28.dp)
+            Text(msg.model.ifBlank { "HydrionHub" }, style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         val thinking = msg.remoteModel != null && msg.status.isActive && msg.text.isEmpty()
         var thoughtExpanded by rememberSaveable(msg.id, query, thinking) {
@@ -308,7 +303,7 @@ private fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: H
                 }
             }
         }
-        if (msg.text.isNotBlank()) AssistantBody(msg.text, query)
+        if (msg.text.isNotBlank()) AssistantBody(msg.text, query, mode)
         if (msg.imageKeys.isNotEmpty()) ImageResult(msg, query, vm, busy, showRegenerate = mode == Mode.Image)
         when (msg.status) {
             Generation.Sending, Generation.Generating -> Row(

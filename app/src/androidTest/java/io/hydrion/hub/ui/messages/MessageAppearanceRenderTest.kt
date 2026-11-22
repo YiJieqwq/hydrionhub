@@ -1,6 +1,20 @@
 package io.hydrion.hub.ui.messages
 
 import android.graphics.Color.parseColor
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
+import io.hydrion.hub.model.Message
+import io.hydrion.hub.model.Mode
+import io.hydrion.hub.model.Role
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
@@ -37,6 +51,36 @@ class MessageAppearanceRenderTest {
             val vm = ViewModelProvider(activity)[HubViewModel::class.java]
             vm.state.value.history.find { it.title == prompt }?.let { vm.deleteConversation(it.id) }
         }
+    }
+
+    @Test fun chatBubblesWrapShortTextAndKeepTheirRoleEdgeInANarrowList() {
+        val text = mutableStateOf("Hi")
+        screen.runOnUiThread {
+            screen.activity.setContent {
+                Box(Modifier.fillMaxSize()) {
+                    MessageCanvas(MessageStyle(assistantBubble = true), Modifier.width(240.dp).testTag("narrow-list")) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                                UserBubble(Message(role = Role.User, text = text.value), "", Mode.Chat)
+                            }
+                            AssistantBody(text.value, "", Mode.Chat)
+                        }
+                    }
+                }
+            }
+        }
+        fun bounds(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val list = bounds("narrow-list")
+        val user = bounds("message-user-bubble")
+        val assistant = bounds("message-assistant-body")
+        assertEquals(list.right, user.right, 1f)
+        assertEquals(list.left, assistant.left, 1f)
+        assertTrue(user.width < list.width / 2 && assistant.width < list.width / 2)
+
+        screen.runOnIdle { text.value = "A longer sentence for the same narrow list. ".repeat(3) }
+        val longUser = bounds("message-user-bubble")
+        assertEquals(list.right, longUser.right, 1f)
+        assertEquals(list.left + with(screen.density) { 24.dp.toPx() }, longUser.left, 1f)
     }
 
     private fun apply(style: MessageStyle) {

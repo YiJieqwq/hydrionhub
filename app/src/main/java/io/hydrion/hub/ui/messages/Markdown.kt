@@ -117,10 +117,10 @@ private fun Paragraph(value: String, query: String) {
 }
 
 @Composable
-internal fun MarkdownBody(value: String, query: String) {
+internal fun MarkdownBody(value: String, query: String, modifier: Modifier) {
     val parsed = remember(value) { markdownBlocks(value) }
     SelectionContainer {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             parsed.forEach { block ->
                 when (block) {
                     is MarkdownBlock.Paragraph -> Paragraph(block.value, query)
