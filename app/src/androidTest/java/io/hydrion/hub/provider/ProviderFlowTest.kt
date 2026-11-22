@@ -36,7 +36,7 @@ class ProviderFlowTest {
         screen.onNodeWithContentDescription(screen.activity.getString(R.string.search_provider_name)).performTextReplacement(providerName)
         screen.onNode(hasText(screen.activity.getString(R.string.chat_picker_models)) and SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)).performClick()
         // Wait for the editor keyboard and sheet windows to transition before typing.
-        screen.onNodeWithText(screen.activity.getString(R.string.chat_controls_select_model)).assertIsDisplayed().performSemanticsAction(SemanticsActions.OnClick)
+        screen.onNodeWithText(screen.activity.getString(R.string.provider_models_local_presets)).assertIsDisplayed().performSemanticsAction(SemanticsActions.OnClick)
         screen.waitUntil(15_000) { screen.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1 }
         screen.onNode(hasSetTextAction()).performTextInput("Standard")
         val add = hasContentDescription(screen.activity.getString(R.string.model_add_named, sampleName))

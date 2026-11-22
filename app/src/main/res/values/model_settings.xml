@@ -40,6 +40,7 @@
     <string name="model_invalid_service">Invalid service address</string>
     <string name="model_remove_provider">Delete provider</string>
     <string name="model_protocol_type">Protocol type</string>
+    <string name="model_protocol_local">Local simulation</string>
     <string name="model_json_body">Custom request body</string>
     <string name="model_json_template">JSON template</string>
     <string name="model_preview_body">Preview request body</string>

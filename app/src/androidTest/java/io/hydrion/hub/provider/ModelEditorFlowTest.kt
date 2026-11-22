@@ -37,7 +37,7 @@ class ModelEditorFlowTest {
         ui.onNodeWithContentDescription(ui.activity.getString(R.string.model_settings_add_provider)).performClick()
         ui.onNodeWithContentDescription(ui.activity.getString(R.string.search_provider_name)).performTextReplacement(providerName)
         tab(ui.activity.getString(R.string.chat_picker_models)).performClick()
-        ui.onNodeWithText(ui.activity.getString(R.string.model_add)).performSemanticsAction(SemanticsActions.OnClick)
+        ui.onNodeWithText(ui.activity.getString(R.string.provider_models_add_by_id)).performSemanticsAction(SemanticsActions.OnClick)
         ui.onNodeWithContentDescription(ui.activity.getString(R.string.model_id)).performScrollTo().performTextReplacement(modelId)
         ui.onNodeWithContentDescription(ui.activity.getString(R.string.model_name)).performScrollTo().performTextReplacement(modelName)
         tab(ui.activity.getString(R.string.model_tab_reasoning)).performClick()

@@ -40,6 +40,7 @@
     <string name="model_invalid_service">服务地址无效</string>
     <string name="model_remove_provider">删除供应商</string>
     <string name="model_protocol_type">协议类型</string>
+    <string name="model_protocol_local">本地模拟</string>
     <string name="model_json_body">自定义请求体</string>
     <string name="model_json_template">JSON 模板</string>
     <string name="model_preview_body">预览请求体</string>

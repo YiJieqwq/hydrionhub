@@ -104,10 +104,13 @@ internal fun ProviderEditor(store: ProviderStore, edit: ProviderDraft, onBack: (
     }
 }
 
-private fun validateProvider(provider: Provider, sample: Map<String, Any>): Int? {
+internal fun validateProvider(provider: Provider, sample: Map<String, Any>): Int? {
     if (provider.name.isBlank()) return R.string.model_enter_provider
     if (provider.protocol.isBlank()) return R.string.model_enter_protocol
     if (provider.baseUrl.isNotEmpty()) {
+        if (provider.chatProtocol() != null) {
+            return provider.chatProtocolIssue()?.let { R.string.model_invalid_service }
+        }
         val uri = runCatching { URI(provider.baseUrl) }.getOrNull()
         if (uri?.scheme?.lowercase() !in setOf("http", "https") || uri?.host.isNullOrBlank()) {
             return R.string.model_valid_url

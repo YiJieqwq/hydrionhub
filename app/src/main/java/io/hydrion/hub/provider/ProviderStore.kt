@@ -13,9 +13,24 @@ import org.json.JSONObject
 private const val DEEPSEEK_CATALOG_FORMAT = 4
 private const val CATALOG_FORMAT = 6
 
-class ProviderStore(context: Context) {
+internal interface ProviderCatalogStorage {
+    fun read(key: String): String?
+    fun write(key: String, value: String)
+    fun initialCatalog(): ModelCatalog?
+}
+
+private class AndroidProviderCatalogStorage(context: Context) : ProviderCatalogStorage {
     private val location = AppRestoreStore.current(context)
     private val preferences = context.applicationContext.getSharedPreferences(location.preference("model_catalog_v1"), Context.MODE_PRIVATE)
+
+    override fun read(key: String): String? = preferences.getString(key, null)
+    override fun write(key: String, value: String) = preferences.edit().putString(key, value).apply()
+    override fun initialCatalog(): ModelCatalog? = location.initialSettings()?.catalog
+}
+
+class ProviderStore internal constructor(private val storage: ProviderCatalogStorage) {
+    constructor(context: Context) : this(AndroidProviderCatalogStorage(context))
+
     internal fun backupCatalog() = stored
     private var storageKey = "catalog"
     private var stored = loadCatalog()
@@ -52,17 +67,17 @@ class ProviderStore(context: Context) {
     }
 
     private fun loadCatalog(): ModelCatalog {
-        val raw = preferences.getString("catalog", null) ?: return location.initialSettings()?.catalog ?: demoCatalog().withDeepSeekPreset()
+        val raw = storage.read("catalog") ?: return storage.initialCatalog() ?: demoCatalog().withDeepSeekPreset()
         val json = runCatching { JSONObject(raw) }.getOrNull()
         val loaded = json?.let { runCatching { decodeCatalog(it) }.getOrNull() }
         if (json == null || loaded == null || json.optInt("formatVersion") > CATALOG_FORMAT) {
             // A downgrade may encounter a newer schema. Keep the original and any unknown fields intact.
             storageKey = "catalog_compat_v${CATALOG_FORMAT}_${UUID.nameUUIDFromBytes(raw.toByteArray(Charsets.UTF_8))}"
-            val compatible = preferences.getString(storageKey, null)
+            val compatible = storage.read(storageKey)
             return compatible?.let { runCatching { decodeCatalog(it) }.getOrNull() } ?: loaded ?: ModelCatalog(emptyList())
         }
         if (json.optInt("formatVersion") < CATALOG_FORMAT) {
-            preferences.edit().putString(storageKey, encodeCatalog(loaded).toString()).apply()
+            storage.write(storageKey, encodeCatalog(loaded).toString())
         }
         return loaded
     }
@@ -128,7 +143,7 @@ class ProviderStore(context: Context) {
 
     private fun update(catalog: ModelCatalog) {
         val next = catalog.normalized()
-        preferences.edit().putString(storageKey, encodeCatalog(next).toString()).apply()
+        storage.write(storageKey, encodeCatalog(next).toString())
         stored = next
         showRoutes(conversationRoutes, assistantDefault)
     }

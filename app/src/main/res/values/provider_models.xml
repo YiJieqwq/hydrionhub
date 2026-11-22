@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="provider_models_add_by_id">Add by model ID</string>
+    <string name="provider_models_local_presets">Local presets</string>
+</resources>

@@ -1,6 +1,8 @@
 package io.hydrion.hub.ui
 
+import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubState
+import io.hydrion.hub.model.ImageInvocation
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
@@ -18,6 +20,7 @@ import io.hydrion.hub.provider.localRequest
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.provider.chatProtocolIssue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 
 internal fun HubState.canSendDraft(submitted: HubState, liveCatalog: ModelCatalog, submittedCatalog: ModelCatalog): Boolean =
@@ -27,9 +30,24 @@ internal fun HubState.canSendDraft(submitted: HubState, liveCatalog: ModelCatalo
 /** Validate the selection shown in the composer, preserving the draft on configuration errors. */
 internal suspend fun sendDraft(
     vm: HubViewModel, providers: ProviderStore, before: HubState, catalog: ModelCatalog, fromDictation: Boolean,
+): String? = sendDraft(providers, before, catalog, vm.state,
+    localSearchEnabled = { vm.webSearch.settings.value.localEnabled },
+    validateImage = vm::validateImage,
+) { model, parameters, image, remoteModel ->
+    vm.send(model, parameters, image = image, remoteModel = remoteModel, restoreDraftOnError = fromDictation)
+}
+
+internal suspend fun sendDraft(
+    providers: ProviderStore,
+    before: HubState,
+    catalog: ModelCatalog,
+    state: StateFlow<HubState>,
+    localSearchEnabled: () -> Boolean,
+    validateImage: (ImageInvocation, String, List<Attachment>) -> Unit,
+    send: (String, Map<String, String>, ImageInvocation?, RemoteModel?) -> Unit,
 ): String? {
     val mode = before.current.mode
-    fun stillCurrent() = vm.state.value.canSendDraft(before, providers.catalog.value, catalog)
+    fun stillCurrent() = state.value.canSendDraft(before, providers.catalog.value, catalog)
     if (!stillCurrent()) return null
     val (model, provider) = catalog.selectedEntry(mode)
         ?: return if (mode == Mode.Image) IMAGE_MODEL_REQUIRED else "请在设置中启用供应商并添加模型。"
@@ -40,11 +58,10 @@ internal suspend fun sendDraft(
         provider.chatKeyIssue(model, providers.sessionKey(provider.id))?.let { return it }
         val selection = catalog.selection(mode)
         val parameters = selection.parameters + mapOf("model" to model.externalModelId, CHAT_PROTOCOL_PARAMETER to protocol.name)
-        vm.send(selection.label, parameters,
-            remoteModel = RemoteModel(provider.id, model.id), restoreDraftOnError = fromDictation)
+        send(selection.label, parameters, null, RemoteModel(provider.id, model.id))
         return null
     }
-    val tool = selectedTool(mode, before.draft, vm.webSearch.settings.value.localEnabled)
+    val tool = selectedTool(mode, before.draft, localSearchEnabled())
     val imageTool = tool?.startsWith("图片生成") == true
     if (imageTool && catalog.selectedEntry(Mode.Image) == null) return IMAGE_MODEL_REQUIRED
     if (tool != null && model.profile.type != null && "tools" !in model.profile.abilities)
@@ -71,11 +88,11 @@ internal suspend fun sendDraft(
     val (selection, image) = prepared.getOrElse { return it.message ?: "请求未发送，请检查模型设置。" }
     if (image != null) {
         try {
-            vm.validateImage(image, before.draft.text.trim(), before.draft.attachments)
+            validateImage(image, before.draft.text.trim(), before.draft.attachments)
         } catch (invalid: IllegalArgumentException) {
             return invalid.message ?: "请检查图像供应商设置。"
         }
     }
-    vm.send(selection.label, selection.parameters, image = image, restoreDraftOnError = fromDictation)
+    send(selection.label, selection.parameters, image, null)
     return null
 }

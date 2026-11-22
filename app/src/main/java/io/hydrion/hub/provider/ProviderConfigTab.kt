@@ -46,8 +46,13 @@ internal fun ProviderConfigTab(
         Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(16.dp)) {
             Column {
                 ManageSwitch(stringResource(R.string.model_provider_enable), Icons.Outlined.PowerSettingsNew, provider.enabled) { onUpdate(provider.copy(enabled = it)) }
-                ManageLink(stringResource(R.string.model_api_protocol), Icons.Outlined.Cable, provider.protocol,
-                    if (provider.id == DEEPSEEK_PROVIDER_ID) null else { { protocolDialog = true } })
+                if (provider.mode == Mode.Chat && provider.id != DEEPSEEK_PROVIDER_ID) {
+                    ChatProtocolMenu(provider, onPick = { onUpdate(provider.copy(protocol = it)) },
+                        onCustom = { protocolDialog = true })
+                } else {
+                    ManageLink(stringResource(R.string.model_api_protocol), Icons.Outlined.Cable, provider.protocol,
+                        if (provider.id == DEEPSEEK_PROVIDER_ID) null else { { protocolDialog = true } })
+                }
                 ManageLink(stringResource(R.string.model_manage_models), Icons.Outlined.ViewInAr, provider.models.size.toString(), onModels)
             }
         }
@@ -87,6 +92,32 @@ internal fun ProviderConfigTab(
                 onUpdate(provider.copy(protocol = protocol.trim()))
                 protocolDialog = false
             }) { Text(stringResource(R.string.model_done)) } })
+    }
+}
+
+@Composable
+private fun ChatProtocolMenu(provider: Provider, onPick: (String) -> Unit, onCustom: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val localLabel = stringResource(R.string.model_protocol_local)
+    val current = provider.protocol.trim()
+    val options = if (provider.id == "demo-chat") emptyList() else ChatProtocol.entries.map { it.label to it.label }
+    Box {
+        ManageLink(stringResource(R.string.model_api_protocol), Icons.Outlined.Cable,
+            if (current.equals("local", ignoreCase = true)) localLabel else provider.protocol) { expanded = true }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            (options + ("local" to localLabel)).forEach { (protocol, label) ->
+                DropdownMenuItem(text = { Text(label) }, trailingIcon = if (current.equals(protocol, ignoreCase = true)) {
+                    { Icon(Icons.Outlined.Check, null) }
+                } else null, onClick = {
+                    expanded = false
+                    onPick(protocol)
+                })
+            }
+            DropdownMenuItem(text = { Text(stringResource(R.string.model_custom_entry)) }, onClick = {
+                expanded = false
+                onCustom()
+            })
+        }
     }
 }
 

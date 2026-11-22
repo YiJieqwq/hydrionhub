@@ -29,6 +29,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.hydrion.hub.model.Mode
 import java.util.UUID
 
+internal fun newProvider(mode: Mode): Provider = Provider(
+    id = UUID.randomUUID().toString(),
+    mode = mode,
+    name = "",
+    protocol = if (mode == Mode.Chat) ChatProtocol.ChatCompletionsHttp.label else "OpenAI Images",
+    baseUrl = "",
+    models = emptyList(),
+)
+
 @Composable
 fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
     val catalog by store.catalog.collectAsState()
@@ -51,8 +60,7 @@ fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
                 ProviderEditor(store, edit, onBack = { navigation.edit = null })
             }
             currentMode != null -> ModelProviderPage(currentMode, catalog, goBack, onAdd = {
-                navigation.open(Provider(UUID.randomUUID().toString(), currentMode, "",
-                    if (currentMode == Mode.Chat) "OpenAI Compatible" else "OpenAI Images", "", emptyList()), store)
+                navigation.open(newProvider(currentMode), store)
             }, onMove = store::moveChatProvider, onOpen = { navigation.open(it, store) })
             detail == SettingsEntry.Defaults -> DefaultModelsPage(store, catalog, goBack)
             detail == SettingsEntry.Search -> SearchProvidersPage(viewModel<io.hydrion.hub.model.HubViewModel>().webSearch, goBack)

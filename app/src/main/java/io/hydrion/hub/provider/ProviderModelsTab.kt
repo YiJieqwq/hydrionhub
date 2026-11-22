@@ -37,6 +37,8 @@ internal fun ProviderModelsTab(
     modifier: Modifier = Modifier
 ) {
     var choosing by rememberSaveable(provider.id) { mutableStateOf(false) }
+    val customOnlineChat = provider.id != DEEPSEEK_PROVIDER_ID && provider.chatProtocol() != null
+    val presetLabel = if (customOnlineChat) R.string.provider_models_local_presets else R.string.chat_controls_select_model
     Box(modifier.fillMaxSize()) {
         if (provider.models.isEmpty()) {
             Text(stringResource(R.string.model_none_added), Modifier.align(Alignment.Center),
@@ -59,21 +61,27 @@ internal fun ProviderModelsTab(
             shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Row(Modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { choosing = true }) {
-                    Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, null, Modifier.size(19.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.chat_controls_select_model))
+                val addModel: @Composable () -> Unit = {
+                    TextButton(onClick = { onEdit(ProviderModel(UUID.randomUUID().toString(), "")) }) {
+                        Icon(Icons.Outlined.Add, null, Modifier.size(19.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(if (customOnlineChat) R.string.provider_models_add_by_id else R.string.model_add))
+                    }
                 }
+                val localPresets: @Composable () -> Unit = {
+                    TextButton(onClick = { choosing = true }) {
+                        Icon(Icons.AutoMirrored.Outlined.PlaylistAdd, null, Modifier.size(19.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(presetLabel))
+                    }
+                }
+                if (customOnlineChat) addModel() else localPresets()
                 VerticalDivider(Modifier.height(18.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                TextButton(onClick = { onEdit(ProviderModel(UUID.randomUUID().toString(), "")) }) {
-                    Icon(Icons.Outlined.Add, null, Modifier.size(19.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.model_add))
-                }
+                if (customOnlineChat) localPresets() else addModel()
             }
         }
     }
-    if (choosing) LocalModelPicker(provider, defaultIds, onModelsChange) { choosing = false }
+    if (choosing) LocalModelPicker(provider, defaultIds, stringResource(presetLabel), onModelsChange) { choosing = false }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -122,6 +130,7 @@ private fun ModelTag(label: String, primary: Boolean = false) {
 private fun LocalModelPicker(
     provider: Provider,
     defaultIds: Set<String>,
+    title: String,
     onModelsChange: (List<ProviderModel>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -138,7 +147,7 @@ private fun LocalModelPicker(
     ) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.82f).padding(horizontal = 16.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.chat_controls_select_model), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                 TextButton(onClick = onDismiss) { Text(stringResource(R.string.model_done)) }
             }
             Text(if (provider.id == DEEPSEEK_PROVIDER_ID) stringResource(R.string.model_deepseek_presets) else stringResource(R.string.model_local_catalog), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
