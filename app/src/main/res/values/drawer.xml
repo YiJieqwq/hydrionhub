@@ -52,4 +52,13 @@
     <string name="drawer_group_name">Group name</string>
     <string name="drawer_ungrouped">Ungrouped</string>
     <string name="drawer_move_short">Move</string>
+    <string name="history_archived">Archived chats</string>
+    <string name="history_archive_filter">Show archived chats</string>
+    <string name="history_show_active">Show active chats</string>
+    <string name="history_archive">Archive</string>
+    <string name="history_restore">Restore</string>
+    <string name="history_confirm_archive">Archive “%1$s”? You can restore it from Archived chats.</string>
+    <string name="history_confirm_restore">Restore “%1$s” to its assistant’s history?</string>
+    <string name="history_archived_empty">No archived chats</string>
+    <string name="history_archive_owner">Assistant: %1$s</string>
 </resources>

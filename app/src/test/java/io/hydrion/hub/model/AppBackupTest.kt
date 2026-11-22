@@ -158,7 +158,7 @@ class AppBackupTest {
         for (i in 0..duplicate.size - alias.size) {
             if (alias.indices.all { duplicate[i + it] == alias[it] }) duplicate[i + 7] = 's'.code.toByte()
         }
-        val future = JSONObject(String(valid.getValue("manifest.json"))).put("version", 2)
+        val future = JSONObject(String(valid.getValue("manifest.json"))).put("version", 3)
         val variations = listOf(
             packed(valid + ("settings.json" to "{}".toByteArray())),
             packed(valid + ("manifest.json" to future.toString().toByteArray())),

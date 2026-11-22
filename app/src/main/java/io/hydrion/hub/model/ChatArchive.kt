@@ -71,7 +71,7 @@ private fun SavedWorkspace.transform(application: Boolean, attachment: (Attachme
         },
     )
     fun conversation(c: Conversation) = Conversation(id = c.id, title = c.title, mode = c.mode,
-        pinned = c.pinned, updatedAt = c.updatedAt, messages = c.messages.map(::message), assistantId = c.assistantId,
+        pinned = c.pinned, archived = c.archived, updatedAt = c.updatedAt, messages = c.messages.map(::message), assistantId = c.assistantId,
         contextStart = c.contextStart, versions = c.versions.mapValues { (_, group) -> group.copy(others = group.others.map(::message)) },
         modelRoutes = c.modelRoutes?.mapValues { (_, r) -> RemoteModel(r.providerId, r.modelId) })
     return SavedWorkspace(history.map(::conversation), drafts.mapValues { (_, d) ->
@@ -99,7 +99,7 @@ private fun SavedWorkspace.checkIds() {
     require(lastThreads.all { (assistant, thread) -> historyOwners[thread] == assistant })
     val ids = conversations.map { it.id }
     require(ids.all(::stableId) && ids.distinct().size == ids.size && ids.containsAll(drafts.keys))
-    require(pending.all { it.messages.isEmpty() && it.id in drafts })
+    require(pending.all { !it.archived && it.messages.isEmpty() && it.id in drafts })
     fun checkAttachments(items: List<Attachment>) {
         require(items.distinctBy { it.id }.size == items.size)
         require(items.none { it.id.isBlank() || (it.imageKey == null && it.uri == null) })
@@ -203,7 +203,10 @@ internal object ChatArchive {
         }, { it })
         val state = encodeWorkspace(clean).toString().toByteArray()
         require(state.size <= MaxMetadata)
+        val hasArchivedChats = clean.history.any { it.archived }
         val version = when {
+            settings != null -> if (hasArchivedChats) 2 else 1
+            hasArchivedChats -> 4
             clean.history.any { it.contextStart != null || it.versions.isNotEmpty() } -> 3
             clean.assistants == listOf(LocalAssistant.Default) -> 1
             else -> 2
@@ -211,7 +214,7 @@ internal object ChatArchive {
         val config = settings?.encode()?.toString()?.toByteArray()
         require(config == null || config.size <= MaxMetadata)
         val manifest = JSONObject().put("format", if (settings == null) "hydrion.chat" else "hydrion.app")
-            .put("version", if (settings == null) version else 1)
+            .put("version", version)
             .put("settingsSha256", config?.let(::digest))
             .put("workspaceSha256", digest(state)).put("generated", JSONObject(generated))
         val zip = File(work, if (settings == null) "chats.zip" else "application.zip")
@@ -243,8 +246,8 @@ internal object ChatArchive {
             }
             val manifest = parseObject(read("manifest.json"))
             val appArchive = when (manifest.getString("format")) {
-                "hydrion.app" -> { require(manifest.get("version") == 1); true }
-                "hydrion.chat" -> { require(manifest.get("version") in listOf(1, 2, 3)); false }
+                "hydrion.app" -> { require(manifest.get("version") in listOf(1, 2)); true }
+                "hydrion.chat" -> { require(manifest.get("version") in listOf(1, 2, 3, 4)); false }
                 else -> throw IllegalArgumentException("Unsupported backup format")
             }
             if (appArchive != application) throw ArchiveScopeMismatch(appArchive)
@@ -270,6 +273,8 @@ internal object ChatArchive {
             val workspace = decodeWorkspace(json)
             workspace.checkIds()
             val version = manifest.getInt("version")
+            val supportsArchivedChats = if (application) version >= 2 else version >= 4
+            require(supportsArchivedChats || workspace.history.none { it.archived })
             require(application || version >= 2 || workspace.assistants == listOf(LocalAssistant.Default))
             require(application || version >= 3 || workspace.history.none { it.contextStart != null || it.versions.isNotEmpty() })
             val imageMap = manifest.getJSONObject("generated")

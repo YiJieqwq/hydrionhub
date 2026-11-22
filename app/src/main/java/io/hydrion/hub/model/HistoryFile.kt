@@ -35,6 +35,7 @@ internal class HistoryFile(context: Context) {
 }
 
 internal fun decodeWorkspace(json: JSONObject): SavedWorkspace {
+    fun readPending(item: JSONObject) = readConversation(item).also { require(!it.archived) }
     val history = json.optJSONArray("history").objects().map(::readConversation)
     val drafts = json.optJSONObject("drafts") ?: JSONObject()
     val assistants = json.optJSONArray("assistants").objects().map {
@@ -51,9 +52,9 @@ internal fun decodeWorkspace(json: JSONObject): SavedWorkspace {
         Draft(draft.optString("text"), readAttachments(draft.optJSONArray("attachments")),
             draft.optString("search", defaults.search),
             if (imageTool == "模型内置图片生成") CUSTOM_IMAGE_TOOL else imageTool)
-    }, json.optJSONObject("unsent")?.let(::readConversation), assistants,
+    }, json.optJSONObject("unsent")?.let(::readPending), assistants,
         json.optString("selectedAssistant", LocalAssistant.Default.id),
-        json.optJSONArray("otherUnsent").objects().map(::readConversation),
+        json.optJSONArray("otherUnsent").objects().map(::readPending),
         lastThreads.keys().asSequence().associateWith(lastThreads::getString))
 }
 
@@ -77,6 +78,7 @@ private fun readConversation(item: JSONObject) = Conversation(
     mode = Mode.valueOf(item.getString("mode")), pinned = item.optBoolean("pinned"),
     updatedAt = item.getLong("updatedAt"), messages = item.optJSONArray("messages").objects().map(::readMessage),
     environmentId = item.optional("environmentId"), assistantId = item.optString("assistantId", LocalAssistant.Default.id),
+    archived = item.opt("archived")?.let { value -> require(value is Boolean); value } ?: false,
     contextStart = item.optional("contextStart"),
     versions = if (item.isNull("messageVersions")) emptyMap() else item.getJSONObject("messageVersions").let { groups ->
         groups.keys().asSequence().associateWith { id ->
@@ -91,6 +93,7 @@ private fun readConversation(item: JSONObject) = Conversation(
 private fun writeConversation(c: Conversation) = JSONObject().put("id", c.id).put("title", c.title)
     .put("mode", c.mode.name).put("pinned", c.pinned).put("updatedAt", c.updatedAt)
     .put("messages", JSONArray(c.messages.map(::writeMessage))).put("environmentId", c.environmentId).put("assistantId", c.assistantId)
+    .apply { if (c.archived) put("archived", true) }
     .put("contextStart", c.contextStart)
     .put("messageVersions", c.versions.takeIf { it.isNotEmpty() }?.let { groups ->
         JSONObject().apply { groups.forEach { (id, group) ->

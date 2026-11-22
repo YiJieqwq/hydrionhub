@@ -161,7 +161,7 @@ private fun Workspace(vm: HubViewModel) {
     val drawerActions = remember(vm, timelines) {
         DrawerActions(vm::hasDrawerDraft, vm::setPinned, vm::moveConversations, vm::duplicateConversation,
             delete = { ids -> ids.forEach(timelines::removeState); vm.deleteConversations(ids) },
-            vm::copyAssistant, vm::groupAssistant, vm::canRemoveAssistant, vm::removeEmptyAssistant)
+            vm::copyAssistant, vm::groupAssistant, vm::canRemoveAssistant, vm::removeEmptyAssistant, vm::setArchived)
     }
     val snackbar = remember { SnackbarHostState() }
     val notice by vm.notice.collectAsStateWithLifecycle()
@@ -435,7 +435,7 @@ private fun RecentImageConversations(
     history: List<Conversation>, onOpen: (String) -> Unit, modifier: Modifier
 ) {
     val recent = remember(history) {
-        history.asSequence().filter { it.mode == Mode.Image }.take(3).toList()
+        history.asSequence().filter { it.mode == Mode.Image && !it.archived }.take(3).toList()
     }
     BoxWithConstraints(modifier, contentAlignment = Alignment.BottomCenter) {
         val count = (maxHeight.value / 46f).toInt().coerceIn(0, recent.size)

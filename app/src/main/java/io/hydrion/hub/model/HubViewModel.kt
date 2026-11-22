@@ -202,6 +202,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     internal fun groupAssistant(id: String, group: String) = loaded && session.groupAssistant(id, group)
     internal fun canRemoveAssistant(id: String) = loaded && session.canRemoveAssistant(id)
     internal fun removeEmptyAssistant(id: String) { if (loaded) session.removeEmptyAssistant(id) }
+    internal fun setArchived(id: String, archived: Boolean) { if (loaded) session.setArchived(id, archived) }
     internal fun setPinned(ids: Set<String>, pinned: Boolean) { if (loaded) session.setPinned(ids, pinned) }
     internal fun moveConversations(ids: Set<String>, target: String) { if (loaded) session.moveConversations(ids, target) }
     internal fun duplicateConversation(id: String, title: String) { if (loaded) session.duplicateConversation(id, title) }

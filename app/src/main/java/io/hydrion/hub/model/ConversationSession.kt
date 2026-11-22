@@ -53,17 +53,25 @@ internal class ConversationSession(
             screen.current.mode == Mode.Chat && screen.current.environmentId == null
         mutable.value = screen.copy(history = (screen.history + restored).sortedByDescending { it.updatedAt },
             assistants = saved.assistants)
-        lastThreads.putAll(saved.lastThreads)
-        saved.pending.associateByTo(parked) { it.assistantId }
+        restoreLocations(saved)
         if (restoredUnsentId == null) restoredUnsentId = saved.unsent?.id
         if (untouched && (hasSeveral || saved.unsent != null || assistant(saved.selectedAssistant)?.chatModel != null)) {
             choose(rememberedLocation(saved.selectedAssistant) ?: newChat(saved.selectedAssistant))
         }
     }
 
+    private fun restoreLocations(saved: SavedWorkspace) {
+        val archivedIds = saved.history.filter { it.archived }.mapTo(mutableSetOf()) { it.id }
+        lastThreads.putAll(saved.lastThreads.filterValues { it !in archivedIds })
+        saved.pending.associateByTo(parked) { it.assistantId }
+    }
+
     private fun rememberedLocation(assistantId: String): Conversation? =
-        lastThreads[assistantId]?.let { id -> screen.history.find { it.id == id && it.assistantId == assistantId } }
+        lastThreads[assistantId]?.let { id -> screen.history.find { !it.archived && it.id == id && it.assistantId == assistantId } }
             ?: parked[assistantId]
+
+    private fun recentOrNew(assistantId: String, history: List<Conversation> = screen.history): Conversation =
+        history.firstOrNull { !it.archived && it.assistantId == assistantId } ?: parked[assistantId] ?: newChat(assistantId)
 
     fun snapshot(includeUnsent: Boolean = false): SavedWorkspace {
         val history = screen.history
@@ -88,11 +96,10 @@ internal class ConversationSession(
         lastThreads.clear()
         drafts.clear()
         drafts.putAll(saved.drafts)
-        saved.pending.associateByTo(parked) { it.assistantId }
-        lastThreads.putAll(saved.lastThreads)
+        restoreLocations(saved)
         restoredUnsentId = saved.unsent?.id
         mutable.value = HubState(history = saved.history, assistants = saved.assistants)
-        val previous = saved.history.find { it.id == oldId }
+        val previous = saved.history.find { !it.archived && it.id == oldId }
         choose(previous ?: rememberedLocation(saved.selectedAssistant) ?: newChat(saved.selectedAssistant))
     }
 
@@ -162,7 +169,7 @@ internal class ConversationSession(
             }
         }
         if (id == owner) choose(rememberedLocation(LocalAssistant.Default.id)
-            ?: screen.history.firstOrNull { it.assistantId == LocalAssistant.Default.id } ?: newChat())
+            ?: recentOrNew(LocalAssistant.Default.id))
         parked.remove(id)
         lastThreads.remove(id)
         mutable.value = screen.copy(assistants = screen.assistants.filterNot { it.id == id })
@@ -172,8 +179,7 @@ internal class ConversationSession(
     fun selectAssistant(id: String) {
         if (owner == id || screen.assistants.none { it.id == id }) return
         rememberCurrent()
-        choose(rememberedLocation(id) ?: screen.history.firstOrNull { it.assistantId == id }
-            ?: newChat(id))
+        choose(rememberedLocation(id) ?: recentOrNew(id))
         save()
     }
 
@@ -189,7 +195,7 @@ internal class ConversationSession(
     private fun save() = persist(snapshot())
 
     private fun conversation(id: String): Conversation? =
-        if (screen.current.id == id) screen.current else screen.history.firstOrNull { it.id == id }
+        if (screen.current.id == id) screen.current else screen.history.firstOrNull { !it.archived && it.id == id }
 
     private fun update(item: Conversation, activity: Boolean = false, restoredDraft: Draft? = null) {
         val s = screen
@@ -237,7 +243,7 @@ internal class ConversationSession(
     }
 
     fun openConversation(id: String) {
-        val item = screen.history.firstOrNull { it.id == id } ?: return
+        val item = screen.history.firstOrNull { !it.archived && it.id == id } ?: return
         if (id == screen.current.id) return
         val keepPending = !screen.modeLocked && (screen.draft != Draft() || screen.current.mode != Mode.Chat ||
             screen.current.environmentId != null || screen.current.id == restoredUnsentId)
@@ -270,8 +276,18 @@ internal class ConversationSession(
         save()
     }
 
+    fun setArchived(id: String, archived: Boolean) {
+        val item = screen.history.find { it.id == id } ?: return
+        if (item.archived == archived || item.messages.any { it.status.isActive }) return
+        val history = screen.history.map { if (it.id == id) it.copy(archived = archived) else it }
+        if (archived) lastThreads.entries.removeAll { it.value == id }
+        if (screen.current.id == id) choose(recentOrNew(item.assistantId, history), history)
+        else mutable.value = screen.copy(history = history)
+        save()
+    }
+
     fun togglePin(id: String) {
-        val item = screen.history.firstOrNull { it.id == id } ?: return
+        val item = screen.history.firstOrNull { !it.archived && it.id == id } ?: return
         update(item.copy(pinned = !item.pinned))
         save()
     }
@@ -279,14 +295,14 @@ internal class ConversationSession(
     fun hasDraft(id: String): Boolean = drafts[id]?.let { it.text.isNotBlank() || it.attachments.isNotEmpty() } == true
 
     fun setPinned(ids: Set<String>, pinned: Boolean) {
-        val history = screen.history.map { if (it.id in ids) it.copy(pinned = pinned) else it }
+        val history = screen.history.map { if (!it.archived && it.id in ids) it.copy(pinned = pinned) else it }
         if (history == screen.history) return
         mutable.value = screen.copy(history = history, current = history.find { it.id == screen.current.id } ?: screen.current)
         save()
     }
 
     fun duplicateConversation(id: String, title: String) {
-        val source = screen.history.find { it.id == id } ?: return
+        val source = screen.history.find { !it.archived && it.id == id } ?: return
         if (source.messages.any { it.status.isActive } || title.isBlank()) return
         val copy = source.copyThrough(source.messages.lastIndex, title, now(), keepVersions = true)
         mutable.value = screen.copy(history = listOf(copy) + screen.history)
@@ -295,14 +311,14 @@ internal class ConversationSession(
 
     fun moveConversations(ids: Set<String>, target: String) {
         if (screen.assistants.none { it.id == target }) return
-        val moving = screen.history.filter { it.id in ids && it.assistantId != target }
+        val moving = screen.history.filter { !it.archived && it.id in ids && it.assistantId != target }
         if (moving.isEmpty() || moving.any { item -> item.messages.any { it.status.isActive } }) return
         val moved = moving.mapTo(mutableSetOf()) { it.id }
         val previousOwner = owner
         lastThreads.entries.removeAll { it.value in moved }
         val history = screen.history.map { if (it.id in moved) it.copy(assistantId = target) else it }
         if (screen.current.id in moved) {
-            choose(history.firstOrNull { it.assistantId == previousOwner } ?: parked[previousOwner] ?: newChat(previousOwner), history)
+            choose(recentOrNew(previousOwner, history), history)
         } else mutable.value = screen.copy(history = history)
         save()
     }
@@ -310,16 +326,20 @@ internal class ConversationSession(
     fun deleteConversation(id: String) = deleteConversations(setOf(id))
 
     fun deleteConversations(ids: Set<String>) {
-        if (ids.isEmpty() || (screen.current.id !in ids && screen.history.none { it.id in ids })) return
-        ids.forEach { id ->
+        if (ids.isEmpty()) return
+        // Ignore a selection made before a thread was archived.
+        val removable = screen.history.filter { !it.archived && it.id in ids }.mapTo(mutableSetOf()) { it.id }
+        if (screen.current.id in ids) removable += screen.current.id
+        if (removable.isEmpty()) return
+        removable.forEach { id ->
             jobs.remove(id)?.cancel()
             dictatedDrafts.remove(id)
             drafts.remove(id)
         }
-        lastThreads.entries.removeAll { it.value in ids }
-        parked.entries.removeAll { it.value.id in ids }
-        val history = screen.history.filterNot { it.id in ids }
-        if (screen.current.id in ids) choose(parked[owner] ?: newChat(owner), history)
+        lastThreads.entries.removeAll { it.value in removable }
+        parked.entries.removeAll { it.value.id in removable }
+        val history = screen.history.filterNot { it.id in removable }
+        if (screen.current.id in removable) choose(parked[owner] ?: newChat(owner), history)
         else mutable.value = screen.copy(history = history)
         save()
     }
@@ -337,9 +357,9 @@ internal class ConversationSession(
     /** Restore only the picker source and its draft, keeping live conversations and messages. */
     fun restoreModelPickerDraft(id: String, draft: Draft): Boolean {
         if (screen.current.id != id) {
-            val archived = screen.history.find { it.id == id }
-            if (archived != null) {
-                if (archived.assistantId != owner) return false
+            val target = screen.history.find { it.id == id }
+            if (target != null) {
+                if (target.archived || target.assistantId != owner) return false
                 openConversation(id)
             } else {
                 val pending = parked[owner]?.takeIf { it.id == id } ?: return false

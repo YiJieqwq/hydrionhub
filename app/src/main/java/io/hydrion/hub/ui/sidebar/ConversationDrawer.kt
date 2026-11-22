@@ -71,11 +71,12 @@ internal data class HistorySection(val date: LocalDate?, val rows: List<Conversa
 }
 
 internal fun historySections(history: List<Conversation>, query: String,
-    assistantId: String? = null): List<HistorySection> {
+    assistantId: String? = null, archived: Boolean = false): List<HistorySection> {
     val term = query.trim()
     val zone = ZoneId.systemDefault()
     val (pinned, dated) = history.filter { item ->
-        (assistantId == null || item.assistantId == assistantId) && item.title.contains(term, ignoreCase = true)
+        item.archived == archived && (assistantId == null || item.assistantId == assistantId) &&
+            item.title.contains(term, ignoreCase = true)
     }.sortedByDescending { it.updatedAt }.partition { it.pinned }
     return buildList {
         if (pinned.isNotEmpty()) add(HistorySection(null, pinned))
@@ -172,6 +173,7 @@ internal fun ConversationDrawer(
     val visibleIds = remember(sections) { sections.flatMap { it.rows }.mapTo(linkedSetOf()) { it.id } }
     var selected by rememberSaveable(assistantId) { mutableStateOf<ArrayList<String>?>(null) }
     var menuId by rememberSaveable { mutableStateOf<String?>(null) }
+    var archiveTarget by rememberSaveable(assistantId, filter) { mutableStateOf<ArchiveTarget?>(null) }
     var moveIds by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
     var deleteIds by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
     val selecting = selected != null
@@ -183,16 +185,18 @@ internal fun ConversationDrawer(
         if (history.isEmpty()) { selected = null; menuId = null; moveIds = arrayListOf(); deleteIds = arrayListOf() }
     }
     BackHandler(selecting && history.isNotEmpty()) { selected = null }
-    history.find { it.id == menuId }?.let { item ->
+    history.find { it.id == menuId && it.id in visibleIds }?.let { item ->
         val copyName = stringResource(R.string.drawer_copy_name, item.title)
         ChatActionsSheet(item, assistants.size > 1, { menuId = null },
             select = { menuId = null; focus.clearFocus(); showAssistants = false; selected = arrayListOf(item.id) },
             rename = { menuId = null; onRename(item.id) }, pin = { menuId = null; onPin(item.id) },
             duplicate = { menuId = null; actions.duplicate(item.id, copyName) },
+            archive = { menuId = null; archiveTarget = ArchiveTarget(item) },
             move = { menuId = null; moveIds = arrayListOf(item.id) }, delete = { menuId = null; onDelete(item.id) })
     }
+    ConfirmHistoryArchive(archiveTarget, sections, onDismiss = { archiveTarget = null }, onSetArchived = actions.setArchived)
     if (moveIds.isNotEmpty()) {
-        val rows = history.filter { it.id in moveIds }
+        val rows = history.filter { it.id in moveIds && it.id in visibleIds }
         DrawerActionSheet(stringResource(R.string.drawer_move), { moveIds = arrayListOf() }) {
             assistants.filter { dest -> rows.any { it.assistantId != dest.id } }.forEach { dest ->
                 DrawerAction(dest.name, Icons.Outlined.PersonOutline) {
@@ -204,7 +208,7 @@ internal fun ConversationDrawer(
     }
     if (deleteIds.isNotEmpty()) {
         ConfirmDrawerDelete(stringResource(R.string.drawer_delete_selected, deleteIds.size), { deleteIds = arrayListOf() }) {
-            actions.delete(deleteIds.toSet()); deleteIds = arrayListOf(); selected = null
+            actions.delete(deleteIds.intersect(visibleIds)); deleteIds = arrayListOf(); selected = null
         }
     }
     val topicsScroll = rememberLazyListState()
@@ -221,7 +225,7 @@ internal fun ConversationDrawer(
     if (showHistory) {
         DrawerHistoryPage(history, currentId, currentAssistant, assistants.size > 1, actions, onBack = { showHistory = false },
             onOpen = { showHistory = false; onOpen(it) }, onRename = { showHistory = false; onRename(it) },
-            onPin = onPin)
+            onPin = onPin, assistants = assistants)
     }
     val colors = MaterialTheme.colorScheme
     ModalDrawerSheet(

@@ -47,6 +47,7 @@ internal fun globalDrawerHits(history: List<Conversation>, query: String): List<
         .groupBy { it.lowercase() }.values.associate { it.first() to it.size }
     if (terms.isEmpty()) return emptyList()
     return history.mapNotNull { item ->
+        if (item.archived) return@mapNotNull null
         val found = mutableSetOf<String>()
         var score = 0L
         var snippet = ""

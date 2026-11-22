@@ -37,6 +37,7 @@ internal class DrawerActions(
     val groupAssistant: (String, String) -> Boolean,
     val canRemoveAssistant: (String) -> Boolean,
     val removeAssistant: (String) -> Unit,
+    val setArchived: (String, Boolean) -> Unit = { _, _ -> },
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,7 +69,7 @@ internal fun DrawerAction(label: String, icon: ImageVector, enabled: Boolean = t
 
 @Composable
 internal fun ChatActionsSheet(item: Conversation, movable: Boolean, close: () -> Unit,
-    select: () -> Unit, rename: () -> Unit, pin: () -> Unit, duplicate: () -> Unit, move: () -> Unit, delete: () -> Unit) {
+    select: () -> Unit, rename: () -> Unit, pin: () -> Unit, duplicate: () -> Unit, move: () -> Unit, archive: () -> Unit, delete: () -> Unit) {
     val idle = item.messages.none { it.status.isActive }
     DrawerActionSheet(null, close) {
         DrawerAction(stringResource(R.string.drawer_select), Icons.Outlined.Checklist, onClick = select)
@@ -76,6 +77,7 @@ internal fun ChatActionsSheet(item: Conversation, movable: Boolean, close: () ->
         DrawerAction(stringResource(if (item.pinned) R.string.drawer_unpin else R.string.drawer_pin), Icons.Outlined.PushPin, onClick = pin)
         DrawerAction(stringResource(R.string.drawer_duplicate), Icons.Outlined.ContentCopy, enabled = idle, onClick = duplicate)
         DrawerAction(stringResource(R.string.drawer_move), Icons.AutoMirrored.Outlined.DriveFileMove, enabled = movable && idle, onClick = move)
+        DrawerAction(stringResource(R.string.history_archive), Icons.Outlined.Archive, enabled = idle, onClick = archive)
         DrawerAction(stringResource(R.string.drawer_delete), Icons.Outlined.DeleteOutline, destructive = true, onClick = delete)
     }
 }

@@ -52,4 +52,13 @@
     <string name="drawer_group_name">分组名称</string>
     <string name="drawer_ungrouped">不分组</string>
     <string name="drawer_move_short">移动</string>
+    <string name="history_archived">已归档会话</string>
+    <string name="history_archive_filter">查看已归档会话</string>
+    <string name="history_show_active">查看未归档会话</string>
+    <string name="history_archive">归档</string>
+    <string name="history_restore">恢复</string>
+    <string name="history_confirm_archive">归档“%1$s”？之后可以在已归档会话中恢复。</string>
+    <string name="history_confirm_restore">将“%1$s”恢复到原助手的历史记录中？</string>
+    <string name="history_archived_empty">暂无已归档会话</string>
+    <string name="history_archive_owner">所属助手：%1$s</string>
 </resources>
