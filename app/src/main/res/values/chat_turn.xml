@@ -12,6 +12,7 @@
     <string name="turn_retry">Regenerate reply</string>
     <string name="turn_retry_explanation">Generate a new reply to this prompt? Its previous versions and all later messages will be kept.</string>
     <string name="turn_edit">Edit message</string>
+    <string name="turn_send_in_branch">Send in a new branch</string>
     <string name="turn_save_send">Save and resend</string>
     <string name="turn_fork">Branch from here</string>
     <string name="turn_fork_title">%1$s (branch)</string>

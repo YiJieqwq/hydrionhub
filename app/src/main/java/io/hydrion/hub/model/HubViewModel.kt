@@ -232,6 +232,9 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     fun stop() = session.stop()
     fun editMessage(id: String, text: String) = session.editMessage(id, text)
     internal fun forkMessage(id: String, title: String) = session.forkMessage(id, title)
+    internal fun forkEditedMessage(chatId: String, messageId: String, text: String, title: String) =
+        session.forkEditedMessage(chatId, messageId, text, title, ::validateImage, ::resolveRetryImage)
+
     internal fun setContextStart(id: String?) = session.setContextStart(id)
     internal fun chooseMessageVersion(id: String, ordinal: Int) = session.chooseMessageVersion(id, ordinal)
     internal fun deleteSelectedVersions(chatId: String, ids: Set<String>, allVersions: Boolean) =
@@ -244,10 +247,12 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteMessage(id: String) = session.deleteMessage(id)
     fun regenerate(id: String) {
         clearError(state.value.current.id)
-        session.regenerate(id, ::validateImage) { prompt, parentImageLimit ->
-            providers.catalog.value.imageInvocation(prompt, parentImageLimit)
-        }
+        session.regenerate(id, ::validateImage, ::resolveRetryImage)
     }
+
+    private fun resolveRetryImage(prompt: String, parentImageLimit: Int?) =
+        providers.catalog.value.imageInvocation(prompt, parentImageLimit)
+
     internal fun validateImage(image: ImageInvocation, prompt: String, attachments: List<Attachment>) {
         if (image.remoteModel != null) prepareImage(image, prompt, attachments)
     }

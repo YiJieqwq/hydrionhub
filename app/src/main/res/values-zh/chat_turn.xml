@@ -12,6 +12,7 @@
     <string name="turn_retry">重新生成回复</string>
     <string name="turn_retry_explanation">为这条提示生成新回复？已有回复版本及后续消息都会保留。</string>
     <string name="turn_edit">编辑消息</string>
+    <string name="turn_send_in_branch">在新分支中发送</string>
     <string name="turn_save_send">保存并重发</string>
     <string name="turn_fork">从此处分支</string>
     <string name="turn_fork_title">%1$s（分支）</string>

@@ -160,10 +160,19 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
             val fork = sheet == TurnSheet.Fork
             val valid = !busy && (input.isNotBlank() || (!fork && user && msg.attachments.isNotEmpty()))
             AlertDialog(onDismissRequest = close, title = { Text(stringResource(if (fork) R.string.turn_fork else R.string.turn_edit)) },
-                text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (fork) Text(stringResource(R.string.turn_fork_hint))
                     OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = fork,
                         minLines = if (fork) 1 else 2, maxLines = if (fork) 1 else 8)
+                    if (!fork && user && chat.mode == Mode.Chat && chat.messages.lastOrNull()?.id != msg.id) {
+                        TextButton(enabled = valid, onClick = {
+                            if (vm.forkEditedMessage(chat.id, msg.id, input, fallbackTitle)) close()
+                        }) {
+                            Icon(Icons.AutoMirrored.Outlined.CallSplit, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.turn_send_in_branch))
+                        }
+                    }
                 } }, confirmButton = { Column(horizontalAlignment = Alignment.End) {
                     TextButton(enabled = valid, onClick = {
                         if (fork) vm.forkMessage(msg.id, input.trim()) else vm.editMessage(msg.id, input)

@@ -379,7 +379,7 @@ internal class ConversationSession(
         generate(s.current.copy(title = title, messages = s.current.messages + user + response), response)
     }
 
-    private fun generate(chat: Conversation, response: Message, retry: Boolean = false) {
+    private fun generate(chat: Conversation, response: Message, retry: Boolean = false, openBranch: Boolean = false) {
         val id = chat.id
         val mode = chat.mode
         val profile = assistant(chat.assistantId).takeIf { mode == Mode.Chat && response.imageInvocation == null }
@@ -403,7 +403,7 @@ internal class ConversationSession(
         }
         // An observer of Sending can stop or retry synchronously, before transport startup.
         jobs[id] = job
-        touch(chat)
+        if (openBranch) choose(chat, listOf(chat) + screen.history) else touch(chat)
         save()
         job.start()
     }
@@ -447,6 +447,27 @@ internal class ConversationSession(
         val fork = source.copyThrough(end, title, now(), keepVersions = false)
         choose(fork, listOf(fork) + screen.history)
         save()
+        return true
+    }
+
+    fun forkEditedMessage(
+        chatId: String, messageId: String, text: String, title: String,
+        validateImage: (ImageInvocation, String, List<Attachment>) -> Unit = { _, _, _ -> },
+        resolveImage: (String, Int?) -> ImageInvocation = { _, _ -> throw IllegalArgumentException(IMAGE_MODEL_REQUIRED) },
+    ): Boolean {
+        val source = screen.current
+        if (source.id != chatId || source.mode != Mode.Chat || screen.isGenerating || title.isBlank()) return false
+        val end = source.messages.indexOfFirst { it.id == messageId && it.role == Role.User }
+        if (end < 0 || end == source.messages.lastIndex) return false
+        val target = source.messages[end]
+        if (text.isBlank() && target.attachments.isEmpty()) return false
+
+        val branch = source.copyThrough(end, title.trim(), now(), keepVersions = false)
+        val question = branch.messages.last().copy(text = text)
+        val originalReply = source.messages.firstOrNull { it.replyTo == messageId && it.role == Role.Assistant }
+        val reply = prepareRetry(source, question, originalReply, newId(), validateImage, resolveImage) ?: return false
+        val ready = branch.copy(messages = branch.messages.dropLast(1) + question + reply)
+        generate(ready, reply, retry = true, openBranch = true)
         return true
     }
 
@@ -527,6 +548,22 @@ internal class ConversationSession(
         if (item.mode == Mode.Chat && !item.canRetryChatMessage(target)) return
         val user = if (target.role == Role.User) target else item.messages.find { it.id == target.replyTo } ?: return
         val original = item.messages.find { it.replyTo == user.id }
+        val response = prepareRetry(item, user, original, original?.id ?: newId(), validateImage, resolveImage) ?: return
+        val next = if (item.mode == Mode.Chat && original != null) {
+            item.appendVersion(original, response)
+        } else {
+            val messages = item.messages.filterNot { it.id == response.id }.toMutableList()
+            messages.add(messages.indexOfFirst { it.id == user.id } + 1, response)
+            item.copy(messages = messages)
+        }
+        generate(next, response, retry = true)
+    }
+
+    private fun prepareRetry(
+        item: Conversation, user: Message, original: Message?, replyId: String,
+        validateImage: (ImageInvocation, String, List<Attachment>) -> Unit,
+        resolveImage: (String, Int?) -> ImageInvocation,
+    ): Message? {
         val needsImage = item.mode == Mode.Image || user.imageInvocation != null ||
             original?.tool?.contains("图片生成") == true || !original?.imageKeys.isNullOrEmpty()
         val image = if (needsImage) {
@@ -540,26 +577,19 @@ internal class ConversationSession(
                 throw cancelled
             } catch (failure: Exception) {
                 onGenerationError(item.id, failure.localizedMessage?.takeIf { it.isNotBlank() } ?: "请检查图像生成模型的配置。")
-                return
+                return null
             }
         } else null
-        val response = Message(id = original?.id ?: newId(), role = Role.Assistant, status = Generation.Sending,
+        return Message(id = replyId, role = Role.Assistant, status = Generation.Sending,
             remoteModel = if (image == null) original?.remoteModel ?: user.remoteModel else null,
             model = image?.model ?: original?.model ?: user.model,
             parameters = image?.parameters ?: original?.parameters ?: user.parameters,
             prompt = user.text, attachments = user.attachments, replyTo = user.id, imageInvocation = image,
-            imageKeys = if (original != null && image?.remoteModel != null && original.imageInvocation == image) original.imageKeys else emptyList(),
+            imageKeys = if (original?.id == replyId && image?.remoteModel != null && original.imageInvocation == image)
+                original.imageKeys else emptyList(),
             tool = if (image != null && item.mode == Mode.Chat) "图片生成 · $CUSTOM_IMAGE_TOOL" else original?.tool?.takeUnless {
                 !allowSearch() && it.startsWith("网络搜索 · ")
             },
             createdAt = now())
-        val next = if (item.mode == Mode.Chat && original != null) {
-            item.appendVersion(original, response)
-        } else {
-            val messages = item.messages.filterNot { it.id == response.id }.toMutableList()
-            messages.add(messages.indexOfFirst { it.id == user.id } + 1, response)
-            item.copy(messages = messages)
-        }
-        generate(next, response, retry = true)
     }
 }
