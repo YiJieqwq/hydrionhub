@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -62,7 +63,15 @@ internal fun DrawerHistoryPage(
                 if (searching) DrawerSearch(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp))
                 LazyColumn(state = scroll, contentPadding = PaddingValues(12.dp)) {
                     if (sections.isEmpty()) item {
-                        Text(stringResource(if (query.isBlank()) R.string.drawer_empty else R.string.drawer_no_matches))
+                        Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = stringResource(
+                                    if (query.isBlank()) R.string.drawer_empty else R.string.drawer_no_matches
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
                     }
                     sections.forEach { section ->
                         item(key = "group-${section.key}") {
