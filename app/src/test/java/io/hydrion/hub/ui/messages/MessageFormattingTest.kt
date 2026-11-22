@@ -29,6 +29,39 @@ class MessageFormattingTest {
         assertEquals(listOf(MarkdownBlock.Code("KotlIN", body)), markdownBlocks(text))
     }
 
+    @Test fun fourBackticksCanEncloseAMarkdownCodeExample() {
+        val example = "```kotlin\nval value = 1\n```"
+        val text = "````markdown\n$example\n`````\nAfter"
+        assertEquals(listOf(
+            MarkdownBlock.Code("markdown", example), MarkdownBlock.Paragraph("After")
+        ), markdownBlocks(text))
+    }
+
+    @Test fun onlyAMatchingStandaloneFenceClosesTheCodeBlock() {
+        val body = listOf("~~~~", "```", "```` trailing text", "    ````", "last  ").joinToString("\n")
+        val text = "````text\n$body\n   ```` \t\nAfter"
+        assertEquals(listOf(
+            MarkdownBlock.Code("text", body), MarkdownBlock.Paragraph("After")
+        ), markdownBlocks(text))
+    }
+
+    @Test fun indentedTildeFencePreservesTheBodyAsStreamingCompletes() {
+        val partial = "  ~~~Js title=example\n\tconst value = 1;  \n  ```\n ~"
+        val block = MarkdownBlock.Code("Js", "  const value = 1;  \n```\n~")
+        assertEquals(listOf(block), markdownBlocks(partial))
+        assertEquals(listOf(block, MarkdownBlock.Paragraph("After")),
+            markdownBlocks("$partial\n ~~~~\t\nAfter"))
+    }
+
+    @Test fun deeplyIndentedBacktickFenceKeepsLiteralIndentationAndEndsBeforeTheNextParagraph() {
+        val body = "        val answer = 42"
+        val text = "1. Example\n    ```kotlin\n$body\n    ```\nAfter"
+        assertEquals(listOf(
+            MarkdownBlock.Paragraph("1. Example"), MarkdownBlock.Code("kotlin", body),
+            MarkdownBlock.Paragraph("After")
+        ), markdownBlocks(text))
+    }
+
     @Test fun quotesAndTextAfterCodeRemainSeparate() {
         val text = "> 甲\n> 乙\n\n```\n- 字面内容\n```\n正文"
         assertEquals(listOf(

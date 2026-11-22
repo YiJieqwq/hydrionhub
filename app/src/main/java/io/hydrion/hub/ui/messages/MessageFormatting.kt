@@ -14,6 +14,22 @@ internal sealed interface MarkdownBlock {
 private val heading = Regex("""^(#{1,6})\s+(.+)""")
 private val bullet = Regex("""^(\s*)[-*+]\s+""")
 
+private val openingFence = Regex("""([ \t]*)(`{3,}|~{3,})(.*)""")
+private val closingFence = Regex("""([ \t]*)(`{3,}|~{3,})[ \t]*""")
+private fun String.isFenceMargin() = length <= 3 && '\t' !in this
+
+private fun String.withoutFenceIndent(width: Int): String {
+    var index = 0
+    while (index < width && index < length) {
+        when (this[index]) {
+            ' ' -> index++
+            '\t' -> return " ".repeat(4 - width) + substring(index + 1)
+            else -> break
+        }
+    }
+    return substring(index)
+}
+
 internal fun markdownBlocks(markdown: String): List<MarkdownBlock> = buildList {
     val lines = markdown.lines()
     val paragraph = mutableListOf<String>()
@@ -26,13 +42,27 @@ internal fun markdownBlocks(markdown: String): List<MarkdownBlock> = buildList {
         val line = lines[pos++]
         val trimmed = line.trimStart()
         val title = heading.matchEntire(trimmed)
+        val fence = openingFence.matchEntire(line)?.takeUnless {
+            val (_, marker, info) = it.destructured
+            marker.first() == '`' && '`' in info
+        }
         when {
-            trimmed.startsWith("```") -> {
+            fence != null -> {
                 flush()
+                val (margin, marker, info) = fence.destructured
+                // Deeper fences can occur in existing list messages. Keep their literal indentation.
+                val indent = if (margin.isFenceMargin()) margin.length else 0
                 val code = mutableListOf<String>()
-                while (pos < lines.size && !lines[pos].trimStart().startsWith("```")) code += lines[pos++]
-                if (pos < lines.size) pos++
-                val language = trimmed.removePrefix("```").trimStart().takeWhile { !it.isWhitespace() }
+                while (pos < lines.size) {
+                    val bodyLine = lines[pos++]
+                    val end = closingFence.matchEntire(bodyLine)
+                    if (end != null) {
+                        val (endMargin, endMarker) = end.destructured
+                        if ((endMargin.isFenceMargin() || endMargin == margin) && endMarker.startsWith(marker)) break
+                    }
+                    code += bodyLine.withoutFenceIndent(indent)
+                }
+                val language = info.trimStart().takeWhile { !it.isWhitespace() }
                 add(MarkdownBlock.Code(language, code.joinToString("\n")))
             }
             title != null -> {
