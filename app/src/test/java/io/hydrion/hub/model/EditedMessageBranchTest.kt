@@ -1,5 +1,11 @@
 package io.hydrion.hub.model
 
+import io.hydrion.hub.provider.ModelCatalog
+import io.hydrion.hub.provider.Provider
+import io.hydrion.hub.provider.ProviderCatalogStorage
+import io.hydrion.hub.provider.ProviderModel
+import io.hydrion.hub.provider.ProviderStore
+import io.hydrion.hub.ui.sendEditedBranch
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -32,12 +38,14 @@ class EditedMessageBranchTest {
         val histories = mutableListOf<List<Message>>()
         val replies = mutableListOf<Message>()
         val instructions = mutableListOf<String>()
+        val retries = mutableListOf<Boolean>()
 
         override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String) = flow {
             check(mode == Mode.Chat)
             histories += history.toList()
             replies += request
             instructions += systemPrompt
+            retries += retry
             emit(request.copy(status = Generation.Completed, text = "Reply to " + history.last().text))
         }
     }
@@ -67,7 +75,8 @@ class EditedMessageBranchTest {
 
         val original = reopen()
         original.openConversation(source.id)
-        assertTrue(original.forkEditedMessage(source.id, target.id, "Edited question", "Edited branch"))
+        assertTrue(original.forkEditedMessage(source.id, target.id, "Edited question", "Edited branch",
+            target.model, emptyMap(), null, route))
         yield()
         val branch = original.state.value.current
         val sharedPrefix = listOf(earlier.text, "Earlier reply", anchor.text, "Selected shared reply")
@@ -90,6 +99,7 @@ class EditedMessageBranchTest {
         assertEquals(sharedContext + "Edited question", repository.histories.single().map { it.text })
         assertEquals(route, repository.replies.single().remoteModel)
         assertEquals(listOf(owner.systemPrompt), repository.instructions)
+        assertFalse(repository.retries.single())
 
         val resumed = reopen()
         resumed.openConversation(source.id)
@@ -120,19 +130,24 @@ class EditedMessageBranchTest {
         assertEquals("Reply to Continue branch", final.state.value.current.messages.last().text)
     }
 
-    @Test fun attachmentOnlyEditBeforeContextStartUsesOriginalReplySettings() = runBlocking {
+    @Test fun attachmentOnlyEditBeforeContextStartUsesCurrentModelAndKeepsAttachment() = runBlocking {
         val attachment = Attachment("fixture-file", "diagram.png", uri = "content://fixture.invalid/diagram", mimeType = "image/png")
         val target = question("Original caption").copy(remoteModel = null, attachments = listOf(attachment))
         val settings = mapOf("temperature" to "0.25", "model" to "wire-id")
-        val prior = answer(target, "First answer").copy(model = "Original reply model", remoteModel = route, parameters = settings)
+        val currentRoute = RemoteModel("current-provider", route.modelId)
+        val currentModel = "Selected model"
+        val prior = answer(target, "First answer").copy(model = "Original reply model", remoteModel = route,
+            parameters = mapOf("temperature" to "1.0"))
         val later = question("Later context start")
-        val source = Conversation(messages = listOf(target, prior, later, answer(later, "Later answer")), contextStart = later.id)
+        val source = Conversation(messages = listOf(target, prior, later, answer(later, "Later answer")),
+            contextStart = later.id, modelRoutes = mapOf(Mode.Chat to currentRoute))
         val repository = RecordingRepository()
         val session = ConversationSession(this, repository, {})
         session.restore(SavedWorkspace(listOf(source)))
         session.openConversation(source.id)
 
-        assertTrue(session.forkEditedMessage(source.id, target.id, "", "Attachment branch"))
+        assertTrue(session.forkEditedMessage(source.id, target.id, "", "Attachment branch",
+            currentModel, settings, null, currentRoute))
         yield()
         val branch = session.state.value.current
         assertNull(branch.contextStart)
@@ -145,38 +160,44 @@ class EditedMessageBranchTest {
         assertEquals(edited.id, requested.replyTo)
         assertEquals("", requested.prompt)
         assertEquals(edited.attachments, requested.attachments)
-        assertEquals(prior.model, requested.model)
-        assertEquals(route, requested.remoteModel)
-        assertEquals(settings, requested.parameters)
+        for (snapshot in listOf(edited, requested)) {
+            assertEquals(currentModel, snapshot.model)
+            assertEquals(currentRoute, snapshot.remoteModel)
+            assertEquals(settings, snapshot.parameters)
+        }
         assertEquals(Generation.Completed, branch.messages.last().status)
         assertEquals(source, session.state.value.history.single { it.id == source.id })
     }
 
-    @Test fun imageValidationFailureStaysOnSourceWithoutCreatingOrWritingABranch() = runBlocking {
-        val image = ImageInvocation("Fixture image", mapOf("n" to "1"), RemoteModel("synthetic", "image"))
+    @Test fun invalidSelectedImageTemplateStaysOnSourceWithoutCreatingOrWritingABranch() = runBlocking {
+        val model = ProviderModel("local-chat", "Fixture chat")
+        val chosenImage = ProviderModel("current-image", "Current fixture image")
+        val catalog = ModelCatalog(listOf(
+            Provider("chat", Mode.Chat, "Chat", "local", "", listOf(model)),
+            Provider("images", Mode.Image, "Images", "local", "", listOf(chosenImage),
+                requestBody = """{"prompt":"{{missing_fixture_field}}"}"""),
+        ))
+        val providers = ProviderStore(object : ProviderCatalogStorage {
+            override fun read(key: String): String? = null
+            override fun write(key: String, value: String) = error("Unexpected catalog write")
+            override fun initialCatalog() = catalog
+        })
+        val image = ImageInvocation("Old image", emptyMap(), RemoteModel("previous-provider", "old-image"))
         val target = question("Original image prompt").copy(imageInvocation = image)
         val prior = answer(target, "Original result").copy(imageInvocation = image)
         val source = Conversation(messages = listOf(target, prior))
-        val errors = mutableListOf<Pair<String, String>>()
         val writes = mutableListOf<SavedWorkspace>()
         val repository = RecordingRepository()
-        val session = ConversationSession(this, repository, { writes += it },
-            onGenerationError = { id, detail -> errors += id to detail })
+        val session = ConversationSession(this, repository, { writes += it })
         session.restore(SavedWorkspace(listOf(source), drafts = mapOf(source.id to Draft("Source draft"))))
         session.openConversation(source.id)
         val before = session.state.value
         val initialWrites = writes.size
-        val detail = "Synthetic image route is disabled"
-
-        assertFalse(session.forkEditedMessage(source.id, target.id, "Edited image prompt", "Image branch",
-            validateImage = { invocation, prompt, attachments ->
-                assertEquals(image, invocation)
-                assertEquals("Edited image prompt", prompt)
-                assertTrue(attachments.isEmpty())
-                throw IllegalArgumentException(detail)
-            }))
-        yield()
-        assertEquals(listOf(source.id to detail), errors)
+        val edited = "Draw a lighthouse"
+        val issue = sendEditedBranch(providers, before, providers.catalog.value, session.state, target.id, edited,
+            localSearchEnabled = { false }, validateImage = { _, _, _ -> error("Invalid template must fail preparation") },
+        ) { _, _, _, _ -> error("Rejected edit must not start a branch") }
+        assertTrue(issue, issue?.contains("missing_fixture_field") == true)
         assertEquals(before, session.state.value)
         assertEquals(initialWrites, writes.size)
         assertTrue(repository.histories.isEmpty())
@@ -210,7 +231,8 @@ class EditedMessageBranchTest {
                 session.openConversation(source.id)
             }
 
-            assertTrue(session.forkEditedMessage(source.id, target.id, "New prompt", "New branch"))
+            assertTrue(session.forkEditedMessage(source.id, target.id, "New prompt", "New branch",
+                target.model, emptyMap(), null, route))
             assertTrue(returnToSource.isCompleted)
             val branchId = session.state.value.history.single { it.id != source.id }.id
             fun assertSourceVisible() {
@@ -254,11 +276,14 @@ class EditedMessageBranchTest {
         val original = session.state.value
         val initialWrites = writes.size
 
-        assertFalse(session.forkEditedMessage("stale-chat", target.id, "Edit", "Branch"))
-        assertFalse(session.forkEditedMessage(source.id, "missing-message", "Edit", "Branch"))
-        assertFalse(session.forkEditedMessage(source.id, reply.id, "Edit", "Branch"))
-        assertFalse(session.forkEditedMessage(source.id, target.id, "   ", "Branch"))
-        assertFalse(session.forkEditedMessage(source.id, target.id, "Edit", "   "))
+        fun fork(chatId: String, messageId: String, text: String, title: String) =
+            session.forkEditedMessage(chatId, messageId, text, title, target.model, emptyMap(), null, route)
+
+        assertFalse(fork("stale-chat", target.id, "Edit", "Branch"))
+        assertFalse(fork(source.id, "missing-message", "Edit", "Branch"))
+        assertFalse(fork(source.id, reply.id, "Edit", "Branch"))
+        assertFalse(fork(source.id, target.id, "   ", "Branch"))
+        assertFalse(fork(source.id, target.id, "Edit", "   "))
         yield()
         assertEquals(original, session.state.value)
         assertEquals(initialWrites, writes.size)

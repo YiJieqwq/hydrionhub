@@ -13,6 +13,13 @@
     <string name="turn_retry_explanation">为这条提示生成新回复？已有回复版本及后续消息都会保留。</string>
     <string name="turn_edit">编辑消息</string>
     <string name="turn_send_in_branch">在新分支中发送</string>
+    <string name="turn_branch_model">新分支模型：%1$s</string>
+    <string name="turn_branch_image_model">图片生成模型：%1$s</string>
+    <string name="turn_branch_image_unavailable">所选图片生成模型不可用，请重新选择。</string>
+    <string name="turn_branch_model_changed">会话或模型已变更，请核对后再发送。</string>
+    <string name="turn_save_send_model">重发模型：%1$s</string>
+    <string name="turn_resend_unavailable">原回复的模型不可用。请恢复原供应商和模型配置，再保存并重发。</string>
+    <string name="turn_retry_model">重新生成模型：%1$s</string>
     <string name="turn_save_send">保存并重发</string>
     <string name="turn_fork">从此处分支</string>
     <string name="turn_fork_title">%1$s（分支）</string>

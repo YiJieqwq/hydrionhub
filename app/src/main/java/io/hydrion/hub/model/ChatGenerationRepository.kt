@@ -30,18 +30,7 @@ internal class ChatGenerationRepository(
         return flow {
             require(mode == Mode.Chat) { "请选择聊天模型。" }
             val catalog = currentCatalog()
-            val (model, provider) = catalog.entries(mode).find { (model, provider) ->
-                provider.id == route.providerId && model.id == route.modelId
-            } ?: error("请在供应商设置中恢复并启用此回复使用的聊天模型。")
-            val protocol = requireNotNull(provider.chatProtocol()) { "此回复使用的供应商已不再配置在线聊天协议。" }
-            if (retry) {
-                val savedProtocol = request.parameters[CHAT_PROTOCOL_PARAMETER] ?: ChatProtocol.ResponsesHttp.name
-                require(savedProtocol == protocol.name) { "此回复使用的 API 协议已更改，请恢复原协议后重试。" }
-            }
-            request.parameters["model"]?.let { originalModel ->
-                require(model.externalModelId == originalModel) { "此回复使用的模型 ID 已更改，请恢复原模型 ID 后重试。" }
-            }
-            provider.chatProtocolIssue()?.let { error(it) }
+            val (model, provider, protocol) = catalog.chatDestination(route, request.parameters, retry)
             val key = sessionKey(provider)
             provider.chatKeyIssue(model, key)?.let { error(it) }
             val transcript = history.responsesHistory()
@@ -58,6 +47,35 @@ internal class ChatGenerationRepository(
             }
             emitAll(stream(protocol, prepared, request))
         }
+    }
+}
+
+private data class ChatDestination(val model: ProviderModel, val provider: Provider, val protocol: ChatProtocol)
+
+private fun ModelCatalog.chatDestination(route: RemoteModel, parameters: Map<String, String>, retry: Boolean): ChatDestination {
+    val (model, provider) = requireNotNull(entries(Mode.Chat).find { (model, provider) ->
+        provider.id == route.providerId && model.id == route.modelId
+    }) { "请在供应商设置中恢复并启用此回复使用的聊天模型。" }
+    val protocol = requireNotNull(provider.chatProtocol()) { "此回复使用的供应商已不再配置在线聊天协议。" }
+    if (retry) {
+        val savedProtocol = parameters[CHAT_PROTOCOL_PARAMETER] ?: ChatProtocol.ResponsesHttp.name
+        require(savedProtocol == protocol.name) { "此回复使用的 API 协议已更改，请恢复原协议后重试。" }
+    }
+    parameters["model"]?.let { originalModel ->
+        require(model.externalModelId == originalModel) { "此回复使用的模型 ID 已更改，请恢复原模型 ID 后重试。" }
+    }
+    provider.chatProtocolIssue()?.let { throw IllegalArgumentException(it) }
+    return ChatDestination(model, provider, protocol)
+}
+
+internal fun ModelCatalog.retryChatRouteIssue(user: Message, original: Message?): String? {
+    if (user.retriesImage(Mode.Chat, original)) return null
+    val route = original?.remoteModel ?: user.remoteModel ?: return null
+    return try {
+        chatDestination(route, original?.parameters ?: user.parameters, retry = true)
+        null
+    } catch (invalid: IllegalArgumentException) {
+        invalid.message
     }
 }
 

@@ -233,8 +233,10 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     fun stop() = session.stop()
     fun editMessage(id: String, text: String) = session.editMessage(id, text)
     internal fun forkMessage(id: String, title: String) = session.forkMessage(id, title)
-    internal fun forkEditedMessage(chatId: String, messageId: String, text: String, title: String) =
-        session.forkEditedMessage(chatId, messageId, text, title, ::validateImage, ::resolveRetryImage)
+    internal fun forkEditedMessage(
+        chatId: String, messageId: String, text: String, title: String,
+        model: String, parameters: Map<String, String>, image: ImageInvocation?, remoteModel: RemoteModel?,
+    ) = session.forkEditedMessage(chatId, messageId, text, title, model, parameters, image, remoteModel)
 
     internal fun setContextStart(id: String?) = session.setContextStart(id)
     internal fun chooseMessageVersion(id: String, ordinal: Int) = session.chooseMessageVersion(id, ordinal)

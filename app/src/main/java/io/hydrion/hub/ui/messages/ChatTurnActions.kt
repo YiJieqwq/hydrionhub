@@ -26,6 +26,13 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.R
 import io.hydrion.hub.model.*
+import io.hydrion.hub.provider.ModelCatalog
+import io.hydrion.hub.provider.Provider
+import io.hydrion.hub.provider.ProviderModel
+import io.hydrion.hub.provider.chatProtocol
+import io.hydrion.hub.ui.sendEditedBranch
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.launch
 
 internal enum class TurnSheet { More, Edit, Retry, Fork, SelectText, Usage, Selection, Delete, DeleteOthers, DeleteAll }
 
@@ -89,6 +96,22 @@ internal fun ChatTurnActions(msg: Message, chat: Conversation, vm: HubViewModel,
             }
         }
     }
+}
+
+private val Pair<ProviderModel, Provider>.routeLabel: String
+    get() = "${second.name} · ${first.name}"
+
+private fun Conversation.retryModelLabel(target: Message, catalog: ModelCatalog): String? {
+    val user = if (target.role == Role.User) target else messages.find { it.id == target.replyTo } ?: return null
+    val reply = messages.find { it.replyTo == user.id }
+    val image = reply?.imageInvocation ?: user.imageInvocation
+    val imageRetry = user.retriesImage(mode, reply)
+    if (imageRetry && image?.remoteModel == null) return catalog.selectedEntry(Mode.Image)?.routeLabel
+    val route = if (imageRetry) image?.remoteModel else reply?.remoteModel ?: user.remoteModel
+    if (route == null) return (reply?.model ?: user.model).takeIf(String::isNotBlank)
+    val provider = catalog.providers.find { it.id == route.providerId }
+    val model = provider?.models?.find { it.id == route.modelId }
+    return "${provider?.name ?: route.providerId} · ${model?.name ?: route.modelId}"
 }
 
 /** Owned by the timeline, not a lazy item that can be disposed when the edit keyboard resizes it. */
@@ -158,37 +181,91 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
         }
         TurnSheet.Fork, TurnSheet.Edit -> {
             val fork = sheet == TurnSheet.Fork
-            val valid = !busy && (input.isNotBlank() || (!fork && user && msg.attachments.isNotEmpty()))
-            AlertDialog(onDismissRequest = close, title = { Text(stringResource(if (fork) R.string.turn_fork else R.string.turn_edit)) },
+            val before = vm.state.collectAsState().value
+            val catalog = vm.providers.catalog.collectAsState().value
+            val canResend = user && !fork && retryAllowed
+            val original = if (canResend) chat.messages.find { it.replyTo == msg.id } else null
+            val retryUnavailable = canResend && chat.mode == Mode.Chat && catalog.retryChatRouteIssue(msg, original) != null
+            val scope = key(chat.id, msg.id, sheet) { rememberCoroutineScope() }
+            var preparing by remember(chat.id, msg.id, sheet) { mutableStateOf(false) }
+            var issue by remember(chat.id, msg.id, sheet, input) { mutableStateOf<String?>(null) }
+            val dismiss = { scope.coroutineContext.cancelChildren(); close() }
+            val valid = !busy && !preparing && (input.isNotBlank() || (!fork && user && msg.attachments.isNotEmpty()))
+            AlertDialog(onDismissRequest = dismiss, title = { Text(stringResource(if (fork) R.string.turn_fork else R.string.turn_edit)) },
                 text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (fork) Text(stringResource(R.string.turn_fork_hint))
-                    OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = fork,
+                    OutlinedTextField(value = input, onValueChange = { input = it }, enabled = !preparing, singleLine = fork,
                         minLines = if (fork) 1 else 2, maxLines = if (fork) 1 else 8)
                     if (!fork && user && chat.mode == Mode.Chat && chat.messages.lastOrNull()?.id != msg.id) {
-                        TextButton(enabled = valid, onClick = {
-                            if (vm.forkEditedMessage(chat.id, msg.id, input, fallbackTitle)) close()
+                        val chatModel = catalog.selectedEntry(Mode.Chat)
+                        val editedDraft = before.draft.copy(text = input, attachments = msg.attachments)
+                        val usesImage = chatModel != null && chatModel.second.chatProtocol() == null &&
+                            selectedTool(Mode.Chat, editedDraft, vm.webSearch.settings.value.localEnabled)?.startsWith("图片生成") == true
+                        val imageModel = if (usesImage) catalog.selectedEntry(Mode.Image) else null
+                        if (chatModel != null) Text(stringResource(R.string.turn_branch_model, chatModel.routeLabel))
+                        if (imageModel != null) Text(stringResource(R.string.turn_branch_image_model, imageModel.routeLabel))
+                        val problem = when {
+                            chatModel == null -> stringResource(R.string.model_settings_unavailable)
+                            usesImage && imageModel == null -> stringResource(R.string.turn_branch_image_unavailable)
+                            else -> issue
+                        }
+                        if (problem != null) Text(problem, color = MaterialTheme.colorScheme.error)
+                        val changed = stringResource(R.string.turn_branch_model_changed)
+                        TextButton(enabled = valid && chatModel != null && (!usesImage || imageModel != null), onClick = {
+                            if (before.current.id != chat.id) {
+                                issue = changed
+                            } else if (!preparing) {
+                                val text = input
+                                issue = null
+                                preparing = true
+                                scope.launch {
+                                    try {
+                                        val error = sendEditedBranch(vm, before, catalog, msg.id, text, fallbackTitle)
+                                        if (error == null) close() else issue = error
+                                    } finally {
+                                        preparing = false
+                                    }
+                                }
+                            }
                         }) {
                             Icon(Icons.AutoMirrored.Outlined.CallSplit, null, Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(stringResource(R.string.turn_send_in_branch))
                         }
                     }
+                    if (canResend) {
+                        chat.retryModelLabel(msg, catalog)?.let { label ->
+                            Text(stringResource(R.string.turn_save_send_model, label), style = MaterialTheme.typography.labelMedium)
+                        }
+                        if (retryUnavailable) Text(stringResource(R.string.turn_resend_unavailable), color = MaterialTheme.colorScheme.error)
+                    }
                 } }, confirmButton = { Column(horizontalAlignment = Alignment.End) {
                     TextButton(enabled = valid, onClick = {
                         if (fork) vm.forkMessage(msg.id, input.trim()) else vm.editMessage(msg.id, input)
                         close()
                     }) { Text(stringResource(if (fork) R.string.turn_fork else R.string.settings_save)) }
-                    if (user && !fork && retryAllowed) TextButton(enabled = valid, onClick = {
-                        if (vm.editMessage(msg.id, input)) vm.regenerate(msg.id)
-                        close()
+                    if (canResend) TextButton(enabled = valid && !retryUnavailable, onClick = {
+                        val liveCatalog = vm.providers.catalog.value
+                        if (vm.state.value.current == chat &&
+                            (chat.mode != Mode.Chat || liveCatalog.retryChatRouteIssue(msg, original) == null) &&
+                            vm.editMessage(msg.id, input)) {
+                            vm.regenerate(msg.id)
+                            close()
+                        }
                     }) { Text(stringResource(R.string.turn_save_send)) }
-                } }, dismissButton = { TextButton(onClick = close) { Text(stringResource(R.string.settings_cancel)) } })
+                } }, dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.settings_cancel)) } })
         }
         TurnSheet.Retry, TurnSheet.Delete, TurnSheet.DeleteOthers, TurnSheet.DeleteAll -> {
             val action = sheet
             val retry = action == TurnSheet.Retry
             val message = when {
-                retry -> stringResource(R.string.turn_retry_explanation)
+                retry -> {
+                    val catalog = vm.providers.catalog.collectAsState().value
+                    val explanation = stringResource(R.string.turn_retry_explanation)
+                    chat.retryModelLabel(msg, catalog)?.let { label ->
+                        explanation + "\n\n" + stringResource(R.string.turn_retry_model, label)
+                    } ?: explanation
+                }
                 action == TurnSheet.DeleteOthers -> {
                     if (group == null) {
                         LaunchedEffect(msg.id) { close() }

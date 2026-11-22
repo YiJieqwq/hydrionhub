@@ -11,6 +11,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
+internal fun Message.retriesImage(mode: Mode, original: Message?): Boolean =
+    mode == Mode.Image || imageInvocation != null ||
+        original?.tool?.contains("图片生成") == true || !original?.imageKeys.isNullOrEmpty()
+
 /** User events and generation emissions are serialized by the ViewModel's main scope. */
 internal class ConversationSession(
     private val scope: CoroutineScope,
@@ -392,16 +396,21 @@ internal class ConversationSession(
         val user = Message(role = Role.User, text = prompt, attachments = draft.attachments, createdAt = now(),
             model = model, remoteModel = remoteModel, parameters = parameters.toMap(),
             imageInvocation = image?.copy(parameters = image.parameters.toMap()))
-        val response = Message(role = Role.Assistant, status = Generation.Sending, prompt = prompt,
-            model = image?.model ?: model, parameters = user.imageInvocation?.parameters ?: user.parameters,
-            replyTo = user.id, createdAt = now(), remoteModel = remoteModel, imageInvocation = user.imageInvocation,
-            attachments = draft.attachments, tool = if (remoteModel == null) selectedTool(s.current.mode, draft, allowSearch()) else null)
+        val response = pendingReply(s.current.mode, draft, user)
         val title = if (!s.modeLocked && s.current.title == "新会话")
             prompt.ifBlank { draft.attachments.first().name }.lineSequence().first().take(32) else s.current.title
         changeDraft(draft.copy(text = "", attachments = emptyList()))
         if (restoreDraftOnError) dictatedDrafts[s.current.id] = s.draft
         lastThreads[s.current.assistantId] = s.current.id
         generate(s.current.copy(title = title, messages = s.current.messages + user + response), response)
+    }
+
+    private fun pendingReply(mode: Mode, draft: Draft, user: Message): Message {
+        val image = user.imageInvocation
+        return Message(role = Role.Assistant, status = Generation.Sending, prompt = user.text,
+            model = image?.model ?: user.model, parameters = image?.parameters ?: user.parameters,
+            replyTo = user.id, createdAt = now(), remoteModel = user.remoteModel, imageInvocation = image,
+            attachments = user.attachments, tool = if (user.remoteModel == null) selectedTool(mode, draft, allowSearch()) else null)
     }
 
     private fun generate(chat: Conversation, response: Message, retry: Boolean = false, openBranch: Boolean = false) {
@@ -477,22 +486,22 @@ internal class ConversationSession(
 
     fun forkEditedMessage(
         chatId: String, messageId: String, text: String, title: String,
-        validateImage: (ImageInvocation, String, List<Attachment>) -> Unit = { _, _, _ -> },
-        resolveImage: (String, Int?) -> ImageInvocation = { _, _ -> throw IllegalArgumentException(IMAGE_MODEL_REQUIRED) },
+        model: String, parameters: Map<String, String>, image: ImageInvocation?, remoteModel: RemoteModel?,
     ): Boolean {
         val source = screen.current
-        if (source.id != chatId || source.mode != Mode.Chat || screen.isGenerating || title.isBlank()) return false
+        if (source.id != chatId || source.mode != Mode.Chat || screen.isGenerating || title.isBlank() || model.isBlank()) return false
         val end = source.messages.indexOfFirst { it.id == messageId && it.role == Role.User }
         if (end < 0 || end == source.messages.lastIndex) return false
         val target = source.messages[end]
         if (text.isBlank() && target.attachments.isEmpty()) return false
 
         val branch = source.copyThrough(end, title.trim(), now(), keepVersions = false)
-        val question = branch.messages.last().copy(text = text)
-        val originalReply = source.messages.firstOrNull { it.replyTo == messageId && it.role == Role.Assistant }
-        val reply = prepareRetry(source, question, originalReply, newId(), validateImage, resolveImage) ?: return false
+        val question = branch.messages.last().copy(text = text, model = model, remoteModel = remoteModel,
+            parameters = parameters.toMap(), imageInvocation = image?.copy(parameters = image.parameters.toMap()))
+        val draft = screen.draft.copy(text = text, attachments = question.attachments)
+        val reply = pendingReply(Mode.Chat, draft, question)
         val ready = branch.copy(messages = branch.messages.dropLast(1) + question + reply)
-        generate(ready, reply, retry = true, openBranch = true)
+        generate(ready, reply, openBranch = true)
         return true
     }
 
@@ -589,9 +598,7 @@ internal class ConversationSession(
         validateImage: (ImageInvocation, String, List<Attachment>) -> Unit,
         resolveImage: (String, Int?) -> ImageInvocation,
     ): Message? {
-        val needsImage = item.mode == Mode.Image || user.imageInvocation != null ||
-            original?.tool?.contains("图片生成") == true || !original?.imageKeys.isNullOrEmpty()
-        val image = if (needsImage) {
+        val image = if (user.retriesImage(item.mode, original)) {
             val parentLimit = if (item.mode == Mode.Chat) user.parameters["image_budget"]?.toIntOrNull() else null
             try {
                 val previous = original?.imageInvocation ?: user.imageInvocation

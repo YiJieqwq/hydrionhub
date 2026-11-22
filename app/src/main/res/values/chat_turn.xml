@@ -13,6 +13,13 @@
     <string name="turn_retry_explanation">Generate a new reply to this prompt? Its previous versions and all later messages will be kept.</string>
     <string name="turn_edit">Edit message</string>
     <string name="turn_send_in_branch">Send in a new branch</string>
+    <string name="turn_branch_model">Branch model: %1$s</string>
+    <string name="turn_branch_image_model">Image generation model: %1$s</string>
+    <string name="turn_branch_image_unavailable">The selected image model is unavailable. Select another image model.</string>
+    <string name="turn_branch_model_changed">The conversation or model changed. Check your selection and send again.</string>
+    <string name="turn_save_send_model">Resend model: %1$s</string>
+    <string name="turn_resend_unavailable">The original reply’s model is unavailable. Restore its provider and model to save and resend.</string>
+    <string name="turn_retry_model">Retry model: %1$s</string>
     <string name="turn_save_send">Save and resend</string>
     <string name="turn_fork">Branch from here</string>
     <string name="turn_fork_title">%1$s (branch)</string>
