@@ -1,8 +1,14 @@
 package io.hydrion.hub.ui.messages
 
+import android.content.res.Configuration
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -11,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.MainActivity
 import io.hydrion.hub.model.Attachment
+import java.util.Locale
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,6 +25,34 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MessageAttachmentTest {
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
+
+    @Test fun unavailableImageUpdatesItsLabelWhenTheLocaleChanges() {
+        val image = Attachment("missing-image", "sample.png", uri = null, imageKey = null, mimeType = "image/png")
+        val locale = mutableStateOf(Locale.ENGLISH)
+        screen.activityRule.scenario.onActivity { activity ->
+            activity.setContent {
+                val config = remember(locale.value) {
+                    Configuration(activity.resources.configuration).apply { setLocale(locale.value) }
+                }
+                val context = remember(config) { activity.createConfigurationContext(config) }
+                CompositionLocalProvider(LocalContext provides context, LocalConfiguration provides config) {
+                    MaterialTheme { Column { MessageAttachment(image, query = "") } }
+                }
+            }
+        }
+
+        val english = screen.onNodeWithText("Unable to load image")
+        val chinese = screen.onNodeWithText("无法读取图片")
+        val filename = screen.onNodeWithText(image.name)
+        english.assertIsDisplayed().assertHasNoClickAction()
+        chinese.assertDoesNotExist()
+        filename.assertIsDisplayed().assertHasNoClickAction()
+
+        screen.runOnIdle { locale.value = Locale.SIMPLIFIED_CHINESE }
+        english.assertDoesNotExist()
+        chinese.assertIsDisplayed().assertHasNoClickAction()
+        filename.assertIsDisplayed().assertHasNoClickAction()
+    }
 
     @Test fun allFilenamesRemainVisibleAndOnlyAnOpenableContentUriIsClickable() {
         fun attachment(id: String, uri: String?) = Attachment(id, "$id.txt", uri = uri, mimeType = "text/plain")

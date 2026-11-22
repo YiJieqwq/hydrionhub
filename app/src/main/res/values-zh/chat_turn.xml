@@ -49,6 +49,7 @@
     <string name="turn_confirm_selection">删除 %1$d 条所选消息的当前版本？没有其他版本的消息将被移除。</string>
     <string name="turn_confirm_selection_all">删除 %1$d 条所选消息及其所有版本？</string>
     <string name="turn_assistant">助手</string>
+    <string name="turn_image_preview_failed">无法读取图片</string>
     <string name="turn_media">附件</string>
     <string name="turn_tokens">%1$d 词元</string>
     <string name="turn_usage">词元用量</string>

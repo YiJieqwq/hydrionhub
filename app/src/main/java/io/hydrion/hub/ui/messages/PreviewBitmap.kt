@@ -34,8 +34,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import io.hydrion.hub.R
 import io.hydrion.hub.model.GeneratedImageStore
 import java.io.File
 import java.io.IOException
@@ -88,7 +90,7 @@ internal fun GeneratedPicture(
     fit: Boolean = false,
 ) {
     val preview = rememberGeneratedPreview(key, width, height, if (fit) 1440 else 480)
-    BitmapPreview(preview, description, modifier, fit)
+    BitmapPreview(preview, description, modifier, fit, failureLabel = stringResource(R.string.turn_image_preview_failed))
 }
 
 @Composable
@@ -134,7 +136,13 @@ private fun rememberBitmapPreview(cacheId: String, cache: Boolean = true, load: 
 }
 
 @Composable
-internal fun BitmapPreview(preview: PicturePreview, description: String, modifier: Modifier, fit: Boolean) {
+internal fun BitmapPreview(
+    preview: PicturePreview,
+    description: String,
+    modifier: Modifier,
+    fit: Boolean,
+    failureLabel: String = "无法读取图片",
+) {
     Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
         when (val result = preview) {
             is PicturePreview.Ready -> Image(
@@ -144,7 +152,7 @@ internal fun BitmapPreview(preview: PicturePreview, description: String, modifie
                 contentScale = if (fit) ContentScale.Fit else ContentScale.Crop,
             )
             PicturePreview.Loading -> CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-            PicturePreview.Failed -> Text("无法读取图片", style = MaterialTheme.typography.labelSmall)
+            PicturePreview.Failed -> Text(failureLabel, style = MaterialTheme.typography.labelSmall)
         }
     }
 }

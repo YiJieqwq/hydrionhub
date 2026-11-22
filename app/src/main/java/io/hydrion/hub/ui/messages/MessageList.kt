@@ -431,7 +431,10 @@ internal fun MessageAttachment(attachment: Attachment, query: String) {
             Modifier.width(100.dp).aspectRatio(aspect.coerceIn(.67f, 1.75f)).clip(RoundedCornerShape(10.dp)))
     } else if (attachment.mimeType?.startsWith("image/") == true) {
         val preview = if (uri == null) PicturePreview.Failed else rememberAttachmentPreview(uri.toString())
-        BitmapPreview(preview, attachment.name, Modifier.width(128.dp).height(90.dp).clip(RoundedCornerShape(10.dp)), fit = false)
+        BitmapPreview(
+            preview, attachment.name, Modifier.width(128.dp).height(90.dp).clip(RoundedCornerShape(10.dp)),
+            fit = false, failureLabel = stringResource(R.string.turn_image_preview_failed),
+        )
     }
     Row(
         modifier = if (uri == null) Modifier else Modifier.clip(RoundedCornerShape(8.dp)).clickable {
