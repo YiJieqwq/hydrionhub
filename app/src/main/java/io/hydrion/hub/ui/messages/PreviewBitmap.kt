@@ -88,9 +88,11 @@ internal fun GeneratedPicture(
     description: String,
     modifier: Modifier = Modifier,
     fit: Boolean = false,
+    loadedImageModifier: Modifier = Modifier,
 ) {
     val preview = rememberGeneratedPreview(key, width, height, if (fit) 1440 else 480)
-    BitmapPreview(preview, description, modifier, fit, failureLabel = stringResource(R.string.turn_image_preview_failed))
+    val imageModifier = if (preview is PicturePreview.Ready) modifier.then(loadedImageModifier) else modifier
+    BitmapPreview(preview, description, imageModifier, fit, failureLabel = stringResource(R.string.turn_image_preview_failed))
 }
 
 @Composable

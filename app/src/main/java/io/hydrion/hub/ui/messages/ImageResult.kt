@@ -22,11 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import io.hydrion.hub.R
 import io.hydrion.hub.model.GeneratedImageStore
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Message
@@ -117,9 +119,10 @@ internal fun ImageResult(msg: Message, query: String, vm: HubViewModel, busy: Bo
 }
 
 @Composable
-private fun PictureViewer(msg: Message, demoSize: Extent, sizes: Map<String, Extent?>, initial: Int,
+internal fun PictureViewer(msg: Message, demoSize: Extent, sizes: Map<String, Extent?>, initial: Int,
                           onReference: suspend (String) -> Boolean, onDismiss: () -> Unit) {
     val pager = rememberPagerState(initialPage = initial) { msg.imageKeys.size }
+    var controlsVisible by remember(pager.currentPage) { mutableStateOf(true) }
     val key = msg.imageKeys[pager.currentPage.coerceIn(msg.imageKeys.indices)]
     val size = sizes[key]
     var saveKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -152,32 +155,43 @@ private fun PictureViewer(msg: Message, demoSize: Extent, sizes: Map<String, Ext
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().systemBarsPadding()) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "关闭大图") }
-                    Text("${pager.currentPage + 1} / ${msg.imageKeys.size}", Modifier.weight(1f),
-                        style = MaterialTheme.typography.labelLarge)
-                    IconButton(enabled = size != null && !working && saveKey == null, onClick = {
-                        runAction("图片已复制") { copyPicture(context, key, demoSize.width, demoSize.height) }
-                    }) { Icon(Icons.Outlined.ContentCopy, "复制图片") }
-                    IconButton(enabled = size != null && !working && saveKey == null, onClick = {
-                        saveKey = key
-                        saveFile.launch("HydrionHub-${key.take(12).replace(':', '-')}-${pager.currentPage + 1}.png")
-                    }) { Icon(Icons.Outlined.Download, "保存图片") }
+                if (controlsVisible) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "关闭大图") }
+                        Text("${pager.currentPage + 1} / ${msg.imageKeys.size}", Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelLarge)
+                        IconButton(enabled = size != null && !working && saveKey == null, onClick = {
+                            runAction("图片已复制") { copyPicture(context, key, demoSize.width, demoSize.height) }
+                        }) { Icon(Icons.Outlined.ContentCopy, "复制图片") }
+                        IconButton(enabled = size != null && !working && saveKey == null, onClick = {
+                            saveKey = key
+                            saveFile.launch("HydrionHub-${key.take(12).replace(':', '-')}-${pager.currentPage + 1}.png")
+                        }) { Icon(Icons.Outlined.Download, "保存图片") }
+                    }
                 }
                 HorizontalPager(state = pager, modifier = Modifier.weight(1f).fillMaxWidth()) { page ->
                     GeneratedPicture(msg.imageKeys[page], demoSize.width, demoSize.height, "大图，第 ${page + 1} 张",
-                        Modifier.fillMaxSize(), fit = true)
+                        Modifier.fillMaxSize(), fit = true,
+                        loadedImageModifier = Modifier.clickable(
+                            interactionSource = null, indication = null, role = Role.Button,
+                            onClickLabel = stringResource(
+                                if (controlsVisible) R.string.turn_hide_image_controls else R.string.turn_show_image_controls
+                            ),
+                        ) { controlsVisible = !controlsVisible },
+                    )
                 }
                 if (working) LinearProgressIndicator(Modifier.fillMaxWidth())
-                Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)) {
-                    if (msg.prompt.isNotBlank()) Text(msg.prompt, style = MaterialTheme.typography.bodyLarge,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(listOfNotNull(msg.model, size?.let { "${it.width} × ${it.height}" },
-                        messageTime(msg.createdAt, true)).joinToString(" · "),
-                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick = { scope.launch { if (onReference(key)) onDismiss() } }, enabled = size != null) {
-                        Icon(Icons.Outlined.AddPhotoAlternate, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp)); Text("作为参考图")
+                if (controlsVisible) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp)) {
+                        if (msg.prompt.isNotBlank()) Text(msg.prompt, style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(listOfNotNull(msg.model, size?.let { "${it.width} × ${it.height}" },
+                            messageTime(msg.createdAt, true)).joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = { scope.launch { if (onReference(key)) onDismiss() } }, enabled = size != null) {
+                            Icon(Icons.Outlined.AddPhotoAlternate, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp)); Text("作为参考图")
+                        }
                     }
                 }
             }

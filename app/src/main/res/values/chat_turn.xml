@@ -50,6 +50,8 @@
     <string name="turn_confirm_selection">Delete the displayed versions of %1$d selected messages? Messages with no other version will be removed.</string>
     <string name="turn_confirm_selection_all">Delete %1$d selected messages and all their versions?</string>
     <string name="turn_assistant">Assistant</string>
+    <string name="turn_hide_image_controls">Hide controls</string>
+    <string name="turn_show_image_controls">Show controls</string>
     <string name="turn_image_preview_failed">Unable to load image</string>
     <string name="turn_media">Attachment</string>
     <string name="turn_tokens">%1$d tokens</string>
