@@ -1,5 +1,7 @@
 <resources>
     <string name="turn_code_label">Code</string>
+    <string name="turn_copy_code">Copy code</string>
+    <string name="turn_code_copied">Code copied</string>
     <string name="turn_copy">Copy message</string>
     <string name="turn_copy_reply">Copy reply</string>
     <string name="turn_more">Message actions</string>
