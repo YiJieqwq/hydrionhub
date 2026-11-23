@@ -23,6 +23,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.model.WorkspaceLoad
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
@@ -219,6 +220,49 @@ class PushDrawerTest {
         screen.onNodeWithContentDescription(label(R.string.settings_cancel)).performTouchInput { click() }
         screen.onNodeWithTag("drawer-new-chat").assertIsDisplayed()
         screen.runOnIdle { assertEquals(1, changes.size) }
+    }
+
+    @Test fun firstHeaderTapReopensTheDrawerAfterSelectingALongChatInHistory() {
+        val vm = screen.runOnIdle { ViewModelProvider(screen.activity)[HubViewModel::class.java] }
+        screen.waitUntil(5_000) { vm.workspaceLoad.value == WorkspaceLoad.Ready }
+        val previousId = screen.runOnIdle { vm.state.value.current.id }
+        val target = screen.runOnIdle {
+            vm.newConversation()
+            vm.state.value.current.id
+        }
+        try {
+            screen.runOnIdle {
+                vm.setMode(Mode.Chat)
+                vm.setDraft("Drawer return fixture")
+                vm.send("Hydrion")
+                vm.stop()
+                val reply = vm.state.value.current.messages.last()
+                val longReply = (1..65).joinToString("\n") { "History line $it" }
+                assertTrue(vm.editMessage(reply.id, longReply))
+                vm.newConversation()
+            }
+            // Start the shell in the other chat before exercising the history return.
+            screen.activityRule.scenario.recreate()
+            val menu = screen.onNodeWithContentDescription("打开侧栏")
+            val history = screen.onNodeWithContentDescription(screen.activity.getString(R.string.drawer_history))
+            menu.assertIsDisplayed().performTouchInput { click(center) }
+            history.assertIsDisplayed().performTouchInput { click(center) }
+            val row = hasTestTag("history-row-$target")
+            screen.onNode(hasScrollToIndexAction() and hasAnyAncestor(hasTestTag("drawer-history-page")))
+                .performScrollToNode(row)
+            screen.onNode(row).assertIsDisplayed().performTouchInput { click(center) }
+            screen.waitUntil(5_000) { vm.state.value.current.id == target }
+            screen.onNodeWithTag("drawer-history-page").assertDoesNotExist()
+            screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction()).assertIsNotFocused()
+            menu.assertIsDisplayed().performTouchInput { click(center) }
+            history.assertIsDisplayed()
+            screen.onNodeWithTag("drawer-conversation-list").assertIsDisplayed()
+        } finally {
+            screen.runOnIdle {
+                vm.deleteConversation(target)
+                vm.openConversation(previousId)
+            }
+        }
     }
 
     @Test fun dragMovesTheFullWidthChatAndOnlyTheExposedStripDismissesTheDrawer() {

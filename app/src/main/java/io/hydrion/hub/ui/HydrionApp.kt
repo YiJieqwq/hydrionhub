@@ -102,6 +102,9 @@ private fun Workspace(vm: HubViewModel) {
     val load by vm.workspaceLoad.collectAsStateWithLifecycle()
     // Do not expose a temporary default chat while the previous assistant is being restored.
     if (load == WorkspaceLoad.Reading) return
+    // Keep drawer motion in the workspace when the conversation's keyed content is replaced.
+    val drawer = rememberDrawerState(DrawerValue.Closed)
+    val drawerScope = rememberCoroutineScope()
     val catalog by providers.catalog.collectAsStateWithLifecycle()
     val current = state.current
     val selection = remember(catalog, current.mode) { catalog.selection(current.mode) }
@@ -153,8 +156,7 @@ private fun Workspace(vm: HubViewModel) {
     val index = find.matchIndex(hits)
     var renameId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
-    val drawer = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
+    val sendScope = rememberCoroutineScope()
     val focus = LocalFocusManager.current
     val timelines = rememberSaveableStateHolder()
     val drawerActions = remember(vm, timelines) {
@@ -169,11 +171,11 @@ private fun Workspace(vm: HubViewModel) {
         notice?.let { snackbar.showSnackbar(it); vm.clearNotice() }
     }
 
-    fun closeDrawer() { scope.launch { drawer.close() } }
+    fun closeDrawer() { drawerScope.launch { drawer.close() } }
     fun leaveDrawer(action: () -> Unit) {
         focus.clearFocus()
         // Switching modes can change the sheet width and replace its active drag anchors.
-        scope.launch {
+        drawerScope.launch {
             drawer.close()
             action()
         }
@@ -269,7 +271,7 @@ private fun Workspace(vm: HubViewModel) {
                                         // Dictation has already written the final transcript to the live draft.
                                         val submitted = vm.state.value
                                         if (submitted.current.id == current.id && submitted.current.mode == current.mode) {
-                                            scope.launch {
+                                            sendScope.launch {
                                                 sendDraft(vm, providers, submitted, composerCatalog, fromDictation)
                                                     ?.let { vm.reportError(current.id, it) }
                                             }
@@ -293,7 +295,7 @@ private fun Workspace(vm: HubViewModel) {
                                         environmentName = if (state.modeLocked && current.mode == Mode.Chat)
                                             conversationEnvironmentName(current, vm.environments::getEnvironment) else null,
                                         onMode = vm::setMode, onNew = ::newChat,
-                                        onDrawer = { focus.clearFocus(); scope.launch { drawer.open() } },
+                                        onDrawer = { focus.clearFocus(); drawerScope.launch { drawer.open() } },
                                         onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },
                                         onFind = { find = find.copy(open = true) }, onDelete = { deleteId = current.id }
                                     )
