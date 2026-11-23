@@ -4,10 +4,13 @@ import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.model.HubState
 import io.hydrion.hub.model.Message
 import io.hydrion.hub.model.Role
+import io.hydrion.hub.model.appendVersion
+import io.hydrion.hub.model.withVersion
 import io.hydrion.hub.ui.messages.matchingMessages
 import io.hydrion.hub.ui.sidebar.globalDrawerHits
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DrawerHitNavigationTest {
@@ -28,6 +31,35 @@ class DrawerHitNavigationTest {
         assertEquals(first.messageId, reopened.messageId)
         assertEquals(first.query, reopened.query)
         assertNotEquals(first.jump, reopened.jump)
+    }
+
+    @Test fun searchAndJumpUseTheTextShownInTheSelectedReplyVersion() {
+        val reply = Message(id = "reply", role = Role.Assistant,
+            text = "## Read **Fire**fly and [the guide](https://fixture.invalid/hidden-route)")
+        val conversation = chat.copy(messages = listOf(reply))
+        val result = globalDrawerHits(listOf(conversation), "firefly").single()
+        assertEquals("Read Firefly and the guide", result.snippet)
+        val focused = ConversationFind().openHit(conversation, result)
+        assertEquals(reply.id, focused.messageId)
+        assertEquals(listOf(reply.id), matchingMessages(HubState(current = conversation), focused.query))
+        assertEquals(emptyList<String>(), matchingMessages(HubState(current = conversation), "hidden-route"))
+        assertTrue(globalDrawerHits(listOf(conversation), "hidden-route").isEmpty())
+
+        val otherVersion = conversation.appendVersion(reply, reply.copy(text = "[reference](https://fixture.invalid/firefly)"))
+        assertTrue(globalDrawerHits(listOf(otherVersion), "firefly").isEmpty())
+        assertEquals(ConversationFind(), focused.openHit(otherVersion, result))
+        val originalVersion = otherVersion.withVersion(reply.id, 0)
+        assertEquals(result, globalDrawerHits(listOf(originalVersion), "firefly").single())
+    }
+
+    @Test fun codeAndUserMessagesKeepLiteralFormattingInSearch() {
+        val literal = "**Fire**fly"
+        val code = Message(id = "code", role = Role.Assistant, text = "```text\n$literal\n```")
+        val user = target.copy(text = literal)
+        val conversation = chat.copy(messages = listOf(code, user))
+        assertEquals(listOf(code.id, user.id), matchingMessages(HubState(current = conversation), literal))
+        assertTrue(globalDrawerHits(listOf(conversation), "firefly").isEmpty())
+        assertEquals(code.id, globalDrawerHits(listOf(conversation), literal).single().messageId)
     }
 
     @Test fun openingATitleOnlyResultInTheSameChatClosesItsEarlierBodySearch() {

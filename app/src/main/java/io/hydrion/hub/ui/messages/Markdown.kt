@@ -29,8 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
 
-private val inline = Regex("""(`[^`\n]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_|~~[^~\n]+~~|\[[^\]\n]+]\(https?://[^\s)]+\))""")
-
 private fun AnnotatedString.Builder.markMatches(query: String, highlight: Color) {
     if (query.isBlank()) return
     val value = toString()
@@ -58,29 +56,30 @@ private fun richText(value: String, query: String): AnnotatedString {
     return remember(value, query, colors, style) {
         buildAnnotatedString {
             var start = 0
-            for (match in inline.findAll(value)) {
+            for (match in inlineMarkdown.findAll(value)) {
                 append(value.substring(start, match.range.first))
                 val token = match.value
+                val label = match.inlineLabel()
                 when {
                     token.startsWith('`') -> withStyle(SpanStyle(
                         fontFamily = FontFamily.Monospace, background = style.background.messageColor(), color = style.text.messageColor()
-                    )) { append(token.substring(1, token.lastIndex)) }
+                    )) { append(label) }
                     token.startsWith("**") || token.startsWith("__") ->
-                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(token.drop(2).dropLast(2)) }
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(label) }
                     token.startsWith("~~") -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) {
-                        append(token.drop(2).dropLast(2))
+                        append(label)
                     }
                     token.startsWith('[') -> {
                         val end = token.indexOf("](")
                         val url = token.substring(end + 2, token.length - 1)
                         withLink(LinkAnnotation.Url(url)) {
                             withStyle(SpanStyle(color = colors.primary, textDecoration = TextDecoration.Underline)) {
-                                append(token.substring(1, end))
+                                append(label)
                             }
                         }
                     }
                     else -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                        append(token.substring(1, token.lastIndex))
+                        append(label)
                     }
                 }
                 start = match.range.last + 1
@@ -149,7 +148,7 @@ private fun CodeBlock(block: MarkdownBlock.Code, query: String) {
     val palette = LocalMessageStyle.current.renderPalette.assistant
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(palette.background.messageColor())) {
         Row(Modifier.fillMaxWidth().background(palette.border.messageColor().copy(alpha = .35f)).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(block.language.ifEmpty { stringResource(R.string.turn_code_label) }, Modifier.weight(1f),
+            Text(highlighted(block.language.ifEmpty { stringResource(R.string.turn_code_label) }, query), Modifier.weight(1f),
                 style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             IconButton(onClick = { copyText(block.value) }) {
                 Icon(Icons.Outlined.ContentCopy, stringResource(R.string.turn_copy_code), Modifier.size(16.dp))

@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.model.Conversation
+import io.hydrion.hub.ui.messages.searchableBody
 
 internal data class DrawerSearchState(
     val query: String = "",
@@ -82,7 +83,7 @@ internal fun globalDrawerHits(history: List<Conversation>, query: String): List<
 
         scoreText(item.title, weight = 3L)
         for (message in item.messages) {
-            scoreText(message.text, weight = 1L, sourceMessageId = message.id)
+            scoreText(message.searchableBody(), weight = 1L, sourceMessageId = message.id)
             if (message.imageKeys.isNotEmpty()) {
                 scoreText(message.prompt, weight = 1L, sourceMessageId = message.id)
             }

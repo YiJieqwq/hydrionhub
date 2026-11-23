@@ -129,10 +129,16 @@ class StreamRegenerationTest {
         fresh.chooseMessageVersion(stopped.id, 0)
         assertEquals(stopped, fresh.state.value.current.messages.last())
         assertEquals(stopped, persisted().messages.last())
-        fresh.chooseMessageVersion(stopped.id, 1)
-        assertEquals(regenerated, fresh.state.value.current.messages.last())
-        submit(fresh, "Follow-up")
-        latest(fresh) { it.status == Generation.Completed }
+        val reopened = session()
+        reopened.restore(decodeWorkspace(JSONObject(historyFile.readText())))
+        reopened.openConversation(saved.id)
+        val restored = reopened.state.value.current
+        assertEquals(stopped, restored.messages.last())
+        assertEquals(0, restored.versions.getValue(stopped.id).selected)
+        reopened.chooseMessageVersion(stopped.id, 1)
+        assertEquals(regenerated, reopened.state.value.current.messages.last())
+        submit(reopened, "Follow-up")
+        latest(reopened) { it.status == Generation.Completed }
         assertEquals(4, requests.size)
         assertEquals(originalHistory + listOf("assistant" to "Replacement", "user" to "Follow-up"), transcript(requests.last()))
     }

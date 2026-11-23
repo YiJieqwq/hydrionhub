@@ -135,6 +135,11 @@ class EditedBranchRoutingTest {
         f.pick(f.a, "long")
         f.pick(f.b, "long")
 
+        assertNull(f.edit(original.messages.first().id, "Edited in B"))
+        f.assertReply(f.b, "long", "Edited in B")
+        val branch = f.chat.state.value.current
+        f.chat.openConversation(original.id)
+
         assertNull(f.store.catalog.value.retryChatRouteIssue(original.messages.first(), answer))
         f.chat.regenerate(answer.id)
         f.assertReply(f.a, "short", "Original question")
@@ -146,7 +151,31 @@ class EditedBranchRoutingTest {
 
         f.send("Next question")
         f.assertReply(f.b, "long", "Next question")
-        assertEquals(3, f.requests.size)
+        assertEquals(4, f.requests.size)
+        assertEquals(branch, f.chat.state.value.history.single { it.id == branch.id })
+    }
+
+    @Test fun retryOfASecondReplyToTheSamePromptUsesOnlyThatReplyAndItsProvider() = runBlocking {
+        val f = Fixture(this)
+        f.send("Original question")
+        f.assertReply(f.a, "short", "Original question")
+        val source = f.chat.state.value.current
+        val first = source.messages.last()
+        val second = first.copy(id = "second-reply", text = "Stopped at B", status = Generation.Stopped,
+            remoteModel = f.route(f.b), parameters = first.parameters + ("tone" to "long"))
+        val stored = source.copy(messages = source.messages + second)
+
+        val cold = Fixture(this)
+        cold.chat.restore(decodeWorkspace(encodeWorkspace(SavedWorkspace(history = listOf(stored)))))
+        cold.chat.openConversation(stored.id)
+        cold.chat.regenerate(second.id)
+        cold.assertReply(cold.b, "long", "Original question")
+        val retried = cold.chat.state.value.current
+        assertEquals(first, retried.messages[1])
+        assertEquals(second.id, retried.messages.last().id)
+        assertEquals(listOf(second), retried.versions.getValue(second.id).others)
+        assertEquals(setOf(second.id), retried.versions.keys)
+        assertEquals(1, cold.requests.single().body.getJSONArray("messages").length())
     }
 
     @Test fun disabledOrRemovedCurrentModelLeavesEditorRecoverableWithSourceAndDraftIntact() = runBlocking {

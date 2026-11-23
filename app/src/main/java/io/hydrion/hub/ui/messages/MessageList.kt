@@ -62,8 +62,7 @@ fun matchingMessages(state: HubState, query: String): List<String> {
     val needle = query.trim()
     if (needle.isEmpty()) return emptyList()
     return state.current.messages.filter { message ->
-        message.text.contains(needle, ignoreCase = true) ||
-            (message.imageKeys.isNotEmpty() && message.prompt.contains(needle, ignoreCase = true)) ||
+        message.containsVisibleBody(needle) ||
             message.thought.contains(needle, ignoreCase = true) ||
             message.tool?.contains(needle, ignoreCase = true) == true ||
             message.error?.contains(needle, ignoreCase = true) == true ||

@@ -53,6 +53,7 @@ import io.hydrion.hub.ui.composer.HubComposer
 import io.hydrion.hub.ui.composer.rememberToolsPageState
 import io.hydrion.hub.ui.composer.ModelEditorComposerBridge
 import io.hydrion.hub.ui.messages.ProvideMessageStyle
+import io.hydrion.hub.ui.messages.containsVisibleBody
 import io.hydrion.hub.ui.messages.MessageList
 import io.hydrion.hub.ui.messages.matchingMessages
 import androidx.compose.ui.res.stringResource
@@ -79,9 +80,7 @@ internal data class ConversationFind(
         if (conversation.id != hit.id) return this
         val needle = hit.needle ?: return ConversationFind()
         val message = conversation.messages.find { it.id == hit.messageId } ?: return ConversationFind()
-        val stillVisible = message.text.contains(needle, ignoreCase = true) ||
-            (message.imageKeys.isNotEmpty() && message.prompt.contains(needle, ignoreCase = true))
-        return if (stillVisible) ConversationFind(true, needle, message.id, jump + 1) else ConversationFind()
+        return if (message.containsVisibleBody(needle)) ConversationFind(true, needle, message.id, jump + 1) else ConversationFind()
     }
 }
 

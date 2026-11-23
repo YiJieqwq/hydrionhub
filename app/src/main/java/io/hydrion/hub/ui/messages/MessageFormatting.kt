@@ -1,5 +1,7 @@
 package io.hydrion.hub.ui.messages
 
+import io.hydrion.hub.model.Message
+import io.hydrion.hub.model.Role
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -84,6 +86,31 @@ internal fun markdownBlocks(markdown: String): List<MarkdownBlock> = buildList {
     }
     flush()
 }
+
+internal val inlineMarkdown = Regex("""(`[^`\n]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_|~~[^~\n]+~~|\[[^\]\n]+]\(https?://[^\s)]+\))""")
+
+internal fun MatchResult.inlineLabel(): String = when {
+    value.startsWith('[') -> value.substring(1, value.indexOf("]("))
+    value.startsWith("**") || value.startsWith("__") || value.startsWith("~~") -> value.substring(2, value.length - 2)
+    else -> value.substring(1, value.lastIndex)
+}
+
+internal fun Message.searchableBody(): String {
+    if (role == Role.User || text.isEmpty()) return text
+    fun inlineText(source: String) = inlineMarkdown.replace(source) { it.inlineLabel() }
+    return markdownBlocks(text).mapNotNull { block ->
+        when (block) {
+            is MarkdownBlock.Paragraph -> inlineText(block.value)
+            is MarkdownBlock.Heading -> inlineText(block.value)
+            is MarkdownBlock.Quote -> inlineText(block.value)
+            is MarkdownBlock.Code -> if (block.language.isEmpty()) block.value else "${block.language}\n${block.value}"
+            MarkdownBlock.Rule -> null
+        }
+    }.joinToString("\n")
+}
+
+internal fun Message.containsVisibleBody(needle: String) = searchableBody().contains(needle, ignoreCase = true) ||
+    (imageKeys.isNotEmpty() && prompt.contains(needle, ignoreCase = true))
 
 internal data class Extent(val width: Int, val height: Int)
 private val sizePattern = Regex("""\s*(\d{1,5})\s*[xX×]\s*(\d{1,5})\s*""")

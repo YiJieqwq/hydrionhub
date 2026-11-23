@@ -417,7 +417,9 @@ internal class ConversationSession(
         val id = chat.id
         val mode = chat.mode
         val profile = assistant(chat.assistantId).takeIf { mode == Mode.Chat && response.imageInvocation == null }
-        val throughPrompt = chat.messages.takeWhile { it.id != response.id }
+        // A restored conversation can have sibling replies to the same prompt.
+        val promptIndex = chat.messages.indexOfFirst { it.id == response.replyTo }
+        val throughPrompt = chat.messages.take(promptIndex + 1)
         val context = chat.contextStart?.let { anchor -> throughPrompt.dropWhile { it.id != anchor } } ?: throughPrompt
         val history = profile?.contextLimit?.let(context::takeLast) ?: context
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -581,7 +583,9 @@ internal class ConversationSession(
         val target = item.messages.find { it.id == id } ?: return
         if (item.mode == Mode.Chat && !item.canRetryChatMessage(target)) return
         val user = if (target.role == Role.User) target else item.messages.find { it.id == target.replyTo } ?: return
-        val original = item.messages.find { it.replyTo == user.id }
+        val original = if (target.role == Role.Assistant) target else item.messages.find {
+            it.role == Role.Assistant && it.replyTo == user.id
+        }
         val response = prepareRetry(item, user, original, original?.id ?: newId(), validateImage, resolveImage) ?: return
         val next = if (item.mode == Mode.Chat && original != null) {
             item.appendVersion(original, response)
