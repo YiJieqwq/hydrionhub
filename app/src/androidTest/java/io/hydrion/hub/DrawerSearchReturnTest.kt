@@ -29,6 +29,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -69,13 +70,13 @@ class DrawerSearchReturnTest {
             }
             screen.setContent {
                 val state by session.state.collectAsState()
-                val drawer = rememberDrawerState(DrawerValue.Open)
+                val drawer = rememberDrawerState(DrawerValue.Closed)
                 val navigation = rememberCoroutineScope()
                 MaterialTheme {
                     WorkspaceDrawer(state.current.mode, drawer, onClose = { navigation.launch { drawer.close() } },
                         drawerContent = { width, visible ->
                             ConversationDrawer(width, MaterialTheme.colorScheme.surface,
-                                history = if (visible) state.history else emptyList(),
+                                allHistory = { state.history }, drawerVisible = visible,
                                 currentId = state.current.id, assistants = state.assistants,
                                 assistantId = state.current.assistantId, assistantsReady = true,
                                 onSelectAssistant = { id -> navigation.launch { drawer.close(); session.selectAssistant(id) } },
@@ -89,7 +90,19 @@ class DrawerSearchReturnTest {
                 }
             }
 
-            control(R.string.drawer_switch_global).performClick()
+            screen.onNodeWithText("Show drawer").performClick()
+            val topics = screen.onNode(hasSetTextAction() and hasContentDescription(screen.activity.getString(R.string.drawer_search)))
+            topics.assertIsDisplayed()
+            screen.onNode(row(history[1])).assertIsDisplayed()
+            val switch = control(R.string.drawer_switch_global)
+            assertFalse(topics.fetchSemanticsNode().boundsInRoot.contains(switch.fetchSemanticsNode().boundsInRoot.center))
+            switch.performTouchInput { click(center) }
+            field.assertIsDisplayed()
+            screen.onNodeWithText(screen.activity.getString(R.string.drawer_global_search), useUnmergedTree = true).assertIsDisplayed()
+            control(R.string.drawer_switch_topics).assertIsDisplayed()
+            screen.onNodeWithText(screen.activity.getString(R.string.drawer_global_submit_hint)).assertIsDisplayed()
+            topics.assertDoesNotExist()
+            screen.onNode(row(history[1])).assertDoesNotExist()
             field.performClick().performTextReplacement("Orchid")
             field.performImeAction()
             awaitRow(history.first())

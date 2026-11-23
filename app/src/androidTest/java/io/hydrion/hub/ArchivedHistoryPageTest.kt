@@ -1,9 +1,15 @@
 package io.hydrion.hub
 
 import androidx.activity.ComponentActivity
+import androidx.compose.material3.DrawerState
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -15,12 +21,15 @@ import io.hydrion.hub.model.LocalAssistant
 import io.hydrion.hub.model.Message
 import io.hydrion.hub.model.Role
 import io.hydrion.hub.model.SavedWorkspace
+import io.hydrion.hub.ui.sidebar.ConversationDrawer
 import io.hydrion.hub.ui.sidebar.DrawerActions
 import io.hydrion.hub.ui.sidebar.DrawerHistoryPage
+import io.hydrion.hub.ui.sidebar.WorkspaceDrawer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -45,17 +54,18 @@ class ArchivedHistoryPageTest {
     private val changes = mutableListOf<Pair<String, Boolean>>()
     private val clearRequests = mutableListOf<Set<String>>()
 
+    private val actions = DrawerActions(hasDraft = session::hasDraft, pin = session::setPinned,
+        move = session::moveConversations, duplicate = session::duplicateConversation,
+        delete = { clearRequests += it }, copyAssistant = session::copyAssistant,
+        groupAssistant = session::groupAssistant, canRemoveAssistant = session::canRemoveAssistant,
+        removeAssistant = session::removeEmptyAssistant, setArchived = { id, archived ->
+            changes += id to archived
+            session.setArchived(id, archived)
+        })
+
     @After fun releaseScope() { scope.cancel() }
 
     private fun showHistory() {
-        val actions = DrawerActions(hasDraft = session::hasDraft, pin = session::setPinned,
-            move = session::moveConversations, duplicate = session::duplicateConversation,
-            delete = { clearRequests += it }, copyAssistant = session::copyAssistant,
-            groupAssistant = session::groupAssistant, canRemoveAssistant = session::canRemoveAssistant,
-            removeAssistant = session::removeEmptyAssistant, setArchived = { id, archived ->
-                changes += id to archived
-                session.setArchived(id, archived)
-            })
         screen.runOnIdle {
             session.restore(SavedWorkspace(history = listOf(active, target, namesake, unrelated),
                 drafts = mapOf(target.id to draft), assistants = listOf(owner, guest),
@@ -129,6 +139,70 @@ class ArchivedHistoryPageTest {
             assertEquals(draft, session.snapshot().drafts[target.id])
             assertTrue(clearRequests.isEmpty())
         }
+    }
+
+    @Test fun archivingCurrentChatKeepsMatchingRowsInTheOpenHistoryPageAfterTheDrawerCloses() {
+        val next = Conversation(id = "next", title = "Release plan", updatedAt = 30)
+        val guestMatch = Conversation(id = "guest-match", title = "Release review", assistantId = guest.id, updatedAt = 20)
+        val other = Conversation(id = "schedule", title = "Schedule", updatedAt = 10)
+        screen.runOnIdle {
+            session.restore(SavedWorkspace(history = listOf(target, next, guestMatch, other),
+                assistants = listOf(owner, guest), lastThreads = mapOf(owner.id to target.id)))
+            assertEquals(target.id, session.state.value.current.id)
+        }
+        lateinit var background: DrawerState
+        screen.setContent {
+            val state by session.state.collectAsState()
+            val drawer = rememberDrawerState(DrawerValue.Open)
+            val navigation = rememberCoroutineScope()
+            background = drawer
+            LaunchedEffect(state.current.id) {
+                if (state.current.id != target.id) drawer.close()
+            }
+            MaterialTheme {
+                WorkspaceDrawer(state.current.mode, drawer, onClose = { navigation.launch { drawer.close() } },
+                    drawerContent = { width, visible ->
+                        ConversationDrawer(width, MaterialTheme.colorScheme.surface, { state.history }, state.current.id,
+                            state.assistants, state.current.assistantId, {}, { _, _ -> false }, true,
+                            onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = session::togglePin,
+                            onDelete = {}, actions = actions, onHit = {}, onAssistantSettings = {}, drawerVisible = visible)
+                    }) {}
+            }
+        }
+
+        control(R.string.drawer_history).performClick()
+        val inPage = hasAnyAncestor(hasTestTag("drawer-history-page"))
+        screen.onNode(inPage and hasContentDescription(label(R.string.drawer_search))).performClick()
+        val field = screen.onNode(inPage and hasSetTextAction())
+        field.performTextReplacement("Release")
+        control(R.string.drawer_all_owners).performClick()
+        row(other).assertDoesNotExist()
+        requestArchive()
+        confirm()
+
+        screen.runOnIdle {
+            assertEquals(next.id, session.state.value.current.id)
+            assertEquals(DrawerValue.Closed, background.currentValue)
+            assertEquals(listOf(target.id to true), changes)
+        }
+        screen.onNodeWithTag("drawer-history-page").assertIsDisplayed()
+        field.assertTextContains("Release")
+        screen.onNode(inPage and hasText(label(R.string.drawer_no_matches))).assertDoesNotExist()
+        row(target).assertDoesNotExist()
+        row(next).assertIsDisplayed()
+        row(guestMatch).assertIsDisplayed()
+        row(other).assertDoesNotExist()
+        filterArchived()
+        row(target).assertIsDisplayed()
+        row(next).assertDoesNotExist()
+        filterArchived()
+        screen.onNode(inPage and hasContentDescription(label(R.string.drawer_clear_search))).performClick()
+        screen.onNode(inPage and hasText(label(R.string.drawer_empty))).assertDoesNotExist()
+        row(next).assertIsDisplayed()
+        row(guestMatch).assertIsDisplayed()
+        screen.onNode(inPage and SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollToIndex))
+            .performScrollToNode(hasTestTag("history-row-" + other.id))
+        row(other).assertIsDisplayed()
     }
 
     @Test fun movingTheTargetOutOfScopeDismissesAnOpenArchiveConfirmation() {

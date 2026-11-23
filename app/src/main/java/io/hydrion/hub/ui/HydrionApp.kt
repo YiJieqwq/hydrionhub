@@ -204,7 +204,7 @@ private fun Workspace(vm: HubViewModel) {
                     width = width,
                     containerColor = if (current.mode == Mode.Chat) MaterialTheme.colorScheme.background
                         else MaterialTheme.colorScheme.surfaceContainerLow,
-                    history = if (visible) state.history else emptyList(),
+                    allHistory = { state.history }, drawerVisible = visible,
                     assistants = state.assistants, assistantId = current.assistantId, assistantsReady = load == WorkspaceLoad.Ready,
                     onSelectAssistant = { id -> leaveDrawer { vm.selectAssistant(id) } },
                     onRenameAssistant = vm::renameAssistant, currentId = current.id, onNew = { leaveDrawer(vm::newConversation) },

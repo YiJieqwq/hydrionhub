@@ -43,7 +43,7 @@ class PushDrawerTest {
         val width = mutableStateOf(320.dp)
         screen.runOnUiThread { screen.activity.setContent {
             MaterialTheme {
-                ConversationDrawer(width.value, MaterialTheme.colorScheme.surface, emptyList(), "",
+                ConversationDrawer(width.value, MaterialTheme.colorScheme.surface, { emptyList() }, "",
                     assistants = listOf(LocalAssistant.Default), assistantId = LocalAssistant.Default.id,
                     assistantsReady = true, onSelectAssistant = {}, onRenameAssistant = { _, _ -> false },
                     onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = {}, onDelete = {}, actions = actions, onHit = {}, onAssistantSettings = {})
@@ -103,12 +103,12 @@ class PushDrawerTest {
                 var current by remember { mutableStateOf(first.id) }
                 WorkspaceDrawer(Mode.Chat, drawer, onClose = { scope.launch { drawer.close() } },
                     drawerContent = { width, visible ->
-                        ConversationDrawer(width, MaterialTheme.colorScheme.surface, if (visible) chats else emptyList(),
+                        ConversationDrawer(width, MaterialTheme.colorScheme.surface, { chats },
                             current, listOf(owner), owner.id, {}, { _, _ -> false }, true,
                             {}, {}, {}, {}, {}, {}, actions, onHit = { hit ->
                                 current = hit.id
                                 scope.launch { drawer.close() }
-                            }, onAssistantSettings = {})
+                            }, onAssistantSettings = {}, drawerVisible = visible)
                     }) {
                     Button(onClick = { scope.launch { drawer.open() } }) { Text("Reopen $current") }
                 }
@@ -158,7 +158,7 @@ class PushDrawerTest {
         screen.runOnUiThread { screen.activity.setContent {
             var current by remember { mutableStateOf(LocalAssistant.Default.id) }
             MaterialTheme {
-                ConversationDrawer(300.dp, MaterialTheme.colorScheme.surface, chats, "",
+                ConversationDrawer(300.dp, MaterialTheme.colorScheme.surface, { chats }, "",
                     assistants = listOf(LocalAssistant.Default, alt), assistantId = current,
                     onSelectAssistant = { current = it }, onRenameAssistant = { _, _ -> false }, assistantsReady = true,
                     onNew = {}, onOpen = {}, onSettings = {}, onRename = {}, onPin = {}, onDelete = {}, actions = actions, onHit = {}, onAssistantSettings = {})
@@ -185,7 +185,7 @@ class PushDrawerTest {
         val opened = mutableListOf<String>()
         val selected = mutableListOf<String>()
         screen.runOnUiThread { screen.activity.setContent { MaterialTheme {
-            ConversationDrawer(320.dp, MaterialTheme.colorScheme.surface, emptyList(), "",
+            ConversationDrawer(320.dp, MaterialTheme.colorScheme.surface, { emptyList() }, "",
                 listOf(LocalAssistant.Default, secondary), LocalAssistant.Default.id, { selected += it }, { _, _ -> false }, true,
                 {}, {}, {}, {}, {}, {}, actions, {}, { opened += it })
         } } }
@@ -205,7 +205,7 @@ class PushDrawerTest {
         val f = DrawerActions({ it == ids[0].id }, { selected, _ -> changes += selected },
             { _, _ -> }, { _, _ -> }, { changes += it }, { _, _ -> false }, { _, _ -> false }, { false }, {})
         screen.runOnUiThread { screen.activity.setContent { MaterialTheme {
-            ConversationDrawer(300.dp, MaterialTheme.colorScheme.surface, ids, ids[0].id,
+            ConversationDrawer(300.dp, MaterialTheme.colorScheme.surface, { ids }, ids[0].id,
                 listOf(owner), owner.id, {}, { _, _ -> false }, true, {}, {}, {}, {}, {}, {}, f, {}, {})
         } } }
         fun label(id: Int) = screen.activity.getString(id)

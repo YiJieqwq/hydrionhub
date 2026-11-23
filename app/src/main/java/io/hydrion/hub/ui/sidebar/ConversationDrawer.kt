@@ -102,15 +102,14 @@ internal fun sectionLabel(date: LocalDate?): String {
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 internal fun ConversationDrawer(
-    width: Dp, containerColor: Color, history: List<Conversation>, currentId: String,
+    width: Dp, containerColor: Color, allHistory: () -> List<Conversation>, currentId: String,
     assistants: List<LocalAssistant>, assistantId: String, onSelectAssistant: (String) -> Unit,
     onRenameAssistant: (String, String) -> Boolean, assistantsReady: Boolean,
     onNew: () -> Unit, onOpen: (String) -> Unit, onSettings: () -> Unit,
     onRename: (String) -> Unit, onPin: (String) -> Unit, onDelete: (String) -> Unit,
     actions: DrawerActions, onHit: (DrawerHit) -> Unit, onAssistantSettings: (String) -> Unit,
+    drawerVisible: Boolean = true,
 ) {
-    var search by rememberSaveable { mutableStateOf(DrawerSearchState()) }
-    val (query, global, submitted) = search
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var showAssistants by rememberSaveable { mutableStateOf(false) }
     var editingId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -150,80 +149,9 @@ internal fun ConversationDrawer(
             actions.removeAssistant(item.id); removeId = null
         }
     }
-    val busyOwners = remember(history) {
-        history.filter { row -> row.messages.any { it.status.isActive } }.mapTo(mutableSetOf()) { it.assistantId }
-    }
     val currentAssistant = assistants.first { it.id == assistantId }
-    val focus = LocalFocusManager.current
-    val filter = if (global) submitted else query
-    val sections = remember(history, filter, global, assistantId) {
-        if (global) emptyList() else historySections(history, query, assistantId)
-    }
-    val hitResult: List<DrawerHit>? = key(global, submitted) {
-        val term = submitted
-        if (!global || term == null) emptyList() else {
-            val results by produceState<List<DrawerHit>?>(null, history) {
-                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { globalDrawerHits(history, term) }
-            }
-            results
-        }
-    }
-    val hits = hitResult.orEmpty()
-    val tokens = remember(submitted) { submitted.orEmpty().trim().split(Regex("\\s+")) }
-    val visibleIds = remember(sections) { sections.flatMap { it.rows }.mapTo(linkedSetOf()) { it.id } }
-    var selected by rememberSaveable(assistantId) { mutableStateOf<ArrayList<String>?>(null) }
-    var menuId by rememberSaveable { mutableStateOf<String?>(null) }
-    var archiveTarget by rememberSaveable(assistantId, filter) { mutableStateOf<ArchiveTarget?>(null) }
-    var moveIds by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
-    var deleteIds by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
-    val selecting = selected != null
-    val selectedIds = remember(selected, visibleIds) { selected.orEmpty().intersect(visibleIds) }
-    val selectedRows = remember(selectedIds, history) { if (selectedIds.isEmpty()) emptyList() else history.filter { it.id in selectedIds } }
-    val allPinned = selectedRows.isNotEmpty() && selectedRows.all { it.pinned }
-    fun toggle(id: String) { selected = ArrayList(if (id in selectedIds) selectedIds - id else selectedIds + id) }
-    LaunchedEffect(history.isEmpty()) {
-        if (history.isEmpty()) { selected = null; menuId = null; moveIds = arrayListOf(); deleteIds = arrayListOf() }
-    }
-    BackHandler(selecting && history.isNotEmpty()) { selected = null }
-    history.find { it.id == menuId && it.id in visibleIds }?.let { item ->
-        val copyName = stringResource(R.string.drawer_copy_name, item.title)
-        ChatActionsSheet(item, assistants.size > 1, { menuId = null },
-            select = { menuId = null; focus.clearFocus(); showAssistants = false; selected = arrayListOf(item.id) },
-            rename = { menuId = null; onRename(item.id) }, pin = { menuId = null; onPin(item.id) },
-            duplicate = { menuId = null; actions.duplicate(item.id, copyName) },
-            archive = { menuId = null; archiveTarget = ArchiveTarget(item) },
-            move = { menuId = null; moveIds = arrayListOf(item.id) }, delete = { menuId = null; onDelete(item.id) })
-    }
-    ConfirmHistoryArchive(archiveTarget, sections, onDismiss = { archiveTarget = null }, onSetArchived = actions.setArchived)
-    if (moveIds.isNotEmpty()) {
-        val rows = history.filter { it.id in moveIds && it.id in visibleIds }
-        DrawerActionSheet(stringResource(R.string.drawer_move), { moveIds = arrayListOf() }) {
-            assistants.filter { dest -> rows.any { it.assistantId != dest.id } }.forEach { dest ->
-                DrawerAction(dest.name, Icons.Outlined.PersonOutline) {
-                    actions.move(rows.mapTo(mutableSetOf()) { it.id }, dest.id)
-                    moveIds = arrayListOf(); selected = null
-                }
-            }
-        }
-    }
-    if (deleteIds.isNotEmpty()) {
-        ConfirmDrawerDelete(stringResource(R.string.drawer_delete_selected, deleteIds.size), { deleteIds = arrayListOf() }) {
-            actions.delete(deleteIds.intersect(visibleIds)); deleteIds = arrayListOf(); selected = null
-        }
-    }
-    val topicsScroll = rememberLazyListState()
-    // A closed drawer gets empty history. Keep the submitted results' viewport away from the
-    // loading and empty rows so opening a different assistant's result preserves the return position.
-    val resultsScroll = key(global, submitted) { rememberLazyListState() }
-    val scroll = if (hits.isNotEmpty()) resultsScroll else topicsScroll
-    LaunchedEffect(filter, global, assistantId) { topicsScroll.requestScrollToItem(0) }
-    LaunchedEffect(showAssistants) { if (showAssistants && !global) topicsScroll.animateScrollToItem(0) }
-    val easeOut = CubicBezierEasing(0.215f, 0.61f, 0.355f, 1f)
-    val rotation by animateFloatAsState(if (showAssistants) 180f else 0f, tween(350, easing = easeOut),
-        label = "Assistant disclosure")
-    val assistantState = stringResource(if (showAssistants) R.string.drawer_expanded else R.string.drawer_collapsed)
     if (showHistory) {
-        DrawerHistoryPage(history, currentId, currentAssistant, assistants.size > 1, actions, onBack = { showHistory = false },
+        DrawerHistoryPage(allHistory(), currentId, currentAssistant, assistants.size > 1, actions, onBack = { showHistory = false },
             onOpen = { showHistory = false; onOpen(it) }, onRename = { showHistory = false; onRename(it) },
             onPin = onPin, assistants = assistants)
     }
@@ -232,6 +160,80 @@ internal fun ConversationDrawer(
         modifier = Modifier.width(width).testTag("drawer-sheet"), drawerShape = RectangleShape,
         drawerContainerColor = containerColor, drawerContentColor = colors.onSurface,
     ) {
+        var search by rememberSaveable { mutableStateOf(DrawerSearchState()) }
+        val (query, global, submitted) = search
+        val history = if (drawerVisible) allHistory() else emptyList()
+        val busyOwners = remember(history) {
+            history.filter { row -> row.messages.any { it.status.isActive } }.mapTo(mutableSetOf()) { it.assistantId }
+        }
+        val focus = LocalFocusManager.current
+        val filter = if (global) submitted else query
+        val sections = remember(history, filter, global, assistantId) {
+            if (global) emptyList() else historySections(history, query, assistantId)
+        }
+        val hitResult: List<DrawerHit>? = key(global, submitted) {
+            val term = submitted
+            if (!global || term == null) emptyList() else {
+                val results by produceState<List<DrawerHit>?>(null, history) {
+                    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { globalDrawerHits(history, term) }
+                }
+                results
+            }
+        }
+        val hits = hitResult.orEmpty()
+        val tokens = remember(submitted) { submitted.orEmpty().trim().split(Regex("\\s+")) }
+        val visibleIds = remember(sections) { sections.flatMap { it.rows }.mapTo(linkedSetOf()) { it.id } }
+        var selected by rememberSaveable(assistantId) { mutableStateOf<ArrayList<String>?>(null) }
+        var menuId by rememberSaveable { mutableStateOf<String?>(null) }
+        var archiveTarget by rememberSaveable(assistantId, filter) { mutableStateOf<ArchiveTarget?>(null) }
+        var moveIds by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
+        var deleteIds by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
+        val selecting = selected != null
+        val selectedIds = remember(selected, visibleIds) { selected.orEmpty().intersect(visibleIds) }
+        val selectedRows = remember(selectedIds, history) { if (selectedIds.isEmpty()) emptyList() else history.filter { it.id in selectedIds } }
+        val allPinned = selectedRows.isNotEmpty() && selectedRows.all { it.pinned }
+        fun toggle(id: String) { selected = ArrayList(if (id in selectedIds) selectedIds - id else selectedIds + id) }
+        LaunchedEffect(history.isEmpty()) {
+            if (history.isEmpty()) { selected = null; menuId = null; moveIds = arrayListOf(); deleteIds = arrayListOf() }
+        }
+        BackHandler(selecting && history.isNotEmpty()) { selected = null }
+        history.find { it.id == menuId && it.id in visibleIds }?.let { item ->
+            val copyName = stringResource(R.string.drawer_copy_name, item.title)
+            ChatActionsSheet(item, assistants.size > 1, { menuId = null },
+                select = { menuId = null; focus.clearFocus(); showAssistants = false; selected = arrayListOf(item.id) },
+                rename = { menuId = null; onRename(item.id) }, pin = { menuId = null; onPin(item.id) },
+                duplicate = { menuId = null; actions.duplicate(item.id, copyName) },
+                archive = { menuId = null; archiveTarget = ArchiveTarget(item) },
+                move = { menuId = null; moveIds = arrayListOf(item.id) }, delete = { menuId = null; onDelete(item.id) })
+        }
+        ConfirmHistoryArchive(archiveTarget, sections, onDismiss = { archiveTarget = null }, onSetArchived = actions.setArchived)
+        if (moveIds.isNotEmpty()) {
+            val rows = history.filter { it.id in moveIds && it.id in visibleIds }
+            DrawerActionSheet(stringResource(R.string.drawer_move), { moveIds = arrayListOf() }) {
+                assistants.filter { dest -> rows.any { it.assistantId != dest.id } }.forEach { dest ->
+                    DrawerAction(dest.name, Icons.Outlined.PersonOutline) {
+                        actions.move(rows.mapTo(mutableSetOf()) { it.id }, dest.id)
+                        moveIds = arrayListOf(); selected = null
+                    }
+                }
+            }
+        }
+        if (deleteIds.isNotEmpty()) {
+            ConfirmDrawerDelete(stringResource(R.string.drawer_delete_selected, deleteIds.size), { deleteIds = arrayListOf() }) {
+                actions.delete(deleteIds.intersect(visibleIds)); deleteIds = arrayListOf(); selected = null
+            }
+        }
+        val topicsScroll = rememberLazyListState()
+        // A closed drawer gets empty history. Keep the submitted results' viewport away from the
+        // loading and empty rows so opening a different assistant's result preserves the return position.
+        val resultsScroll = key(global, submitted) { rememberLazyListState() }
+        val scroll = if (hits.isNotEmpty()) resultsScroll else topicsScroll
+        LaunchedEffect(filter, global, assistantId) { topicsScroll.requestScrollToItem(0) }
+        LaunchedEffect(showAssistants) { if (showAssistants && !global) topicsScroll.animateScrollToItem(0) }
+        val easeOut = CubicBezierEasing(0.215f, 0.61f, 0.355f, 1f)
+        val rotation by animateFloatAsState(if (showAssistants) 180f else 0f, tween(350, easing = easeOut),
+            label = "Assistant disclosure")
+        val assistantState = stringResource(if (showAssistants) R.string.drawer_expanded else R.string.drawer_collapsed)
         Column(Modifier.fillMaxSize().imePadding()) {
             if (selecting) SelectionHeader(selectedIds.size, selectedIds.size == visibleIds.size,
                 cancel = { selected = null }, toggleAll = {
@@ -371,32 +373,32 @@ internal fun DrawerSearch(query: String, onQuery: (String) -> Unit, modifier: Mo
     global: Boolean = false, onToggleScope: (() -> Unit)? = null, onSubmit: () -> Unit = {}) {
     val colors = MaterialTheme.colorScheme
     val hint = stringResource(if (global) R.string.drawer_global_search else R.string.drawer_search)
-    BasicTextField(value = query, onValueChange = onQuery, singleLine = true,
-        modifier = modifier.drawerSearchSwipe(onToggleScope, query.isBlank()).clip(RoundedCornerShape(16.dp)).background(colors.surfaceContainerHigh)
-            .heightIn(min = 44.dp).semantics { contentDescription = hint },
-        textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
-        keyboardOptions = KeyboardOptions(imeAction = if (global) ImeAction.Search else ImeAction.Default),
-        keyboardActions = if (global) KeyboardActions(onSearch = { onSubmit() }) else KeyboardActions.Default,
-        cursorBrush = SolidColor(colors.primary),
-        decorationBox = { field ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (onToggleScope != null) {
-                    IconButton(onToggleScope, Modifier.size(44.dp)) {
-                        Icon(if (global) Icons.Outlined.Storage else Icons.Outlined.ChatBubbleOutline,
-                            stringResource(if (global) R.string.drawer_switch_topics else R.string.drawer_switch_global),
-                            Modifier.size(18.dp), tint = colors.onSurfaceVariant)
-                    }
-                } else Icon(Icons.Outlined.Search, null, Modifier.padding(start = 12.dp).size(18.dp), tint = colors.onSurfaceVariant)
-                Box(Modifier.weight(1f).padding(horizontal = 8.dp), contentAlignment = Alignment.CenterStart) {
+    Row(modifier.drawerSearchSwipe(onToggleScope, query.isBlank()).clip(RoundedCornerShape(16.dp))
+        .background(colors.surfaceContainerHigh).heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (onToggleScope != null) {
+            IconButton(onToggleScope, Modifier.size(44.dp)) {
+                Icon(if (global) Icons.Outlined.Storage else Icons.Outlined.ChatBubbleOutline,
+                    stringResource(if (global) R.string.drawer_switch_topics else R.string.drawer_switch_global),
+                    Modifier.size(18.dp), tint = colors.onSurfaceVariant)
+            }
+        } else Icon(Icons.Outlined.Search, null, Modifier.padding(start = 12.dp).size(18.dp), tint = colors.onSurfaceVariant)
+        BasicTextField(value = query, onValueChange = onQuery, singleLine = true,
+            modifier = Modifier.weight(1f).semantics { contentDescription = hint },
+            textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
+            keyboardOptions = KeyboardOptions(imeAction = if (global) ImeAction.Search else ImeAction.Default),
+            keyboardActions = if (global) KeyboardActions(onSearch = { onSubmit() }) else KeyboardActions.Default,
+            cursorBrush = SolidColor(colors.primary),
+            decorationBox = { field ->
+                Box(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 8.dp), contentAlignment = Alignment.CenterStart) {
                     if (query.isEmpty()) Text(hint, Modifier.align(Alignment.Center), color = colors.onSurfaceVariant,
                         fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     field()
                 }
-                if (query.isNotEmpty()) IconButton({ onQuery("") }, Modifier.size(44.dp)) {
-                    Icon(Icons.Outlined.Close, stringResource(R.string.drawer_clear_search), Modifier.size(17.dp))
-                } else Spacer(Modifier.width(22.dp))
-            }
-        })
+            })
+        if (query.isNotEmpty()) IconButton({ onQuery("") }, Modifier.size(44.dp)) {
+            Icon(Icons.Outlined.Close, stringResource(R.string.drawer_clear_search), Modifier.size(17.dp))
+        } else Spacer(Modifier.width(22.dp))
+    }
 }
 
 @Composable
