@@ -13,4 +13,20 @@
     <string name="search_manual_limit">The search response exceeded the size limit.</string>
     <string name="search_manual_network">Could not reach the search provider.</string>
     <string name="search_manual_empty">No results.</string>
+    <string name="search_tavily_name">Tavily</string>
+    <string name="search_tavily_pilot">Tavily manual search pilot</string>
+    <string name="search_tavily_add">Add Tavily</string>
+    <string name="search_tavily_key">Tavily API key</string>
+    <string name="search_tavily_key_ready">Key set</string>
+    <string name="search_tavily_key_needed">Key required</string>
+    <string name="search_tavily_clear_key">Clear session key</string>
+    <string name="search_tavily_invalid_key">Enter a valid Tavily API key.</string>
+    <string name="search_tavily_missing_key">Save a Tavily API key in the provider settings to search.</string>
+    <string name="search_tavily_notice">Searching sends the terms you enter here to api.tavily.com.</string>
+    <string name="search_tavily_invalid_query">Check the search terms.</string>
+    <string name="search_tavily_format">Tavily returned an invalid search response.</string>
+    <string name="search_tavily_auth">Check the Tavily key and its permissions (HTTP %1$d).</string>
+    <string name="search_tavily_rate">Tavily rate limit reached (HTTP %1$d). Try again later.</string>
+    <string name="search_tavily_http">Tavily search failed (HTTP %1$d).</string>
+    <string name="search_manual_unavailable">This search provider is unavailable.</string>
 </resources>

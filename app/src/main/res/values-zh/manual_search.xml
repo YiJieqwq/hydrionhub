@@ -13,4 +13,20 @@
     <string name="search_manual_limit">搜索响应已超过大小限制。</string>
     <string name="search_manual_network">无法连接搜索供应商。</string>
     <string name="search_manual_empty">没有搜索结果。</string>
+    <string name="search_tavily_name">Tavily</string>
+    <string name="search_tavily_pilot">Tavily 手动搜索试点</string>
+    <string name="search_tavily_add">添加 Tavily</string>
+    <string name="search_tavily_key">Tavily API 密钥</string>
+    <string name="search_tavily_key_ready">已填密钥</string>
+    <string name="search_tavily_key_needed">需要密钥</string>
+    <string name="search_tavily_clear_key">清除本次密钥</string>
+    <string name="search_tavily_invalid_key">请输入有效的 Tavily API 密钥。</string>
+    <string name="search_tavily_missing_key">请在供应商设置中保存 Tavily API 密钥后再搜索。</string>
+    <string name="search_tavily_notice">点按搜索会将此处输入的关键词发送给 api.tavily.com。</string>
+    <string name="search_tavily_invalid_query">请检查搜索关键词。</string>
+    <string name="search_tavily_format">Tavily 返回的搜索结果格式有误。</string>
+    <string name="search_tavily_auth">请检查 Tavily 密钥及其权限（HTTP %1$d）。</string>
+    <string name="search_tavily_rate">已达到 Tavily 的请求频率限制（HTTP %1$d），请稍后再试。</string>
+    <string name="search_tavily_http">Tavily 搜索失败（HTTP %1$d）。</string>
+    <string name="search_manual_unavailable">该搜索供应商当前不可用。</string>
 </resources>

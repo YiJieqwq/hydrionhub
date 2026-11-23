@@ -63,7 +63,10 @@ fun ProviderSettings(store: ProviderStore, onBack: () -> Unit) {
                 navigation.open(newProvider(currentMode), store)
             }, onMove = store::moveChatProvider, onOpen = { navigation.open(it, store) })
             detail == SettingsEntry.Defaults -> DefaultModelsPage(store, catalog, goBack)
-            detail == SettingsEntry.Search -> SearchProvidersPage(viewModel<io.hydrion.hub.model.HubViewModel>().webSearch, goBack)
+            detail == SettingsEntry.Search -> {
+                val hub = viewModel<io.hydrion.hub.model.HubViewModel>()
+                SearchProvidersPage(hub.webSearch, goBack, manual = hub.manualSearch)
+            }
             detail == SettingsEntry.Mcp -> io.hydrion.hub.ui.settings.McpSettings(viewModel(), goBack)
             detail == SettingsEntry.Skills -> io.hydrion.hub.ui.settings.SkillSettings(viewModel(), goBack)
             detail == SettingsEntry.Environments -> io.hydrion.hub.ui.settings.ContainerSettings(viewModel(), goBack)

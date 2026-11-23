@@ -3,12 +3,15 @@ package io.hydrion.hub.provider
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -16,18 +19,29 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
 import java.util.UUID
 
 @Composable
-internal fun SearchProvidersPage(store: WebSearchStore, onBack: () -> Unit) {
+internal fun SearchProvidersPage(store: WebSearchStore, onBack: () -> Unit) =
+    SearchProvidersPage(store, onBack, manual = null)
+
+@Composable
+internal fun SearchProvidersPage(store: WebSearchStore, onBack: () -> Unit, manual: ManualSearchPort?) {
     val settings by store.settings.collectAsState()
+    val tavily = manual?.tavily?.collectAsState()?.value
+    var editingTavily by remember(tavily?.enabled) { mutableStateOf(false) }
     var editId by rememberSaveable { mutableStateOf<String?>(null) }
     val id = editId
     if (id != null) {
-        key(id) { SearchEndpointEditor(settings.endpoints.find { it.id == id }, id, store) { editId = null } }
+        key(id) { SearchEndpointEditor(settings.endpoints.find { it.id == id }, id, store, manual) { editId = null } }
+        return
+    }
+    if (manual != null && tavily?.enabled == true && editingTavily) {
+        TavilyEditor(manual, tavily) { editingTavily = false }
         return
     }
     ModelSettingsFrame(stringResource(R.string.settings_web_search), onBack, action = {
@@ -57,12 +71,98 @@ internal fun SearchProvidersPage(store: WebSearchStore, onBack: () -> Unit) {
                 Text(stringResource(R.string.search_local_note), Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            if (manual != null && tavily != null) item {
+                ModelSettingsCard {
+                    Row(Modifier.fillMaxWidth().toggleable(tavily.enabled, role = Role.Switch,
+                        onValueChange = manual::setPilotEnabled).heightIn(min = 48.dp).padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.search_tavily_pilot), Modifier.weight(1f), fontSize = 15.sp)
+                        Switch(tavily.enabled, onCheckedChange = null)
+                    }
+                    if (tavily.enabled) {
+                        HorizontalDivider(thickness = .6.dp)
+                        ModelSettingsRow(stringResource(if (tavily.added) R.string.search_tavily_name else R.string.search_tavily_add),
+                            { editingTavily = true }, {
+                                Icon(painterResource(R.drawable.lucide_earth), null, Modifier.size(22.dp))
+                            }) {
+                            if (tavily.added) StatusBadge(stringResource(
+                                if (tavily.hasKey) R.string.search_tavily_key_ready else R.string.search_tavily_key_needed),
+                                MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun SearchEndpointEditor(original: SearchEndpoint?, id: String, store: WebSearchStore, close: () -> Unit) {
+private fun TavilyEditor(manual: ManualSearchPort, setup: TavilySetup, onBack: () -> Unit) {
+    var searching by remember(setup.added) { mutableStateOf(false) }
+    val name = stringResource(R.string.search_tavily_name)
+    if (searching && setup.added) {
+        ManualWebSearchPage(ManualTarget.Tavily, name, stringResource(R.string.search_tavily_notice),
+            setup.hasKey, manual::search) { searching = false }
+        return
+    }
+    var keyInput by remember { mutableStateOf("") }
+    var invalid by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    BackHandler(onBack = onBack)
+    ModelSettingsFrame(name, onBack, action = {
+        if (setup.added) IconButton(onClick = { deleting = true }) {
+            Icon(Icons.Outlined.Delete, stringResource(R.string.drawer_delete))
+        }
+        IconButton(onClick = {
+            val submitted = keyInput.ifEmpty { null }
+            keyInput = ""
+            try {
+                manual.saveTavily(true, submitted)
+                invalid = false
+            } catch (_: SearchFailure) {
+                invalid = true
+            }
+        }, enabled = !setup.added || keyInput.isNotEmpty()) {
+            Icon(Icons.Outlined.Check, stringResource(R.string.settings_save))
+        }
+    }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ModelSettingsCard {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("https://api.tavily.com/search")
+                    CompositionLocalProvider(LocalSaveableStateRegistry provides null) {
+                        OutlinedTextField(keyInput, { keyInput = it; invalid = false }, Modifier.fillMaxWidth(),
+                            label = { Text(stringResource(R.string.search_tavily_key)) },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), singleLine = true)
+                    }
+                    Text(stringResource(R.string.model_session_key_note), style = MaterialTheme.typography.bodySmall)
+                    if (invalid) Text(stringResource(R.string.search_tavily_invalid_key), color = MaterialTheme.colorScheme.error)
+                    if (setup.hasKey) TextButton(onClick = {
+                        manual.saveTavily(true, "")
+                        keyInput = ""
+                        invalid = false
+                    }) { Text(stringResource(R.string.search_tavily_clear_key)) }
+                    if (setup.added) {
+                        if (!setup.hasKey) Text(stringResource(R.string.search_tavily_missing_key), style = MaterialTheme.typography.bodySmall)
+                        OutlinedButton(onClick = { searching = true }, enabled = setup.hasKey && keyInput.isEmpty() && !invalid) {
+                            Text(stringResource(R.string.search_manual))
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (deleting) ConfirmRemoval(stringResource(R.string.search_remove, name), { deleting = false }) {
+        manual.saveTavily(false)
+        onBack()
+    }
+}
+
+@Composable
+private fun SearchEndpointEditor(original: SearchEndpoint?, id: String, store: WebSearchStore,
+                                 manual: ManualSearchPort?, close: () -> Unit) {
     var name by rememberSaveable { mutableStateOf(original?.name.orEmpty()) }
     // Keep an unvalidated address out of the Android saved-instance bundle.
     var url by remember { mutableStateOf(original?.url.orEmpty()) }
@@ -72,7 +172,7 @@ private fun SearchEndpointEditor(original: SearchEndpoint?, id: String, store: W
     val dirty = name != original?.name.orEmpty() || url != original?.url.orEmpty() ||
         searxng != (original == null || original.adapter == SearchAdapter.Searxng)
     if (testing && original?.adapter == SearchAdapter.Searxng && !dirty) {
-        ManualWebSearchPage(original) { testing = false }
+        ManualWebSearchPage(original, manual) { testing = false }
         return
     }
     var invalid by remember { mutableStateOf(false) }

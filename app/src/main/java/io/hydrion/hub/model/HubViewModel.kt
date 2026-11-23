@@ -4,6 +4,8 @@ import android.app.Application
 import io.hydrion.hub.ui.messages.MessageStyleStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import io.hydrion.hub.provider.DefaultManualSearchPort
+import io.hydrion.hub.provider.ManualSearchPort
 import io.hydrion.hub.provider.WebSearchStore
 import io.hydrion.hub.provider.ProviderStore
 import io.hydrion.hub.provider.responsesImageSources
@@ -38,6 +40,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     private var changedDuringLoad = false
     internal val providers = ProviderStore(app)
     internal val webSearch = WebSearchStore(app)
+    internal val manualSearch: ManualSearchPort by lazy { DefaultManualSearchPort(app, webSearch) }
     internal val environments by lazy { ProotEnvironmentStore(app) }
     internal val appRestores = AppRestoreStore.current(app)
     private val images = GeneratedImageStore(app)
