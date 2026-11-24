@@ -15,6 +15,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.testTag
@@ -26,17 +28,20 @@ import io.hydrion.hub.model.Message
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.Role
 import io.hydrion.hub.ui.theme.HubStyle
+import java.util.Locale
 import kotlin.random.Random
 
 val LocalMessageStyleStore = staticCompositionLocalOf<MessageStyleStore> { error("ProvideMessageStyle is required") }
 internal val LocalMessageStyle = compositionLocalOf { MessageStyle() }
+private val LocalChatScheme = compositionLocalOf<ColorScheme?> { null }
 
 @Composable
 fun ProvideMessageStyle(content: @Composable () -> Unit) {
     val context = LocalContext.current.applicationContext
     val store = remember(context) { MessageStyleStore.shared(context) }
     val style by store.style.collectAsStateWithLifecycle()
-    CompositionLocalProvider(LocalMessageStyleStore provides store, LocalMessageStyle provides style, content = content)
+    CompositionLocalProvider(LocalMessageStyleStore provides store, LocalMessageStyle provides style,
+        LocalChatScheme provides MaterialTheme.colorScheme, content = content)
 }
 
 internal fun String.messageColor() = Color(0xFF000000L or removePrefix("#").toLong(16))
@@ -48,8 +53,15 @@ private val lightTimeline = lightColorScheme(
 )
 
 @Composable
-internal fun MessageCanvas(style: MessageStyle, modifier: Modifier, content: @Composable () -> Unit) {
-    val scheme = if (style.tone == MessageTone.Light) lightTimeline else MaterialTheme.colorScheme
+private fun timelineScheme(tone: MessageTone, darkScheme: ColorScheme = MaterialTheme.colorScheme) =
+    if (tone == MessageTone.Light) lightTimeline else darkScheme
+
+@Composable
+private fun previewScheme(tone: MessageTone) = timelineScheme(tone, LocalChatScheme.current ?: MaterialTheme.colorScheme)
+
+@Composable
+internal fun MessageCanvas(style: MessageStyle, modifier: Modifier, scheme: ColorScheme = timelineScheme(style.tone),
+    content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
         CompositionLocalProvider(LocalMessageStyle provides style, LocalContentColor provides scheme.onBackground) {
             Box(modifier.background(scheme.background)) { content() }
@@ -112,6 +124,15 @@ private fun uneditedUserFill(scheme: ColorScheme, dark: Boolean): Color {
 }
 
 @Composable
+internal fun MessageStyle.userCardInEditor(): MessageCardStyle {
+    val user = renderPalette.user
+    if (!usesAutomaticUserTint) return user
+    val scheme = previewScheme(tone)
+    val fill = uneditedUserFill(scheme, tone == MessageTone.Dark).compositeOver(scheme.background)
+    return user.copy(background = String.format(Locale.ROOT, "#%06X", fill.toArgb() and 0xFFFFFF))
+}
+
+@Composable
 internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content: @Composable () -> Unit) {
     val style = LocalMessageStyle.current
     val user = target == ChatSurface.UserBubble
@@ -121,7 +142,7 @@ internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content:
     val palette = if (user) style.renderPalette.user else style.renderPalette.assistant
     val defaults = defaultMessagePalette(style.tone)
     val shape = RoundedCornerShape(16.dp)
-    val useMaterial = style.material != CardMaterial.Solid || palette != (if (user) defaults.user else defaults.assistant)
+    val useMaterial = if (user) !style.usesAutomaticUserTint else style.material != CardMaterial.Solid || palette != defaults.assistant
     if (useMaterial && !fixedDarkCard) {
         MessageCard(palette, modifier, shape, outlined = !thoughtOrTools, content = content)
         return
@@ -160,7 +181,7 @@ fun MessageStylePreview(style: MessageStyle, modifier: Modifier = Modifier) {
     val assistant = remember { Message(id = "preview-assistant", role = Role.Assistant,
         text = "这是助手的回复。", thought = "这里展示思考内容。") }
     var expanded by remember { mutableStateOf(false) }
-    MessageCanvas(style, modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))) {
+    MessageCanvas(style, modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)), previewScheme(style.tone)) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) { UserBubble(user, "", Mode.Chat) }
             ReplyTimeline(assistant, "", expanded) { expanded = !expanded }

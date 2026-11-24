@@ -80,7 +80,7 @@ internal fun HexColorEditor(part: ColorPart, value: String, defaultValue: String
             value = input,
             onValueChange = { raw ->
                 input = raw
-                normalizeMessageColor(raw)?.let { if (it != value) onChange(it) }
+                normalizeMessageColor(raw)?.let(onChange)
             },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,

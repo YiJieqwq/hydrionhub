@@ -38,7 +38,8 @@ data class MessageStyle(
     val dark: MessagePalette = defaultMessagePalette(MessageTone.Dark),
     val light: MessagePalette = defaultMessagePalette(MessageTone.Light),
     val assistantBubble: Boolean = false,
-    val material: CardMaterial = CardMaterial.Solid
+    val material: CardMaterial = CardMaterial.Solid,
+    val chosenUserPalettes: Set<MessageTone> = emptySet()
 ) {
     val palette: MessagePalette get() = when (tone) {
         MessageTone.Dark -> dark
@@ -51,9 +52,16 @@ data class MessageStyle(
         MessageTone.Light -> neutralLight
     }
 
-    fun withPalette(tone: MessageTone, palette: MessagePalette): MessageStyle = when (tone) {
-        MessageTone.Dark -> copy(dark = palette)
-        MessageTone.Light -> copy(light = palette)
+    internal val usesAutomaticUserTint: Boolean get() = material == CardMaterial.Solid &&
+        tone !in chosenUserPalettes && palette.user == defaultMessagePalette(tone).user
+
+    fun withPalette(tone: MessageTone, palette: MessagePalette, userSelected: Boolean =
+        palette.user != (if (tone == MessageTone.Dark) dark.user else light.user)): MessageStyle {
+        val choices = if (userSelected) chosenUserPalettes + tone else chosenUserPalettes
+        return when (tone) {
+            MessageTone.Dark -> copy(dark = palette, chosenUserPalettes = choices)
+            MessageTone.Light -> copy(light = palette, chosenUserPalettes = choices)
+        }
     }
 }
 
@@ -64,7 +72,7 @@ fun normalizeMessageColor(value: String): String? {
     return if (sixHexDigits.matches(digits)) "#" + digits.uppercase(Locale.ROOT) else null
 }
 
-internal fun MessageStyle.toPreferences(): Map<String, String> = buildMap {
+internal fun MessageStyle.toPreferences(includeChoices: Boolean = true): Map<String, String> = buildMap {
     put("tone", tone.name)
     put("material", material.name)
     put("assistantBubble", assistantBubble.toString())
@@ -77,6 +85,10 @@ internal fun MessageStyle.toPreferences(): Map<String, String> = buildMap {
     putCard("dark.user", dark.user)
     putCard("light.assistant", light.assistant)
     putCard("light.user", light.user)
+    if (includeChoices) {
+        put("dark.user.chosen", (MessageTone.Dark in chosenUserPalettes).toString())
+        put("light.user.chosen", (MessageTone.Light in chosenUserPalettes).toString())
+    }
 }
 
 internal fun readMessageStyle(fields: Map<String, *>, fallback: MessageStyle = MessageStyle()): MessageStyle {
@@ -89,11 +101,21 @@ internal fun readMessageStyle(fields: Map<String, *>, fallback: MessageStyle = M
     fun palette(prefix: String, previous: MessagePalette) = MessagePalette(
         card("$prefix.assistant", previous.assistant), card("$prefix.user", previous.user)
     )
+    fun userSelected(tone: MessageTone): Boolean {
+        val prefix = tone.name.lowercase(Locale.ROOT) + ".user."
+        val key = prefix + "chosen"
+        if (key in fields) return (fields[key] as? String)?.toBooleanStrictOrNull() ?: (tone in fallback.chosenUserPalettes)
+        // Older saves wrote the whole palette and did not retain the tap that chose a preset.
+        return tone in fallback.chosenUserPalettes || listOf("background", "border", "text").any {
+            (fields[prefix + it] as? String)?.let(::normalizeMessageColor) != null
+        }
+    }
     return MessageStyle(
         tone = MessageTone.entries.find { it.name == fields["tone"] } ?: fallback.tone,
         material = CardMaterial.entries.find { it.name == fields["material"] } ?: fallback.material,
         assistantBubble = (fields["assistantBubble"] as? String)?.toBooleanStrictOrNull() ?: fallback.assistantBubble,
-        dark = palette("dark", fallback.dark), light = palette("light", fallback.light)
+        dark = palette("dark", fallback.dark), light = palette("light", fallback.light),
+        chosenUserPalettes = MessageTone.entries.filterTo(mutableSetOf(), ::userSelected)
     )
 }
 

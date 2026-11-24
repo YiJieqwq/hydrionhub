@@ -417,6 +417,97 @@ class ReplyBubbleInteractionTest {
         }
     }
 
+    @Test @Config(qualifiers = "zh-rCN-w407dp-h915dp-xxhdpi")
+    fun purplePresetsApplyInSolidAndFrostedFromTheSettingsScreen() {
+        setStyle(MessageStyle())
+        screen.onNodeWithContentDescription("打开侧栏").performClick()
+        screen.onNodeWithTag("drawer-settings").performClick()
+        screen.onNodeWithText(label(R.string.settings_style)).performScrollTo().performClick()
+        fun choose(text: String) = screen.onNode(hasText(text) and hasClickAction()).performScrollTo().performClick()
+        fun pixel(): Int {
+            screen.onNodeWithTag("message-user-bubble").performScrollTo()
+            val image = snapshot("message-user-bubble")
+            return image.getPixel(image.width / 2, image.height / 5)
+        }
+        for ((tone, purple, automatic) in listOf(
+            Triple("深色", "#020562", "#161F22"), Triple("浅色", "#E5EBFF", "#ECF3F5")
+        )) {
+            choose(tone)
+            choose("纯色")
+            val baseline = pixel()
+            screen.onNode(hasClickAction() and hasText("背景色") and hasText(automatic)).assertExists()
+            if (tone == "浅色") choose("磨砂玻璃")
+            choose("背景色")
+            screen.onNodeWithContentDescription("使用 $purple").performScrollTo().performClick()
+            choose("纯色")
+            val solid = pixel()
+            choose("磨砂玻璃")
+            val frosted = pixel()
+            choose("纯色")
+            val returned = pixel()
+            assertEquals("Automatic $tone", parseColor(automatic), baseline)
+            assertEquals("Solid $tone (frosted pixel ${Integer.toHexString(frosted)})", parseColor(purple), solid)
+            assertTrue("Frosted retains the purple pigment: ${Integer.toHexString(frosted)}",
+                android.graphics.Color.blue(frosted) - android.graphics.Color.red(frosted) > 10)
+            assertEquals(solid, returned)
+            screen.onNode(hasClickAction() and hasText("背景色") and hasText(purple)).assertExists()
+            val selected = if (tone == "深色") MessageTone.Dark else MessageTone.Light
+            assertTrue(selected in MessageStyleStore.shared(screen.activity).style.value.chosenUserPalettes)
+        }
+        choose("深色")
+        choose("默认")
+        assertEquals(parseColor("#303030"), pixel())
+        choose("纯色")
+        assertEquals(parseColor("#020562"), pixel())
+        open(initial = Conversation(messages = listOf(question)))
+        val saved = MessageStyleStore.shared(screen.activity).style.value
+        for (tone in MessageTone.entries) {
+            val chosen = saved.copy(tone = tone)
+            setStyle(chosen.copy(material = CardMaterial.Solid))
+            assertEquals(parseColor(chosen.palette.user.background), pixel())
+            setStyle(chosen.copy(material = CardMaterial.Frosted))
+            val glass = pixel()
+            assertTrue(android.graphics.Color.blue(glass) - android.graphics.Color.red(glass) > 10)
+        }
+    }
+
+    @Test fun olderSavedPresetAndCustomColorsWinWithoutChangingStoredPreferencesOnRead() {
+        val host = screen.activity.applicationContext
+        val isolated = object : android.content.ContextWrapper(host) {
+            override fun getApplicationContext(): Context = this
+            override fun getSharedPreferences(name: String, mode: Int) = host.getSharedPreferences("old-palette-$name", mode)
+        }
+        val legacy = MessageStyle().let { it.copy(light = it.light.copy(user = it.light.user.copy(background = "#934BD1"))) }
+        val fields = legacy.toPreferences(includeChoices = false)
+        val prefs = isolated.getSharedPreferences(AppRestoreStore.current(isolated).preference("message_style"), Context.MODE_PRIVATE)
+        prefs.edit().apply { fields.forEach { (key, value) -> putString(key, value) } }.commit()
+        val store = MessageStyleStore(isolated)
+        val restored = store.style.value
+        assertEquals(fields, prefs.all)
+        open(initial = Conversation(messages = listOf(question)))
+        for (tone in MessageTone.entries) {
+            val picked = restored.copy(tone = tone)
+            val expected = parseColor(picked.palette.user.background)
+            setStyle(picked)
+            val solid = snapshot("message-user-bubble")
+            assertEquals(expected, solid.getPixel(solid.width / 2, solid.height / 5))
+            setStyle(picked.copy(material = CardMaterial.Frosted))
+            val glass = snapshot("message-user-bubble")
+            val pixel = glass.getPixel(glass.width / 2, glass.height / 5)
+            assertTrue(android.graphics.Color.blue(pixel) - android.graphics.Color.green(pixel) > 25)
+            setStyle(picked)
+            val returned = snapshot("message-user-bubble")
+            assertEquals(expected, returned.getPixel(returned.width / 2, returned.height / 5))
+        }
+        store.update { MessageStyle() }
+        assertEquals(MessageStyle(), MessageStyleStore(isolated).style.value)
+        store.update { it.withPalette(MessageTone.Dark, it.dark, userSelected = true) }
+        val reopened = MessageStyleStore(isolated).style.value
+        assertEquals(setOf(MessageTone.Dark), reopened.chosenUserPalettes)
+        assertFalse(reopened.usesAutomaticUserTint)
+        assertTrue(reopened.copy(tone = MessageTone.Light).usesAutomaticUserTint)
+    }
+
     @Test fun aCustomTimelineAccentStillTintsTheUneditedUserBubble() {
         val accent = Color.Green
         screen.activityRule.scenario.onActivity { activity ->

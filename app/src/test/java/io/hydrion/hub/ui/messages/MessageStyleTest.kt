@@ -3,9 +3,21 @@ package io.hydrion.hub.ui.messages
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MessageStyleTest {
+    @Test fun choosingAnUnchangedPresetSurvivesReloadOnlyForItsToneAndResetReturnsToAutomatic() {
+        val fresh = MessageStyle()
+        val otherSettings = fresh.copy(assistantBubble = true)
+        assertTrue(readMessageStyle(otherSettings.toPreferences()).usesAutomaticUserTint)
+        val selected = fresh.withPalette(MessageTone.Dark, fresh.dark, userSelected = true)
+        val persisted = readMessageStyle(selected.toPreferences())
+        assertFalse(persisted.usesAutomaticUserTint)
+        assertTrue(persisted.copy(tone = MessageTone.Light).usesAutomaticUserTint)
+        assertEquals(fresh, readMessageStyle(fresh.toPreferences(), fallback = persisted))
+    }
+
     @Test fun firstInstallUsesRequestedDarkPaletteWithoutAnAssistantBubble() {
         val restored = readMessageStyle(emptyMap<String, String>())
         assertEquals(MessageTone.Dark, restored.tone)

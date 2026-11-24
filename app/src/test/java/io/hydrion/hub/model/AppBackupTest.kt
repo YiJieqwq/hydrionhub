@@ -2,6 +2,7 @@ package io.hydrion.hub.model
 
 import io.hydrion.hub.provider.*
 import io.hydrion.hub.ui.messages.MessageStyle
+import io.hydrion.hub.ui.messages.MessageTone
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
@@ -169,6 +170,22 @@ class AppBackupTest {
             assertThrows(Exception::class.java) { ChatArchive.inspect(temp.newFolder(), bad.inputStream(), true) }
             assertFalse(original.pendingRestart())
             assertEquals(before, readState(AppRestoreStore(root), files))
+        }
+    }
+
+    @Test fun archivesDistinguishAnUntouchedUserPaletteFromASelectedPresetAndReadLegacyColors() {
+        val fresh = MessageStyle()
+        val dark = MessageTone.Dark
+        val explicit = fresh.withPalette(dark, fresh.dark, userSelected = true)
+        for (style in listOf(fresh, explicit)) {
+            val backup = AppBackupSettings(demoCatalog(), style).encode()
+            assertEquals(style, AppBackupSettings.decode(backup).appearance)
+            assertFalse(backup.getJSONObject("appearance").has("dark.user.chosen"))
+            backup.remove("chosenUserPalettes")
+            val legacy = AppBackupSettings.decode(backup).appearance
+            assertEquals(MessageTone.entries.toSet(), legacy.chosenUserPalettes)
+            assertEquals(fresh.dark.user, legacy.dark.user)
+            assertEquals(fresh.light.user, legacy.light.user)
         }
     }
 

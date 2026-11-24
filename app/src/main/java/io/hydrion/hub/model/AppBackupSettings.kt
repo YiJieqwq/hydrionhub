@@ -2,8 +2,10 @@ package io.hydrion.hub.model
 
 import io.hydrion.hub.provider.*
 import io.hydrion.hub.ui.messages.MessageStyle
+import io.hydrion.hub.ui.messages.MessageTone
 import io.hydrion.hub.ui.messages.readMessageStyle
 import io.hydrion.hub.ui.messages.toPreferences
+import org.json.JSONArray
 import org.json.JSONObject
 
 private val portableLevels = setOf("Auto", "Off", "Minimal", "Low", "Medium", "High", "Max", "XHigh")
@@ -48,7 +50,9 @@ internal fun ModelCatalog.portableCatalog(): ModelCatalog {
 
 internal data class AppBackupSettings(val catalog: ModelCatalog, val appearance: MessageStyle) {
     fun encode() = JSONObject().put("catalog", encodeCatalog(catalog.portableCatalog()))
-        .put("appearance", JSONObject(appearance.toPreferences()))
+        .put("appearance", JSONObject(appearance.toPreferences(includeChoices = false)))
+        // Older readers strictly validate the fields inside appearance but ignore sibling metadata.
+        .put("chosenUserPalettes", JSONArray(MessageTone.entries.filter { it in appearance.chosenUserPalettes }.map { it.name }))
 
     companion object {
         fun decode(json: JSONObject): AppBackupSettings {
@@ -69,8 +73,14 @@ internal data class AppBackupSettings(val catalog: ModelCatalog, val appearance:
             val appearance = json.getJSONObject("appearance")
             val fields = appearance.keys().asSequence().associateWith { appearance.getString(it) }
             val style = readMessageStyle(fields)
-            require(style.toPreferences() == fields)
-            return AppBackupSettings(decodeCatalog(raw.toString()).portableCatalog(), style)
+            require(style.toPreferences(includeChoices = false) == fields)
+            val restored = if (json.has("chosenUserPalettes")) {
+                val list = json.getJSONArray("chosenUserPalettes")
+                val tones = (0 until list.length()).map { MessageTone.valueOf(list.getString(it)) }.toSet()
+                require(tones.size == list.length())
+                style.copy(chosenUserPalettes = tones)
+            } else style
+            return AppBackupSettings(decodeCatalog(raw.toString()).portableCatalog(), restored)
         }
     }
 }

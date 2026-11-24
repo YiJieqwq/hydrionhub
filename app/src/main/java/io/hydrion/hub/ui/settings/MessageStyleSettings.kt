@@ -47,7 +47,7 @@ fun MessageStyleSettings(onBack: () -> Unit) {
     val tone = style.tone
     val editable = style.material != CardMaterial.Default
     val palette = if (editable) style.palette else style.renderPalette
-    val card = if (assistant) palette.assistant else palette.user
+    val card = if (assistant) palette.assistant else style.userCardInEditor()
     var editing by rememberSaveable(tone, assistant) { mutableStateOf<ColorPart?>(null) }
     val scheme = MaterialTheme.colorScheme
 
@@ -125,10 +125,14 @@ fun MessageStyleSettings(onBack: () -> Unit) {
                             val initial = if (assistant) defaults.assistant else defaults.user
                             HexColorEditor(part, part.read(card), part.read(initial)) { hex ->
                                 store.update { current ->
-                                    val palette = current.palette
+                                    val palette = if (tone == MessageTone.Dark) current.dark else current.light
                                     val changed = if (assistant) palette.copy(assistant = part.write(palette.assistant, hex))
-                                        else palette.copy(user = part.write(palette.user, hex))
-                                    current.withPalette(current.tone, changed)
+                                        else {
+                                            val user = if (current.tone == tone && current.usesAutomaticUserTint)
+                                                palette.user.copy(background = card.background) else palette.user
+                                            palette.copy(user = part.write(user, hex))
+                                        }
+                                    current.withPalette(tone, changed, userSelected = !assistant)
                                 }
                             }
                         }
