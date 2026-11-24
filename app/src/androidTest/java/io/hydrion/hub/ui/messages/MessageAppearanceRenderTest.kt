@@ -106,6 +106,11 @@ class MessageAppearanceRenderTest {
         }
     }
 
+    private fun assertThoughtColors(counts: Map<Int, Int>, border: String, vararg colors: String) {
+        assertInk(counts, *colors)
+        assertEquals("Unexpected outline", 0, counts.getOrDefault(parseColor(border), 0))
+    }
+
     @Test fun customAppearanceReachesActualMessagesAndSettingsPreview() {
         val style = MessageStyle(tone = MessageTone.Light, light = MessagePalette(assistant, user), assistantBubble = true)
         apply(style)
@@ -119,16 +124,16 @@ class MessageAppearanceRenderTest {
         scrollToTurn(0)
         assertInk(pixels("message-user-bubble"), user.background, user.border, user.text)
         scrollToTurn(1)
-        assertInk(pixels("message-thought"), assistant.background, assistant.border, assistant.text)
+        assertThoughtColors(pixels("message-thought"), assistant.border, assistant.background, assistant.text)
         assertInk(pixels("message-assistant-body"), assistant.background, assistant.border, assistant.text)
 
         apply(style.copy(assistantBubble = false))
         assertInk(pixels("message-assistant-body"), "#FAFAFB", assistant.text)
         apply(style.copy(material = CardMaterial.Default))
-        assertInk(pixels("message-thought"), "#F0F1F2", "#C8CBD0")
+        assertThoughtColors(pixels("message-thought"), "#C8CBD0", "#F0F1F2")
         apply(style.copy(material = CardMaterial.Frosted))
         val frosted = pixels("message-thought")
-        assertInk(frosted, assistant.border, assistant.text)
+        assertThoughtColors(frosted, assistant.border, assistant.text)
         assertTrue("Frosted fill must remain translucent and textured",
             frosted.getOrDefault(parseColor(assistant.background), 0) < frosted.values.sum() / 4)
 
@@ -137,7 +142,7 @@ class MessageAppearanceRenderTest {
         screen.onNodeWithTag("drawer-settings").performClick()
         screen.onNodeWithText(screen.activity.getString(io.hydrion.hub.R.string.settings_style)).performScrollTo().performClick()
         assertInk(pixels("message-user-bubble"), user.background, user.border, user.text)
-        assertInk(pixels("message-thought"), assistant.background, assistant.border, assistant.text)
+        assertThoughtColors(pixels("message-thought"), assistant.border, assistant.background, assistant.text)
         assertInk(pixels("message-assistant-body"), assistant.background, assistant.border, assistant.text)
     }
 }

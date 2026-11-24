@@ -47,11 +47,12 @@ private fun TurnIcon(@DrawableRes icon: Int, label: Int, enabled: Boolean = true
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TurnActionSheet(close: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+private fun TurnActionSheet(close: () -> Unit, containerColor: Color = MaterialTheme.colorScheme.surface,
+    content: @Composable ColumnScope.() -> Unit) {
     ModalBottomSheet(onDismissRequest = close, modifier = Modifier.testTag("turn-action-sheet"),
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = containerColor,
         dragHandle = {
             Box(Modifier.padding(vertical = 6.dp).size(40.dp, 4.dp)
                 .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .20f), RoundedCornerShape(2.dp)))
@@ -163,7 +164,8 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
     }
     val close = { show(null) }
     when (sheet) {
-        TurnSheet.More -> TurnActionSheet(close) {
+        TurnSheet.More -> TurnActionSheet(close, containerColor = if (LocalMessageStyle.current.tone == MessageTone.Dark)
+            MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.surface) {
             Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp.dp * .8f - 16.dp).coerceAtLeast(1.dp))
                 .verticalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -175,12 +177,14 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
                     SheetAction(R.string.turn_web_preview, R.drawable.lucide_book_open_text) { show(TurnSheet.WebPreview) }
                 }
                 SheetGroup {
-                    SheetAction(R.string.turn_edit, R.drawable.lucide_pencil, !busy) { show(TurnSheet.Edit) }
-                    if (!user && msg.imageKeys.isNotEmpty()) {
+                    if (!user) {
+                        SheetAction(R.string.turn_edit, R.drawable.lucide_pencil, !busy) { show(TurnSheet.Edit) }
                         SheetDivider()
-                        SheetAction(R.string.turn_prompt, R.drawable.lucide_image, !busy) { vm.preparePrompt(msg.id); close() }
                     }
-                    SheetDivider()
+                    if (!user && msg.imageKeys.isNotEmpty()) {
+                        SheetAction(R.string.turn_prompt, R.drawable.lucide_image, !busy) { vm.preparePrompt(msg.id); close() }
+                        SheetDivider()
+                    }
                     SheetAction(R.string.turn_selection, R.drawable.lucide_square_check, !busy) { show(TurnSheet.Selection) }
                 }
                 SheetGroup {

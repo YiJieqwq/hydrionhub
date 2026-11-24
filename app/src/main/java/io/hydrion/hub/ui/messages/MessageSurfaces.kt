@@ -72,11 +72,12 @@ internal fun MessageCard(
     colors: MessageCardStyle,
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(14.dp),
+    outlined: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val material = LocalMessageStyle.current.material
     val background = colors.background.messageColor()
-    val stroke = colors.border.messageColor()
+    val edge = if (outlined) Modifier.border(1.dp, colors.border.messageColor(), shape) else Modifier
     Box(modifier.clip(shape).drawWithCache {
         val sheen = when (material) {
             CardMaterial.Solid, CardMaterial.Default -> null
@@ -91,28 +92,36 @@ internal fun MessageCard(
                 drawContext.canvas.nativeCanvas.drawRect(0f, 0f, size.width, size.height, grainPaint)
             }
         }
-    }.border(1.dp, stroke, shape)) {
+    }.then(edge)) {
         CompositionLocalProvider(LocalContentColor provides colors.text.messageColor(), content = content)
     }
 }
 
+internal enum class ChatSurface { UserBubble, ThoughtAndTools, Translation }
+
+private val darkThoughtToolFill = defaultMessagePalette(MessageTone.Dark).assistant.background.messageColor()
+
 @Composable
-internal fun ChatTintedSurface(role: Role, modifier: Modifier, content: @Composable () -> Unit) {
+internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content: @Composable () -> Unit) {
     val style = LocalMessageStyle.current
-    val user = role == Role.User
+    val user = target == ChatSurface.UserBubble
+    val thoughtOrTools = target == ChatSurface.ThoughtAndTools
+    val dark = style.tone == MessageTone.Dark
+    val fixedDarkCard = thoughtOrTools && dark
     val palette = if (user) style.renderPalette.user else style.renderPalette.assistant
     val defaults = defaultMessagePalette(style.tone)
     val shape = RoundedCornerShape(16.dp)
-    if (style.material != CardMaterial.Solid || palette != (if (user) defaults.user else defaults.assistant)) {
-        MessageCard(palette, modifier, shape, content)
+    val useMaterial = style.material != CardMaterial.Solid || palette != (if (user) defaults.user else defaults.assistant)
+    if (useMaterial && !fixedDarkCard) {
+        MessageCard(palette, modifier, shape, outlined = !thoughtOrTools, content = content)
         return
     }
     val scheme = MaterialTheme.colorScheme
-    val dark = style.tone == MessageTone.Dark
-    val fill = if (user) scheme.primary.copy(alpha = if (dark) .15f else .08f)
+    val fill = if (fixedDarkCard) darkThoughtToolFill
+        else if (user) scheme.primary.copy(alpha = if (dark) .15f else .08f)
         else scheme.primaryContainer.copy(alpha = if (dark) .25f else .30f)
     Box(modifier.clip(shape).background(fill)) {
-        CompositionLocalProvider(LocalContentColor provides scheme.onSurface, content = content)
+        CompositionLocalProvider(LocalContentColor provides (if (fixedDarkCard) Color.White else scheme.onSurface), content = content)
     }
 }
 
@@ -144,8 +153,7 @@ fun MessageStylePreview(style: MessageStyle, modifier: Modifier = Modifier) {
     MessageCanvas(style, modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) { UserBubble(user, "", Mode.Chat) }
-            Thought(assistant, "", expanded) { expanded = !expanded }
-            AssistantBody(assistant.text, "", Mode.Chat)
+            ReplyTimeline(assistant, "", expanded) { expanded = !expanded }
         }
     }
 }

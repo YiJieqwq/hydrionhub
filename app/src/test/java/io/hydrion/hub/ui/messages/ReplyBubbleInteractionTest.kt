@@ -4,13 +4,17 @@ import android.app.Application
 import android.os.Looper
 import android.content.Context
 import android.content.ClipboardManager
+import android.graphics.Bitmap
+import android.graphics.Color.parseColor
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.TextLayoutResult
@@ -26,16 +30,20 @@ import android.view.inspector.WindowInspector
 import android.webkit.WebView
 import android.widget.Magnifier
 import androidx.core.view.allViews
+import androidx.core.view.drawToBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
 import io.hydrion.hub.MainActivity
 import io.hydrion.hub.R
 import io.hydrion.hub.model.*
+import io.hydrion.hub.ui.theme.HydrionTheme
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -56,6 +64,7 @@ class ReplyBubbleInteractionTest {
     private val original = Conversation(title = "Versions", messages = listOf(question, answer),
         versions = mapOf(answer.id to group), modelRoutes = emptyMap())
     private lateinit var recorded: Conversation
+    private var previousStyle: MessageStyle? = null
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
 
     // The history reader and Markdown renderer post their results to Android's paused main Looper.
@@ -83,7 +92,7 @@ class ReplyBubbleInteractionTest {
             vm.openConversation(initial.id)
             assertEquals(initial.messages.last().text, vm.state.value.current.messages.last().text)
             activity.setContent {
-                MaterialTheme {
+                HydrionTheme {
                     CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
                         Box(if (width == null) Modifier.fillMaxWidth() else Modifier.width(width)) {
                             ProvideMessageStyle { MessageList(vm, vm.state.collectAsState().value, "", null, 0) }
@@ -102,6 +111,173 @@ class ReplyBubbleInteractionTest {
     private fun more() = screen.onNodeWithContentDescription(label(R.string.turn_more_reply)).performClick()
     private fun tap(id: Int) = screen.onNode(hasText(label(id)) and hasClickAction()).performScrollTo().performClick()
     private fun confirm(id: Int) = screen.onNode(hasText(label(id)) and hasClickAction()).performClick()
+
+    private fun setStyle(style: MessageStyle) = screen.runOnIdle {
+        val store = MessageStyleStore.shared(screen.activity)
+        if (previousStyle == null) previousStyle = store.style.value
+        store.update { style }
+    }
+
+    @After fun restoreAppearance() {
+        previousStyle?.let { saved -> screen.runOnIdle { MessageStyleStore.shared(screen.activity).update { saved } } }
+    }
+
+    private fun snapshot(tag: String, sheet: Boolean = false): Bitmap {
+        val bounds = screen.onNodeWithTag(tag, useUnmergedTree = true).assertIsDisplayed().fetchSemanticsNode().boundsInWindow
+        return screen.runOnIdle {
+            val view = if (sheet) WindowInspector.getGlobalWindowViews().last() else screen.activity.window.decorView
+            val window = view.drawToBitmap()
+            val width = bounds.width.roundToInt()
+            val height = bounds.height.roundToInt()
+            val top = if (sheet) window.height - height else bounds.top.roundToInt()
+            Bitmap.createBitmap(window, bounds.left.roundToInt(), top, width, height)
+        }
+    }
+
+    private fun textLayout(text: String): TextLayoutResult {
+        val layout = mutableListOf<TextLayoutResult>()
+        screen.onNodeWithText(text, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layout) }
+        return layout.single()
+    }
+
+    private fun textInk(text: String) = textLayout(text).layoutInput.style.color.toArgb()
+
+    // The midpoints are on straight edges, clear of rounded corners, padding and glyphs.
+    private fun assertFlatCard(tag: String, fill: Int) {
+        val bitmap = snapshot(tag)
+        val midX = bitmap.width / 2
+        val midY = bitmap.height / 2
+        for ((x, y) in listOf(midX to 0, midX to 5, 0 to midY, (bitmap.width - 1) to midY, midX to (bitmap.height - 1))) {
+            val pixel = bitmap.getPixel(x, y)
+            assertEquals("$tag at ($x, $y)", Integer.toHexString(fill), Integer.toHexString(pixel))
+        }
+    }
+
+    private fun checkThoughtAndToolCards(tone: MessageTone) {
+        val body = "[Guide](https://example.invalid)"
+        val reply = answer.copy(text = body, thought = "Review the checklist", status = Generation.Error, error = "Offline warning",
+            toolCalls = listOf(ReplyToolCall("file_search", ToolCallState.Completed, body.length),
+                ReplyToolCall("catalog_lookup", ToolCallState.Requested, body.length)))
+        val custom = MessageCardStyle("#E9DFC4", "#E31176", "#23465A")
+        val style = MessageStyle(tone = tone, light = MessagePalette(custom, defaultMessagePalette(MessageTone.Light).user),
+            dark = MessagePalette(custom, defaultMessagePalette(MessageTone.Dark).user), assistantBubble = true)
+        val dark = tone == MessageTone.Dark
+        val fill = parseColor(if (dark) "#242628" else custom.background)
+        val ink = parseColor(if (dark) "#FFFFFF" else custom.text)
+        val thought = label(R.string.turn_thinking)
+        val tool = "file_search"
+        val position = screen.activity.getString(R.string.turn_tool_position, body.length)
+        open(initial = usageChat(reply))
+        setStyle(if (dark) MessageStyle(tone = MessageTone.Dark) else style)
+        val warning = textInk("Offline warning")
+        assertNotEquals(ink, warning)
+        fun checkCards() {
+            assertFlatCard("message-thought", fill)
+            assertFlatCard("message-tool-chain", fill)
+            assertEquals(ink, textInk(thought))
+            assertEquals(ink, textInk(tool))
+            val statusInk = if (dark) ink else Color(ink).copy(alpha = .65f).toArgb()
+            assertEquals(statusInk, textInk(label(R.string.turn_tool_done)))
+            val card = screen.onNodeWithTag("message-tool-chain").fetchSemanticsNode().boundsInWindow
+            val second = screen.onNodeWithText("catalog_lookup", useUnmergedTree = true).onParent().fetchSemanticsNode().boundsInWindow
+            val scale = screen.density.density
+            val joinY = (second.top - card.top + scale).roundToInt()
+            val lineX = (20 * scale).roundToInt()
+            val bitmap = snapshot("message-tool-chain")
+            assertTrue("The two tool steps must stay connected", (lineX - 1..lineX + 1).any { bitmap.getPixel(it, joinY) != fill })
+        }
+        checkCards()
+        screen.onNodeWithText(thought).performClick()
+        screen.onNodeWithText(tool).performClick()
+        screen.onNodeWithText(position).assertIsDisplayed()
+        checkCards()
+        val detailInk = if (dark) ink else Color(ink).copy(alpha = .8f).toArgb()
+        for ((tag, text) in listOf("message-thought" to reply.thought, "message-tool-chain" to position)) {
+            assertEquals(detailInk, textInk(text))
+            val card = screen.onNodeWithTag(tag).fetchSemanticsNode().boundsInWindow
+            val detail = screen.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode().boundsInWindow
+            val pixels = snapshot(tag)
+            val right = (detail.right - card.left).roundToInt() - 1
+            assertEquals("Expanded content edge", fill, pixels.getPixel(right, (detail.center.y - card.top).roundToInt()))
+        }
+        if (dark) {
+            for (material in CardMaterial.entries) {
+                setStyle(style.copy(material = material))
+                checkCards()
+                assertEquals(ink, textInk(reply.thought))
+                assertEquals(ink, textInk(position))
+            }
+        }
+        screen.onNodeWithText(thought).performClick()
+        screen.onNodeWithText(tool).performClick()
+        screen.onNodeWithText(reply.thought).assertDoesNotExist()
+        screen.onNodeWithText(position).assertDoesNotExist()
+        checkCards()
+        setStyle(style)
+        val bodyCard = snapshot("message-assistant-body")
+        assertEquals(parseColor(custom.border), bodyCard.getPixel(bodyCard.width / 2, 0))
+        val link = textLayout("Guide").layoutInput.text
+        assertTrue(link.spanStyles.any { it.item.textDecoration == TextDecoration.Underline && it.item.color.toArgb() != ink })
+        assertEquals(warning, textInk("Offline warning"))
+    }
+
+    @Test @Config(qualifiers = "en-rUS-w393dp-h880dp-xhdpi")
+    fun darkThoughtAndToolCardsKeepTheirExactFillAndInkWhenToggled() = checkThoughtAndToolCards(MessageTone.Dark)
+
+    @Test @Config(qualifiers = "en-rUS-w393dp-h880dp-xhdpi")
+    fun lightThoughtAndToolCardsKeepTheirPaletteWithoutAnOutline() = checkThoughtAndToolCards(MessageTone.Light)
+
+    @Test @Config(qualifiers = "zh-rCN-w393dp-h880dp-xhdpi")
+    fun appearancePagePreviewsTheChatThoughtCardInBothStates() {
+        setStyle(MessageStyle(tone = MessageTone.Dark, material = CardMaterial.Frosted))
+        screen.onNodeWithContentDescription("打开侧栏").performClick()
+        screen.onNodeWithTag("drawer-settings").performClick()
+        screen.onNodeWithText(label(R.string.settings_style)).performScrollTo().performClick()
+        val tag = "message-thought"
+        val thinking = label(R.string.turn_thinking)
+        screen.onNodeWithTag(tag).performScrollTo()
+        assertFlatCard(tag, parseColor("#242628"))
+        screen.onNodeWithText(thinking).performClick()
+        screen.onNodeWithText("这里展示思考内容。").performScrollTo().assertIsDisplayed()
+        assertFlatCard(tag, parseColor("#242628"))
+        assertEquals(Color.White.toArgb(), textInk("这里展示思考内容。"))
+    }
+
+    @Test @Config(qualifiers = "en-rUS-w393dp-h880dp-xhdpi")
+    fun phoneMenusShowTheActionsForEachRoleInBothTones() {
+        open(initial = usageChat(answer))
+        val actions = hasAnyAncestor(hasTestTag("turn-action-sheet")) and hasClickAction() and
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.Text)
+        for (tone in listOf(MessageTone.Dark, MessageTone.Light)) {
+            setStyle(MessageStyle(tone = tone))
+            for ((entry, count) in listOf(R.string.turn_more to 7, R.string.turn_more_reply to 8)) {
+                screen.onNodeWithContentDescription(label(entry)).performScrollTo().performClick()
+                val rows = screen.onAllNodes(actions).assertCountEquals(count)
+                repeat(count) { i ->
+                    val bounds = rows[i].getUnclippedBoundsInRoot()
+                    assertEquals(44.dp, bounds.bottom - bounds.top)
+                }
+                val sheet = snapshot("turn-action-sheet", sheet = true)
+                val expected = if (tone == MessageTone.Dark) Color.Black else Color.White
+                assertEquals(expected.toArgb(), sheet.getPixel(4, sheet.height / 2))
+                val edit = screen.onNodeWithText(label(R.string.turn_edit))
+                if (entry == R.string.turn_more) edit.assertDoesNotExist() else edit.assertIsDisplayed()
+                tap(R.string.turn_copy_markdown_source)
+            }
+        }
+    }
+
+    @Test fun userFooterPencilStillEditsThePrompt() {
+        open(initial = usageChat(answer))
+        screen.onNodeWithContentDescription(label(R.string.turn_edit)).performScrollTo().performClick()
+        screen.onNode(hasSetTextAction() and hasText(question.text)).performTextReplacement("Edited prompt")
+        confirm(R.string.settings_save)
+        screen.onNodeWithText("Edited prompt").assertIsDisplayed()
+        more()
+        tap(R.string.turn_edit)
+        screen.onNode(hasSetTextAction() and hasText(answer.text)).assertIsDisplayed()
+    }
 
     private fun usageChat(reply: Message, vararg revisions: Message) = Conversation(title = "Usage fixture",
         messages = listOf(question, reply), versions = if (revisions.isEmpty()) emptyMap()

@@ -189,7 +189,7 @@ private fun ReplyToolChain(body: String, thought: String, calls: List<ReplyToolC
     val size = firstCall + calls.size
     val compact = hasThought && size == 1 && !thoughtExpanded
     val width = if (compact) Modifier.width(IntrinsicSize.Max) else Modifier.fillMaxWidth()
-    ChatTintedSurface(Role.Assistant, width.testTag(if (hasThought) "message-thought" else "message-tool-chain")) {
+    ChatTintedSurface(ChatSurface.ThoughtAndTools, width.testTag(if (hasThought) "message-thought" else "message-tool-chain")) {
         Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             if (hasThought) {
                 TimelineStep(R.drawable.lucide_lightbulb, stringResource(R.string.turn_thinking), query, 0, size,
@@ -230,6 +230,7 @@ private fun toolIcon(name: String) = when (name) {
 private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, index: Int, count: Int,
     status: String? = null, detail: String? = null, open: Boolean = false, toggle: (() -> Unit)? = null) {
     val ink = LocalContentColor.current
+    val dark = LocalMessageStyle.current.tone == MessageTone.Dark
     val line = ink.copy(alpha = .16f)
     val state = stringResource(if (open) R.string.turn_expanded else R.string.turn_collapsed)
     val interaction = if (toggle == null) Modifier else Modifier.clickable(onClick = toggle).semantics { stateDescription = state }
@@ -247,7 +248,7 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
         Text(highlighted(label, query), Modifier.weight(1f), fontWeight = FontWeight.Medium, fontSize = 13.sp,
             lineHeight = 18.sp, letterSpacing = 0.sp, color = ink, overflow = TextOverflow.Ellipsis, maxLines = 2)
         if (status != null) Text(status, Modifier.padding(start = 8.dp), fontSize = 11.sp, lineHeight = 14.sp,
-            letterSpacing = 0.sp, color = ink.copy(alpha = .65f))
+            letterSpacing = 0.sp, color = if (dark) ink else ink.copy(alpha = .65f))
         if (toggle != null) Icon(painterResource(if (open) R.drawable.lucide_chevron_up else if (status == null)
             R.drawable.lucide_chevron_down else R.drawable.lucide_chevron_right), null, Modifier.padding(start = 6.dp).size(14.dp),
             tint = ink.copy(alpha = .55f))
@@ -257,7 +258,7 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
             val x = 12.dp.toPx()
             if (index + 1 < count) drawLine(line, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
         }.padding(start = 32.dp, bottom = 8.dp), fontSize = 13.sp, lineHeight = 19.sp, letterSpacing = 0.sp,
-            color = ink.copy(alpha = .8f))
+            color = if (dark) ink else ink.copy(alpha = .8f))
     }
 }
 
@@ -272,7 +273,7 @@ internal fun ReplyTranslationBody(chatId: String, msg: Message, query: String, t
     val language = run?.language ?: saved?.language.orEmpty()
     val value = run?.text ?: saved?.text.orEmpty()
     var expanded by rememberSaveable(msg.id, language, query) { mutableStateOf(true) }
-    ChatTintedSurface(Role.Assistant, Modifier.fillMaxWidth()) {
+    ChatTintedSurface(ChatSurface.Translation, Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {

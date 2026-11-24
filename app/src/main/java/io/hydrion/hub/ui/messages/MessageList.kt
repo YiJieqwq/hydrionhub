@@ -268,8 +268,8 @@ internal fun UserBubble(msg: Message, query: String, mode: Mode, modifier: Modif
             }
         }
     }
-    if (chat) ChatTintedSurface(Role.User, surface, content)
-    else MessageCard(LocalMessageStyle.current.renderPalette.user, surface, bubble, content)
+    if (chat) ChatTintedSurface(ChatSurface.UserBubble, surface, content)
+    else MessageCard(LocalMessageStyle.current.renderPalette.user, surface, bubble, content = content)
 }
 
 @Composable

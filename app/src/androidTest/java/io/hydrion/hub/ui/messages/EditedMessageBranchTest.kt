@@ -124,8 +124,7 @@ class EditedMessageBranchTest {
             }
             val editor = hasSetTextAction() and hasAnyAncestor(isDialog())
             fun edit(text: String) {
-                screen.onNodeWithContentDescription(label(R.string.turn_more)).performClick()
-                screen.onNodeWithText(label(R.string.turn_edit)).performScrollTo().performClick()
+                screen.onNodeWithContentDescription(label(R.string.turn_edit)).performClick()
                 screen.onNode(editor).performTextReplacement(text)
             }
             val storedHistory = disk.path.readBytes()
