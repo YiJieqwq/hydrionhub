@@ -1,7 +1,10 @@
 package io.hydrion.hub.ui.messages
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -43,6 +46,7 @@ import io.hydrion.hub.R
 import io.hydrion.hub.model.*
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.provider.route
+import kotlinx.coroutines.flow.filterNot
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -239,6 +243,13 @@ private fun toolIcon(name: String) = when (name) {
     else -> R.drawable.lucide_wrench
 }
 
+// Keep the Material focus and hover feedback on these rows while dropping only the press ripple.
+private data object StepIndication : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource) = ripple().create(object : InteractionSource {
+        override val interactions = interactionSource.interactions.filterNot { it is PressInteraction }
+    })
+}
+
 @Composable
 private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, index: Int, count: Int,
     status: String? = null, detail: String? = null, open: Boolean = false, toggle: (() -> Unit)? = null) {
@@ -246,7 +257,9 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
     val dark = LocalMessageStyle.current.tone == MessageTone.Dark
     val line = ink.copy(alpha = .16f)
     val state = stringResource(if (open) R.string.turn_expanded else R.string.turn_collapsed)
-    val interaction = if (toggle == null) Modifier else Modifier.clickable(onClick = toggle).semantics { stateDescription = state }
+    val interaction = if (toggle == null) Modifier else Modifier.clickable(
+        interactionSource = null, indication = StepIndication, onClick = toggle
+    ).semantics { stateDescription = state }
     Row(Modifier.fillMaxWidth().drawBehind {
         val x = 12.dp.toPx()
         val middle = size.height / 2
@@ -278,7 +291,7 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
                 lineHeight = 16.5.sp, letterSpacing = 0.sp, color = bodyInk)
         } else {
             var showRecord by rememberSaveable { mutableStateOf(false) }
-            Row(Modifier.fillMaxWidth().clickable(role = UiRole.Button,
+            Row(Modifier.fillMaxWidth().clickable(interactionSource = null, indication = StepIndication, role = UiRole.Button,
                 onClickLabel = stringResource(R.string.turn_tool_details), onClick = { showRecord = true }),
                 horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
                 Text(highlighted(detail, query), Modifier.weight(1f), fontSize = 12.sp, lineHeight = 16.8.sp,

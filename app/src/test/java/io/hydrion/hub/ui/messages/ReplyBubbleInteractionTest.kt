@@ -6,12 +6,16 @@ import android.content.Context
 import android.content.ClipboardManager
 import android.graphics.Bitmap
 import android.graphics.Color.parseColor
+import android.graphics.drawable.RippleDrawable
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.Color
@@ -20,6 +24,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -66,6 +71,7 @@ class ReplyBubbleInteractionTest {
     private val original = Conversation(title = "Versions", messages = listOf(question, answer),
         versions = mapOf(answer.id to group), modelRoutes = emptyMap())
     private lateinit var recorded: Conversation
+    private lateinit var inputMode: InputModeManager
     private var previousStyle: MessageStyle? = null
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
 
@@ -95,6 +101,7 @@ class ReplyBubbleInteractionTest {
             assertEquals(initial.messages.last().text, vm.state.value.current.messages.last().text)
             activity.setContent {
                 HydrionTheme {
+                    inputMode = LocalInputModeManager.current
                     CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
                         Box(if (width == null) Modifier.fillMaxWidth() else Modifier.width(width)) {
                             ProvideMessageStyle { MessageList(vm, vm.state.collectAsState().value, "", null, 0) }
@@ -777,6 +784,73 @@ class ReplyBubbleInteractionTest {
             R.string.turn_cached to "100.00k", R.string.turn_output to "150.00k", R.string.turn_reasoning to "99999",
             R.string.turn_tps to "120000.0 tok/s", R.string.turn_ttft to "999 ms",
             R.string.turn_first_body to "1.00 s", R.string.turn_elapsed to "1.25 s")
+    }
+
+    @OptIn(ExperimentalComposeUiApi::class, ExperimentalTestApi::class)
+    @Test @Config(qualifiers = "en-rUS-w407dp-h915dp-xxhdpi")
+    fun stepTouchesKeepCardPixelsWhileFocusAndOtherButtonsStillGiveFeedback() {
+        val reply = answer.copy(thought = "Review the checklist",
+            toolCalls = listOf(ReplyToolCall("file_search", ToolCallState.Completed, answer.text.length)))
+        open(initial = usageChat(reply))
+        fun button(text: String) = screen.onNode(hasText(text) and hasClickAction())
+        val thought = button(label(R.string.turn_thinking))
+        val tool = button("file_search")
+        val position = button(screen.activity.getString(R.string.turn_tool_position, reply.text.length))
+        // A software window capture can omit the RenderThread ripple even when the drawable is active.
+        fun nativeRipplePressed() = screen.runOnIdle {
+            screen.activity.window.decorView.allViews.any {
+                val ripple = it.background as? RippleDrawable
+                ripple != null && android.R.attr.state_pressed in ripple.state
+            }
+        }
+        fun press(node: SemanticsNodeInteraction, tag: String, release: Boolean = true) {
+            val resting = snapshot(tag)
+            node.assertHasClickAction().performTouchInput { down(center) }
+            screen.mainClock.advanceTimeBy(240)
+            val held = snapshot(tag)
+            val ripple = nativeRipplePressed()
+            node.performTouchInput { if (release) up() else cancel() }
+            assertFalse("Touch started a ripple on $tag", ripple)
+            assertTrue("Touch changed the $tag pixels", resting.sameAs(held))
+        }
+
+        for (tone in MessageTone.entries) {
+            setStyle(MessageStyle(tone = tone))
+            press(thought, "message-thought")
+            screen.onNodeWithText(reply.thought).assertIsDisplayed()
+            press(thought, "message-thought", release = false)
+            screen.onNodeWithText(reply.thought).assertIsDisplayed()
+            press(tool, "message-tool-chain")
+            press(position, "message-tool-chain")
+            screen.onNodeWithTag("turn-action-sheet").assertIsDisplayed()
+            screen.onNodeWithContentDescription(label(R.string.turn_close_details)).performClick()
+            press(tool, "message-tool-chain")
+            position.assertDoesNotExist()
+            press(thought, "message-thought")
+            screen.onNodeWithText(reply.thought).assertDoesNotExist()
+        }
+
+        val copy = screen.onNodeWithContentDescription(label(R.string.turn_copy_reply))
+        copy.performTouchInput { down(center) }
+        screen.mainClock.advanceTimeBy(240)
+        val copyRipple = nativeRipplePressed()
+        copy.performTouchInput { cancel() }
+        assertTrue("The ordinary reply button must still show its press", copyRipple)
+
+        val resting = snapshot("message-thought")
+        screen.runOnIdle { assertTrue(inputMode.requestInputMode(InputMode.Keyboard)) }
+        screen.runOnIdle { assertEquals(InputMode.Keyboard, inputMode.inputMode) }
+        thought.performSemanticsAction(SemanticsActions.RequestFocus)
+        thought.assertIsFocused()
+        screen.mainClock.advanceTimeBy(200)
+        assertFalse("Keyboard focus must remain visible", resting.sameAs(snapshot("message-thought")))
+        thought.performKeyInput { pressKey(Key.Enter) }
+        screen.onNodeWithText(reply.thought).assertIsDisplayed()
+        tool.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        tool.performKeyInput { pressKey(Key.Enter) }
+        position.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        position.performKeyInput { pressKey(Key.Enter) }
+        screen.onNodeWithTag("turn-action-sheet").assertIsDisplayed()
     }
 
     @Test @Config(qualifiers = "en-rUS-w407dp-h915dp-xxhdpi")
