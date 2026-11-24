@@ -37,6 +37,7 @@ import io.hydrion.hub.R
 import io.hydrion.hub.model.*
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.provider.route
+import java.math.BigDecimal
 import java.text.SimpleDateFormat
 import java.util.Date
 
@@ -55,17 +56,23 @@ internal fun TurnByline(name: String, time: Long, modifier: Modifier = Modifier,
 
 @Composable
 internal fun ReplyUsageButton(msg: Message, modifier: Modifier = Modifier) {
-    var open by remember(msg.id) { mutableStateOf(false) }
     val usage = msg.reportedUsage
     val timing = msg.timing
-    val total = usage?.contextTokens
-    val unknown = stringResource(R.string.turn_unrecorded)
+    val total = usage?.contextTokens ?: msg.totalTokens?.takeIf { it >= 0 }
+    val hasDetails = usage?.inputTokens != null || usage?.cachedInputTokens != null ||
+        usage?.outputTokens != null || usage?.reasoningTokens != null ||
+        timing?.firstTokenMs != null || timing?.firstBodyMs != null || timing?.elapsedMs != null
+    if (total == null && !hasDetails) return
+
+    var open by remember(msg.id, hasDetails) { mutableStateOf(false) }
+    val action = if (hasDetails) Modifier.clickable(role = UiRole.Button) { open = true } else Modifier
     val colors = MaterialTheme.colorScheme
     val gap = with(LocalDensity.current) { 8.dp.roundToPx() }
     Box(modifier) {
-        Box(Modifier.clickable(role = UiRole.Button) { open = true }.heightIn(min = 28.dp),
-            contentAlignment = Alignment.Center) {
-            Text(if (total != null) stringResource(R.string.turn_tokens, total) else stringResource(R.string.turn_usage),
+        Box(action.heightIn(min = 28.dp), contentAlignment = Alignment.Center) {
+            val label = if (total != null) stringResource(R.string.turn_tokens, formatBriefTokenCount(total))
+                else stringResource(R.string.turn_usage)
+            Text(label,
                 fontSize = 11.sp, lineHeight = 14.sp, letterSpacing = 0.sp, color = colors.onSurface.copy(alpha = .5f))
         }
         if (open) Popup(remember(gap) { UsagePosition(gap) }, onDismissRequest = { open = false },
@@ -75,20 +82,41 @@ internal fun ReplyUsageButton(msg: Message, modifier: Modifier = Modifier) {
                     .heightIn(max = (LocalConfiguration.current.screenHeightDp.dp - 16.dp).coerceAtLeast(1.dp))
                     .verticalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (total != null) UsageRow(R.drawable.lucide_boxes, R.string.turn_total, total.toString())
-                    UsageRow(R.drawable.lucide_arrow_up, R.string.turn_input, usage?.inputTokens?.toString() ?: unknown)
-                    UsageRow(R.drawable.lucide_database, R.string.turn_cached, usage?.cachedInputTokens?.toString() ?: unknown)
-                    UsageRow(R.drawable.lucide_arrow_down, R.string.turn_output, usage?.outputTokens?.toString() ?: unknown)
-                    UsageRow(R.drawable.lucide_brain, R.string.turn_reasoning, usage?.reasoningTokens?.toString() ?: unknown)
-                    val speed = timing?.tokensPerSecond(usage?.outputTokens)
-                    UsageRow(R.drawable.lucide_zap, R.string.turn_tps, speed?.let { stringResource(R.string.turn_tps_value, it) } ?: unknown)
-                    UsageRow(R.drawable.lucide_activity, R.string.turn_ttft, timing?.firstTokenMs?.let { stringResource(R.string.turn_millis, it) } ?: unknown)
-                    UsageRow(R.drawable.lucide_timer, R.string.turn_first_body, timing?.firstBodyMs?.let { stringResource(R.string.turn_millis, it) } ?: unknown)
-                    UsageRow(R.drawable.lucide_clock, R.string.turn_elapsed, timing?.elapsedMs?.let { stringResource(R.string.turn_millis, it) } ?: unknown)
+                    // The footer can sum input and output even when no separate total was reported.
+                    UsageCountRow(R.drawable.lucide_boxes, R.string.turn_total, usage?.totalTokens)
+                    UsageCountRow(R.drawable.lucide_arrow_up, R.string.turn_input, usage?.inputTokens)
+                    UsageCountRow(R.drawable.lucide_database, R.string.turn_cached, usage?.cachedInputTokens)
+                    UsageCountRow(R.drawable.lucide_arrow_down, R.string.turn_output, usage?.outputTokens)
+                    UsageCountRow(R.drawable.lucide_brain, R.string.turn_reasoning, usage?.reasoningTokens)
+                    timing?.tokensPerSecond(usage?.outputTokens)?.let {
+                        UsageRow(R.drawable.lucide_zap, R.string.turn_tps, stringResource(R.string.turn_tps_value, it))
+                    }
+                    UsageDurationRow(R.drawable.lucide_activity, R.string.turn_ttft, timing?.firstTokenMs)
+                    UsageDurationRow(R.drawable.lucide_timer, R.string.turn_first_body, timing?.firstBodyMs)
+                    UsageDurationRow(R.drawable.lucide_clock, R.string.turn_elapsed, timing?.elapsedMs)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun formatBriefTokenCount(tokens: Long): String {
+    if (tokens < 100_000L) return tokens.toString()
+    return stringResource(R.string.turn_count_thousands, BigDecimal.valueOf(tokens, 3))
+}
+
+@Composable
+private fun UsageCountRow(@DrawableRes icon: Int, label: Int, tokens: Long?) {
+    if (tokens != null) UsageRow(icon, label, formatBriefTokenCount(tokens))
+}
+
+@Composable
+private fun UsageDurationRow(@DrawableRes icon: Int, label: Int, millis: Long?) {
+    if (millis == null) return
+    val value = if (millis < 1000L) stringResource(R.string.turn_millis, millis)
+        else stringResource(R.string.turn_seconds, BigDecimal.valueOf(millis, 3))
+    UsageRow(icon, label, value)
 }
 
 private class UsagePosition(val gap: Int) : PopupPositionProvider {

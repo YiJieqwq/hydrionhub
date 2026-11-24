@@ -62,7 +62,8 @@
     <string name="turn_show_image_controls">Show controls</string>
     <string name="turn_image_preview_failed">Unable to load image</string>
     <string name="turn_media">Attachment</string>
-    <string name="turn_tokens">%1$d tokens</string>
+    <string name="turn_tokens">%1$s tokens</string>
+    <string name="turn_count_thousands">%1$.2fk</string>
     <string name="turn_usage">Token usage</string>
     <string name="turn_input_tokens">Input: %1$d</string>
     <string name="turn_output_tokens">Output: %1$d</string>
@@ -79,7 +80,7 @@
     <string name="turn_first_body">First visible reply text</string>
     <string name="turn_elapsed">Total duration</string>
     <string name="turn_millis">%1$d ms</string>
-    <string name="turn_unrecorded">Not recorded</string>
+    <string name="turn_seconds">%1$.2f s</string>
     <string name="turn_web_preview">Preview in WebView</string>
     <string name="turn_web_unavailable">Android System WebView is unavailable.</string>
     <string name="turn_local_tool">Selected tool</string>

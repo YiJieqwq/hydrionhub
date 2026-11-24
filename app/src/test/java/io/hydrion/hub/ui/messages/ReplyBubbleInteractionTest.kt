@@ -12,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -63,7 +64,7 @@ class ReplyBubbleInteractionTest {
         condition()
     }
 
-    private fun open(width: Dp? = null, fontScale: Float = 1f, extra: Conversation? = null): HubViewModel {
+    private fun open(width: Dp? = null, fontScale: Float = 1f, initial: Conversation = original): HubViewModel {
         val host = screen.activity
         val directory = Files.createTempDirectory(host.cacheDir.toPath(), "bubble-history-").toFile()
         val app = object : Application() {
@@ -72,15 +73,15 @@ class ReplyBubbleInteractionTest {
             override fun getFilesDir() = directory
         }
         recorded = recordedChat()
-        HistoryFile(app).save(SavedWorkspace(listOfNotNull(original, recorded, extra)))
+        HistoryFile(app).save(SavedWorkspace(listOf(initial, recorded)))
         val vm = screen.runOnIdle {
             ViewModelProvider(host, ViewModelProvider.AndroidViewModelFactory(app))["bubble-fixture", HubViewModel::class.java]
         }
         awaitHost { vm.workspaceLoad.value != WorkspaceLoad.Reading }
         assertEquals(WorkspaceLoad.Ready, vm.workspaceLoad.value)
         screen.activityRule.scenario.onActivity { activity ->
-            vm.openConversation(original.id)
-            assertEquals(answer.text, vm.state.value.current.messages.last().text)
+            vm.openConversation(initial.id)
+            assertEquals(initial.messages.last().text, vm.state.value.current.messages.last().text)
             activity.setContent {
                 MaterialTheme {
                     CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
@@ -91,8 +92,9 @@ class ReplyBubbleInteractionTest {
                 }
             }
         }
-        screen.onNodeWithTag("message-timeline").performScrollToKey(answer.id)
-        screen.onNodeWithText(answer.text).assertIsDisplayed()
+        val reply = initial.messages.last()
+        screen.onNodeWithTag("message-timeline").performScrollToKey(reply.id)
+        screen.onNodeWithTag("message-turn-${reply.id}").assertIsDisplayed()
         return vm
     }
 
@@ -100,6 +102,19 @@ class ReplyBubbleInteractionTest {
     private fun more() = screen.onNodeWithContentDescription(label(R.string.turn_more_reply)).performClick()
     private fun tap(id: Int) = screen.onNode(hasText(label(id)) and hasClickAction()).performScrollTo().performClick()
     private fun confirm(id: Int) = screen.onNode(hasText(label(id)) and hasClickAction()).performClick()
+
+    private fun usageChat(reply: Message, vararg revisions: Message) = Conversation(title = "Usage fixture",
+        messages = listOf(question, reply), versions = if (revisions.isEmpty()) emptyMap()
+        else mapOf(reply.id to MessageVersions(0, revisions.toList())))
+
+    private fun assertUsageRows(vararg expected: Pair<Int, String>) {
+        screen.onNodeWithTag("turn-usage-panel").assertIsDisplayed()
+        val row = hasAnyAncestor(hasTestTag("turn-usage-panel")) and SemanticsMatcher.keyIsDefined(SemanticsProperties.Text)
+        screen.onAllNodes(row).assertCountEquals(expected.size)
+        expected.forEach { (labelId, value) ->
+            screen.onNode(row and hasText(label(labelId)) and hasText(value)).assertIsDisplayed()
+        }
+    }
 
     @Test fun assistantHeaderFooterAndMenuUseTheReferencePhoneGeometry() {
         val vm = open()
@@ -111,7 +126,7 @@ class ReplyBubbleInteractionTest {
         val body = screen.onNodeWithTag("message-assistant-body").getUnclippedBoundsInRoot()
         val copy = action(R.string.turn_copy_reply)
         val retry = action(R.string.turn_retry)
-        val token = screen.onNodeWithText(screen.activity.getString(R.string.turn_tokens, 30L)).getUnclippedBoundsInRoot()
+        val token = screen.onNodeWithText("30 tokens").getUnclippedBoundsInRoot()
         assertEquals(32.dp, avatar.right - avatar.left)
         assertEquals(timeline.left + 20.dp, avatar.left)
         assertEquals(avatar.right + 8.dp, byline.left)
@@ -129,7 +144,9 @@ class ReplyBubbleInteractionTest {
     }
 
     @Test fun narrowLargeTextFooterWrapsAndKeepsRevisionsAndUsageInteractive() {
-        open(width = 224.dp, fontScale = 1.6f)
+        val first = answer.copy(timing = ReplyTiming(null, null, 1250))
+        val last = answer.copy(text = "Last revision", timing = ReplyTiming(0, null, null))
+        open(width = 224.dp, fontScale = 1.6f, initial = usageChat(first, last))
         val copy = screen.onNodeWithContentDescription(label(R.string.turn_copy_reply)).getUnclippedBoundsInRoot()
         val next = screen.onNodeWithContentDescription(label(R.string.turn_next))
         val usage = screen.onNode(hasText(label(R.string.turn_usage)) and hasClickAction())
@@ -139,7 +156,7 @@ class ReplyBubbleInteractionTest {
         next.performClick()
         screen.onNodeWithText("Last revision").assertIsDisplayed()
         usage.performScrollTo().performClick()
-        screen.onAllNodesWithText(label(R.string.turn_unrecorded)).assertCountEquals(8)
+        assertUsageRows(R.string.turn_ttft to "0 ms")
     }
 
     @Test fun deletingMiddleVersionKeepsContextAndForkCopiesOnlyTheSurvivingVisibleRevision() {
@@ -295,13 +312,59 @@ class ReplyBubbleInteractionTest {
         screen.runOnIdle { assertTrue(shadowOf(web).wasDestroyCalled()) }
     }
 
-    @Test fun unknownHistoricalUsageOpensFromTheReplyAndShowsMissingForEveryMetric() {
-        open()
+    @Test fun totalOnlyHistoryAndRevisionsShowCountsButIgnoreTapsUntilThereIsADetail() {
+        val legacy = answer.copy(totalTokens = 99_999)
+        val modern = answer.copy(text = "Structured total", usage = TokenUsage(totalTokens = 100_000))
+        val zero = answer.copy(text = "Zero total", usage = TokenUsage(totalTokens = 0), timing = ReplyTiming(null, null, null))
+        val empty = answer.copy(text = "No statistics", usage = TokenUsage(), timing = ReplyTiming(null, null, null))
+        val detailed = answer.copy(text = "Measured cache", usage = TokenUsage(totalTokens = 123_456, cachedInputTokens = 0))
+        open(initial = usageChat(legacy, modern, zero, empty, detailed))
+        val next = screen.onNodeWithContentDescription(label(R.string.turn_next))
+        for (text in listOf("99999 tokens", "100.00k tokens", "0 tokens")) {
+            val count = screen.onNodeWithText(text)
+            count.assertIsDisplayed().assert(!hasClickAction())
+            count.performTouchInput { click() }
+            screen.onNodeWithTag("turn-usage-panel").assertDoesNotExist()
+            next.performClick()
+        }
+        screen.onNodeWithText(empty.text).assertIsDisplayed()
+        screen.onNodeWithText(label(R.string.turn_usage)).assertDoesNotExist()
+        screen.onNodeWithText("0 tokens").assertDoesNotExist()
+        next.performClick()
+        screen.onNodeWithText("123.46k tokens").assertHasClickAction().performTouchInput { click() }
+        assertUsageRows(R.string.turn_total to "123.46k", R.string.turn_cached to "0")
+    }
+
+    @Test fun partialUsageShowsMeasuredZerosAndOmitsAnUnmeasurableRate() {
+        val reply = answer.copy(usage = TokenUsage(outputTokens = 0), timing = ReplyTiming(0, null, 0))
+        open(initial = usageChat(reply))
         confirm(R.string.turn_usage)
-        screen.onAllNodesWithText(label(R.string.turn_unrecorded)).assertCountEquals(8)
-        screen.onNodeWithText(label(R.string.turn_first_body)).assertIsDisplayed()
-        screen.onNodeWithText(label(R.string.turn_ttft)).assertIsDisplayed()
-        screen.onNodeWithText("0 ms").assertDoesNotExist()
+        assertUsageRows(R.string.turn_output to "0", R.string.turn_ttft to "0 ms", R.string.turn_elapsed to "0 ms")
+    }
+
+    @Test fun zeroOutputOverPositiveElapsedTimeShowsAZeroRate() {
+        val reply = answer.copy(usage = TokenUsage(outputTokens = 0), timing = ReplyTiming(null, null, 1005))
+        open(initial = usageChat(reply))
+        confirm(R.string.turn_usage)
+        assertUsageRows(R.string.turn_output to "0", R.string.turn_tps to "0.0 tok/s", R.string.turn_elapsed to "1.01 s")
+    }
+
+    @Test fun englishUsageBriefFormatsTokenCountsAndAllThreeDurations() = checkUsageBrief("First visible reply text")
+
+    @Test @Config(qualifiers = "zh-rCN-h915dp")
+    fun chineseUsageBriefFormatsTokenCountsAndAllThreeDurations() = checkUsageBrief("回复首字")
+
+    private fun checkUsageBrief(firstBodyLabel: String) {
+        val reply = answer.copy(usage = TokenUsage(inputTokens = 123_456, cachedInputTokens = 100_000,
+            outputTokens = 150_000, reasoningTokens = 99_999, totalTokens = 273_456),
+            timing = ReplyTiming(firstTokenMs = 999, firstBodyMs = 1000, elapsedMs = 1250))
+        open(initial = usageChat(reply))
+        assertEquals(firstBodyLabel, label(R.string.turn_first_body))
+        screen.onNodeWithText("273.46k tokens").assertHasClickAction().performTouchInput { click() }
+        assertUsageRows(R.string.turn_total to "273.46k", R.string.turn_input to "123.46k",
+            R.string.turn_cached to "100.00k", R.string.turn_output to "150.00k", R.string.turn_reasoning to "99999",
+            R.string.turn_tps to "120000.0 tok/s", R.string.turn_ttft to "999 ms",
+            R.string.turn_first_body to "1.00 s", R.string.turn_elapsed to "1.25 s")
     }
 
     @Test fun expandingAThoughtAndTwoToolStepsPreservesTheirOrderAroundVisibleText() {
@@ -310,8 +373,7 @@ class ReplyBubbleInteractionTest {
                 ReplyToolCall("file_search", ToolCallState.Completed, 2),
                 ReplyToolCall("archived_lookup", ToolCallState.Incomplete)))
         val fixture = Conversation(title = "Ordered steps", messages = listOf(question, reply), modelRoutes = emptyMap())
-        val vm = open(extra = fixture)
-        screen.runOnIdle { vm.openConversation(fixture.id) }
+        val vm = open(initial = fixture)
         screen.onNodeWithText("Chosen offline option").assertIsDisplayed()
             .assert(!hasAnyAncestor(hasTestTag("message-thought") or hasTestTag("message-tool-chain")))
         val thought = screen.onNodeWithText(label(R.string.turn_thinking))
@@ -343,23 +405,11 @@ class ReplyBubbleInteractionTest {
         screen.onNodeWithText(label(R.string.turn_tool_before_body)).assertIsDisplayed()
         tool.performClick()
         screen.onNodeWithText(label(R.string.turn_tool_before_body)).assertDoesNotExist()
-        val chip = screen.activity.getString(R.string.turn_tokens, 30L)
-        screen.onNodeWithText(chip).performClick()
-        fun value(labelId: Int, text: String) {
-            screen.onNodeWithText(label(labelId), useUnmergedTree = true).onParent()
-                .assert(anyValue(text))
-        }
-        value(R.string.turn_input, "20")
-        value(R.string.turn_cached, "0")
-        value(R.string.turn_output, "10")
-        value(R.string.turn_reasoning, "4")
-        value(R.string.turn_ttft, "12 ms")
-        value(R.string.turn_first_body, "140 ms")
-        value(R.string.turn_elapsed, "200 ms")
-        value(R.string.turn_tps, "50.0 tok/s")
+        screen.onNodeWithText("30 tokens").performClick()
+        assertUsageRows(R.string.turn_input to "20", R.string.turn_cached to "0", R.string.turn_output to "10",
+            R.string.turn_reasoning to "4", R.string.turn_ttft to "12 ms", R.string.turn_first_body to "140 ms",
+            R.string.turn_elapsed to "200 ms", R.string.turn_tps to "50.0 tok/s")
     }
-
-    private fun anyValue(value: String) = hasAnyDescendant(hasText(value))
 
     /** Start at the same send entry point as the composer. Only the provider frames and clock are fixtures. */
     private fun recordedChat() = runBlocking {
