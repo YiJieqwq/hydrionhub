@@ -40,9 +40,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
+import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.LayoutDirection
@@ -59,6 +65,9 @@ import io.hydrion.hub.ui.theme.IonMark
 import kotlinx.coroutines.flow.collect
 import java.text.DateFormat
 import java.util.Date
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.roundToInt
 
 fun matchingMessages(state: HubState, query: String): List<String> {
     val needle = query.trim()
@@ -257,19 +266,47 @@ internal fun UserBubble(msg: Message, query: String, mode: Mode, modifier: Modif
     val bounds = if (chat) Modifier.padding(start = 24.dp).widthIn(max = (LocalConfiguration.current.screenWidthDp * .75f).dp)
         else Modifier.widthIn(max = (LocalConfiguration.current.screenWidthDp * .81f).dp)
     val surface = bounds.testTag("message-user-bubble").clip(bubble).then(modifier)
-    val content: @Composable () -> Unit = {
-        Column(Modifier.padding(horizontal = if (chat) 12.dp else 16.dp, vertical = if (chat) 12.dp else 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (mode == Mode.Image) msg.attachments.forEach { MessageAttachment(it, query) }
-            if (msg.text.isNotEmpty()) {
-                val text = highlighted(msg.text, query)
-                if (chat) Text(text, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.5.sp, lineHeight = 21.7.sp, letterSpacing = 0.sp))
-                else SelectionContainer { Text(text, style = MaterialTheme.typography.bodyLarge) }
-            }
+    if (chat) {
+        ChatTintedSurface(ChatSurface.UserBubble, surface) { ChatUserText(highlighted(msg.text, query)) }
+    } else MessageCard(LocalMessageStyle.current.renderPalette.user, surface, bubble) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            msg.attachments.forEach { MessageAttachment(it, query) }
+            if (msg.text.isNotEmpty()) SelectionContainer { Text(highlighted(msg.text, query), style = MaterialTheme.typography.bodyLarge) }
         }
     }
-    if (chat) ChatTintedSurface(ChatSurface.UserBubble, surface, content)
-    else MessageCard(LocalMessageStyle.current.renderPalette.user, surface, bubble, content = content)
+}
+
+@Composable
+private fun ChatUserText(text: AnnotatedString) {
+    // Fractional advances matter at 15.5 sp, especially across a row of full-width glyphs.
+    val type = MaterialTheme.typography.bodyLarge.copy(
+        fontSize = 15.5.sp, lineHeight = 21.7.sp, textMotion = TextMotion.Animated,
+        letterSpacing = if (LocalConfiguration.current.locales[0].language == "zh") 0.sp else .05.sp
+    )
+    var paragraph by remember { mutableStateOf<TextLayoutResult?>(null) }
+    Layout(content = { Text(text, style = type, onTextLayout = { paragraph = it }) }) { children, constraints ->
+        val inset = 12.dp.roundToPx()
+        val child = children.single().measure(constraints.offset(-2 * inset, -2 * inset))
+        val lines = paragraph
+        var left = 0
+        var width = child.width
+        var height = child.height
+        if (lines != null) {
+            // Reuse Text's shaped lines. Their union handles right-aligned and mixed-direction text.
+            if (lines.lineCount > 1) {
+                val indices = 0 until lines.lineCount
+                left = floor(indices.minOf(lines::getLineLeft)).toInt().coerceIn(0, child.width)
+                val right = ceil(indices.maxOf(lines::getLineRight)).toInt().coerceIn(left, child.width)
+                width = right - left
+            }
+            // Apply the inset to the nominal first/last line box. Android can reserve extra font
+            // leading outside it for fallback scripts. The full native text always fits inside.
+            height = (lines.lastBaseline - lines.firstBaseline).roundToInt() + ceil(type.lineHeight.toPx()).toInt()
+        }
+        val outerWidth = constraints.constrainWidth(width + 2 * inset)
+        val outerHeight = constraints.constrainHeight(maxOf(child.height, height + 2 * inset))
+        layout(outerWidth, outerHeight) { child.place(inset - left, (outerHeight - child.height) / 2) }
+    }
 }
 
 @Composable

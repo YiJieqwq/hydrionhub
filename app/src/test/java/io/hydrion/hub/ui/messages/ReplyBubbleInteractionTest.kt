@@ -37,6 +37,7 @@ import androidx.lifecycle.ViewModelProvider
 import io.hydrion.hub.MainActivity
 import io.hydrion.hub.R
 import io.hydrion.hub.model.*
+import io.hydrion.hub.ui.profile.LocalProfileStore
 import io.hydrion.hub.ui.theme.HydrionTheme
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.first
@@ -134,10 +135,11 @@ class ReplyBubbleInteractionTest {
         }
     }
 
-    private fun textLayout(text: String): TextLayoutResult {
+    private fun textLayout(text: String) = layoutOf(screen.onNodeWithText(text, useUnmergedTree = true))
+
+    private fun layoutOf(node: SemanticsNodeInteraction): TextLayoutResult {
         val layout = mutableListOf<TextLayoutResult>()
-        screen.onNodeWithText(text, useUnmergedTree = true)
-            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layout) }
+        node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layout) }
         return layout.single()
     }
 
@@ -290,6 +292,96 @@ class ReplyBubbleInteractionTest {
         expected.forEach { (labelId, value) ->
             screen.onNode(row and hasText(label(labelId)) and hasText(value)).assertIsDisplayed()
         }
+    }
+
+    @Test @Config(qualifiers = "en-rUS-w407dp-h915dp-xxhdpi")
+    fun englishMessagesOnPhone() = checkMessageGeometry(narrow = false, chinese = false)
+
+    @Test @Config(qualifiers = "zh-rCN-w407dp-h915dp-xxhdpi")
+    fun chineseMessagesOnPhone() = checkMessageGeometry(narrow = false, chinese = true)
+
+    @Test @Config(qualifiers = "en-rUS-w320dp-h915dp-xxhdpi")
+    fun englishMessagesOnNarrowScreen() = checkMessageGeometry(narrow = true, chinese = false)
+
+    @Test @Config(qualifiers = "zh-rCN-w320dp-h915dp-xxhdpi")
+    fun chineseMessagesOnNarrowScreen() = checkMessageGeometry(narrow = true, chinese = true)
+
+    private fun checkMessageGeometry(narrow: Boolean, chinese: Boolean) {
+        val short = if (chinese) "给我一份灯塔巡检清单。" else "Review the plan."
+        val long = if (chinese) "请逐项核对交付清单，再确认下一步安排，并把变更告知团队。"
+            else "Review the plan and confirm the next milestone with the team."
+        val first = question.copy(text = short, createdAt = 1738555506000L)
+        val second = question.copy(id = "long", text = long, createdAt = first.createdAt + 1000)
+        val last = answer.copy(model = "Beacon QA", text = "OK", createdAt = first.createdAt + 2000)
+        open(initial = Conversation(messages = listOf(first, second, last)))
+        val density = screen.activity.resources.displayMetrics.density
+        val locale = screen.activity.resources.configuration.locales[0]
+        val profile = LocalProfileStore.shared(screen.activity)
+        val previous = profile.profile.value.name
+        val name = if (chinese) "用户" else "User"
+
+        // Logical sizes from the pinned Android reference widget with the same Roboto/Noto fonts.
+        // At 3x, the Redmi fixture occupies 583–584 physical pixels depending on edge rounding.
+        val shortWidth = if (chinese) 194.5f else 136.6f
+        val longWidth = if (chinese) { if (narrow) 225.5f else 287.5f } else { if (narrow) 219.94f else 279.39f }
+        fun near(expectedDp: Float, actualPx: Float) = assertEquals(expectedDp * density, actualPx, 2f)
+        try {
+            runBlocking { profile.save(name, null, false) }
+            for (msg in listOf(first, second, last)) {
+                screen.onNodeWithTag("message-timeline").performScrollToKey(msg.id)
+                val turn = hasAnyAncestor(hasTestTag("message-turn-${msg.id}"))
+                fun node(matcher: SemanticsMatcher) = screen.onNode(turn and matcher, useUnmergedTree = true)
+                val user = msg.role == Role.User
+                val avatar = node(hasTestTag(if (user) "turn-user-avatar" else "turn-assistant-avatar")).fetchSemanticsNode().boundsInWindow
+                val byline = node(hasText(if (user) name else msg.model))
+                val stamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", locale).format(java.util.Date(msg.createdAt))
+                val time = node(hasText(stamp))
+                val bylineBox = byline.fetchSemanticsNode().boundsInWindow
+                val timeBox = time.fetchSemanticsNode().boundsInWindow
+                near(32f, avatar.width)
+                near(32f, avatar.height)
+                near(8f, if (user) avatar.left - bylineBox.right else bylineBox.left - avatar.right)
+                near(0f, if (user) bylineBox.right - timeBox.right else bylineBox.left - timeBox.left)
+                val baselineGap = (timeBox.top + layoutOf(time).firstBaseline) - (bylineBox.top + layoutOf(byline).firstBaseline)
+                val expectedGap = if (!user) 16.89f else if (chinese) 17.87f else 18.89f
+                near(expectedGap, baselineGap)
+                if (user) {
+                    val bubble = node(hasTestTag("message-user-bubble")).fetchSemanticsNode().boundsInWindow
+                    val lines = if (msg == first) 1 else if (narrow) 3 else 2
+                    assertEquals(lines, textLayout(msg.text).lineCount)
+                    near(if (msg == first) shortWidth else longWidth, bubble.width)
+                    near(24f + 22f * lines, bubble.height)
+                    near(0f, avatar.right - bubble.right)
+                }
+            }
+        } finally {
+            runBlocking { profile.save(previous, null, false) }
+        }
+    }
+
+    @Test @Config(qualifiers = "en-rUS-w320dp-h915dp-xxhdpi")
+    fun editingAWrappedRightToLeftBubbleRewrapsAndKeepsItsRightEdge() {
+        val originalText = "مرحبا بكم في فريق العمل. ".repeat(3).trim()
+        open(fontScale = 1.3f, initial = Conversation(messages = listOf(question.copy(text = originalText))))
+        val bubble = screen.onNodeWithTag("message-user-bubble")
+        val before = bubble.fetchSemanticsNode().boundsInWindow
+        val node = screen.onNodeWithText(originalText, useUnmergedTree = true)
+        val layout = layoutOf(node)
+        assertTrue(layout.lineCount > 1)
+        val textLeft = node.fetchSemanticsNode().positionInWindow.x
+        for (line in 0 until layout.lineCount) {
+            assertTrue(textLeft + layout.getLineLeft(line) >= before.left)
+            assertTrue(textLeft + layout.getLineRight(line) <= before.right)
+        }
+        bubble.performClick()
+        screen.onNode(hasSetTextAction() and hasText(originalText)).performTextReplacement("好")
+        confirm(R.string.settings_save)
+        screen.onNodeWithText("好", useUnmergedTree = true).assertIsDisplayed()
+        val after = bubble.fetchSemanticsNode().boundsInWindow
+        assertEquals(before.right, after.right)
+        assertTrue(after.width < before.width)
+        assertTrue(after.height < before.height)
+        assertEquals(1, textLayout("好").lineCount)
     }
 
     @Test fun assistantHeaderFooterAndMenuUseTheReferencePhoneGeometry() {

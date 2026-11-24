@@ -29,8 +29,11 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import io.hydrion.hub.R
@@ -45,11 +48,18 @@ import java.util.Date
 internal fun TurnByline(name: String, time: Long, modifier: Modifier = Modifier, align: Alignment.Horizontal = Alignment.Start) {
     val locale = LocalConfiguration.current.locales[0]
     val stamp = remember(time, locale) { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", locale).format(Date(time)) }
+    val type = MaterialTheme.typography.bodyMedium.copy(
+        fontWeight = FontWeight.Normal,
+        lineHeight = 1.43.em,
+        letterSpacing = .25.sp,
+        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+        textMotion = TextMotion.Animated
+    )
     Column(modifier, horizontalAlignment = align, verticalArrangement = Arrangement.spacedBy(if (align == Alignment.End) 2.dp else 0.dp)) {
-        Text(name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Normal, fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .7f), lineHeight = 16.sp, letterSpacing = 0.sp,
+        Text(name, style = type, fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .7f),
             maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(stamp, fontSize = 11.sp, lineHeight = 14.sp, letterSpacing = 0.sp,
+        Text(stamp, style = type, fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = .5f))
     }
 }
