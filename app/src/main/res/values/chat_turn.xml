@@ -110,4 +110,6 @@
     <string name="turn_delete_this_reply">Delete this reply</string>
     <string name="turn_copy_all">Copy all</string>
     <string name="turn_text_copied">Text copied</string>
+    <string name="turn_tool_arguments">Arguments</string>
+    <string name="turn_tool_result">Result</string>
 </resources>

@@ -1,6 +1,18 @@
 package io.hydrion.hub.ui.messages
 
+import android.animation.ValueAnimator
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.EaseInCubic
+import androidx.compose.animation.core.EaseOutCubic
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.InteractionSource
@@ -81,8 +93,8 @@ internal fun ReplyUsageButton(msg: Message, modifier: Modifier = Modifier) {
         timing?.firstTokenMs != null || timing?.firstBodyMs != null || timing?.elapsedMs != null
     if (total == null && !hasDetails) return
 
-    var open by remember(msg.id, hasDetails) { mutableStateOf(false) }
-    val action = if (hasDetails) Modifier.clickable(role = UiRole.Button) { open = true } else Modifier
+    val visible = remember(msg.id, hasDetails) { MutableTransitionState(false) }
+    val action = if (hasDetails) Modifier.clickable(role = UiRole.Button) { visible.targetState = true } else Modifier
     val colors = MaterialTheme.colorScheme
     val gap = with(LocalDensity.current) { 8.dp.roundToPx() }
     Box(modifier) {
@@ -92,25 +104,29 @@ internal fun ReplyUsageButton(msg: Message, modifier: Modifier = Modifier) {
             Text(label,
                 fontSize = 11.sp, lineHeight = 14.sp, letterSpacing = 0.sp, color = colors.onSurface.copy(alpha = .5f))
         }
-        if (open) Popup(remember(gap) { UsagePosition(gap) }, onDismissRequest = { open = false },
+        if (visible.targetState || !visible.isIdle || visible.currentState) Popup(remember(gap) { UsagePosition(gap) }, onDismissRequest = { visible.targetState = false },
             properties = PopupProperties(focusable = true)) {
-            Surface(modifier = Modifier.testTag("turn-usage-panel"), shape = RoundedCornerShape(10.dp), color = colors.surface, shadowElevation = 4.dp) {
-                Column(Modifier.widthIn(max = 280.dp).width(IntrinsicSize.Max)
-                    .heightIn(max = (LocalConfiguration.current.screenHeightDp.dp - 16.dp).coerceAtLeast(1.dp))
-                    .verticalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // The footer can sum input and output even when no separate total was reported.
-                    UsageCountRow(R.drawable.lucide_boxes, R.string.turn_total, usage?.totalTokens)
-                    UsageCountRow(R.drawable.lucide_arrow_up, R.string.turn_input, usage?.inputTokens)
-                    UsageCountRow(R.drawable.lucide_database, R.string.turn_cached, usage?.cachedInputTokens)
-                    UsageCountRow(R.drawable.lucide_arrow_down, R.string.turn_output, usage?.outputTokens)
-                    UsageCountRow(R.drawable.lucide_brain, R.string.turn_reasoning, usage?.reasoningTokens)
-                    timing?.tokensPerSecond(usage?.outputTokens)?.let {
-                        UsageRow(R.drawable.lucide_zap, R.string.turn_tps, stringResource(R.string.turn_tps_value, it))
+            val duration = if (chatMotionEnabled()) 180 else 0
+            AnimatedVisibility(visibleState = visible, enter = fadeIn(tween(duration, easing = EaseOutCubic)),
+                exit = fadeOut(tween(duration, easing = EaseInCubic))) {
+                Surface(modifier = Modifier.testTag("turn-usage-panel"), shape = RoundedCornerShape(10.dp), color = colors.surface, shadowElevation = 4.dp) {
+                    Column(Modifier.widthIn(max = 280.dp).width(IntrinsicSize.Max)
+                        .heightIn(max = (LocalConfiguration.current.screenHeightDp.dp - 16.dp).coerceAtLeast(1.dp))
+                        .verticalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        // The footer can sum input and output even when no separate total was reported.
+                        UsageCountRow(R.drawable.lucide_boxes, R.string.turn_total, usage?.totalTokens)
+                        UsageCountRow(R.drawable.lucide_arrow_up, R.string.turn_input, usage?.inputTokens)
+                        UsageCountRow(R.drawable.lucide_database, R.string.turn_cached, usage?.cachedInputTokens)
+                        UsageCountRow(R.drawable.lucide_arrow_down, R.string.turn_output, usage?.outputTokens)
+                        UsageCountRow(R.drawable.lucide_brain, R.string.turn_reasoning, usage?.reasoningTokens)
+                        timing?.tokensPerSecond(usage?.outputTokens)?.let {
+                            UsageRow(R.drawable.lucide_zap, R.string.turn_tps, stringResource(R.string.turn_tps_value, it))
+                        }
+                        UsageDurationRow(R.drawable.lucide_activity, R.string.turn_ttft, timing?.firstTokenMs)
+                        UsageDurationRow(R.drawable.lucide_timer, R.string.turn_first_body, timing?.firstBodyMs)
+                        UsageDurationRow(R.drawable.lucide_clock, R.string.turn_elapsed, timing?.elapsedMs)
                     }
-                    UsageDurationRow(R.drawable.lucide_activity, R.string.turn_ttft, timing?.firstTokenMs)
-                    UsageDurationRow(R.drawable.lucide_timer, R.string.turn_first_body, timing?.firstBodyMs)
-                    UsageDurationRow(R.drawable.lucide_clock, R.string.turn_elapsed, timing?.elapsedMs)
                 }
             }
         }
@@ -162,11 +178,13 @@ private fun UsageRow(@DrawableRes icon: Int, label: Int, value: String) {
 
 @Composable
 internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean, toggleThought: () -> Unit) {
+    var selected by rememberSaveable(msg.id) { mutableStateOf<Int?>(null) }
+    val calls = remember(msg.toolCalls) { msg.toolCalls.withIndex().toList() }
     val limit = if (msg.status.isActive) Int.MAX_VALUE else msg.text.length
-    val (positioned, unplaced) = remember(msg.toolCalls, limit) {
-        msg.toolCalls.partition { it.bodyOffset != null && it.bodyOffset in 0..limit }
+    val (positioned, unplaced) = remember(calls, limit) {
+        calls.partition { (_, call) -> call.bodyOffset != null && call.bodyOffset in 0..limit }
     }
-    val groups = remember(positioned) { positioned.groupBy { requireNotNull(it.bodyOffset) }.toSortedMap() }
+    val groups = remember(positioned) { positioned.groupBy { requireNotNull(it.value.bodyOffset) }.toSortedMap() }
     msg.tool?.let { name ->
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(painterResource(R.drawable.lucide_wrench), null, Modifier.size(14.dp),
@@ -176,7 +194,8 @@ internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean
         }
     }
     if (msg.thought.isNotBlank() || groups.containsKey(0)) {
-        ReplyToolChain(msg.text, msg.thought, groups[0].orEmpty(), query, thoughtExpanded, toggleThought)
+        ReplyToolChain(msg.thought, groups[0].orEmpty(), query, thoughtExpanded, toggleThought,
+            streamingThought = msg.status.isActive && msg.text.isBlank(), openRecord = { selected = it })
     }
     var cursor = 0
     for ((position, calls) in groups) {
@@ -184,7 +203,7 @@ internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean
         val offset = position.coerceIn(cursor, msg.text.length)
         val segment = msg.text.substring(cursor, offset)
         if (segment.isNotBlank()) AssistantBody(segment, query, Mode.Chat)
-        key(position) { ReplyToolChain(msg.text, "", calls, query, false, {}) }
+        key(position) { ReplyToolChain("", calls, query, false, {}, openRecord = { selected = it }) }
         cursor = offset
     }
     val last = msg.text.substring(cursor)
@@ -193,43 +212,54 @@ internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(stringResource(R.string.turn_tool_position_unknown), fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            ReplyToolChain(msg.text, "", unplaced, query, false, {})
+            ReplyToolChain("", unplaced, query, false, {}, openRecord = { selected = it })
         }
+    }
+    // A streaming update can move a step to a different text block while its sheet is open.
+    selected?.let { id ->
+        val call = calls.firstOrNull { it.recordKey == id }?.value ?: return@let
+        val offset = call.bodyOffset?.takeIf { it in 0..msg.text.length }
+        val position = when (offset) {
+            null -> null
+            0 -> stringResource(R.string.turn_tool_before_body)
+            else -> stringResource(R.string.turn_tool_position, msg.text.codePointCount(0, offset))
+        }
+        RecordedToolSheet(call.name.ifBlank { stringResource(R.string.turn_unnamed_tool) },
+            stringResource(toolStatus(call.state)), position, call) { selected = null }
     }
 }
 
+// Live records have a protocol ordinal. Legacy records use their stable position in the saved reply.
+private val IndexedValue<ReplyToolCall>.recordKey: Int get() = value.slot ?: -1 - index
+
+private fun toolStatus(state: ToolCallState): Int = when (state) {
+    ToolCallState.Requested -> R.string.turn_tool_requested
+    ToolCallState.Running -> R.string.turn_tool_running
+    ToolCallState.Completed -> R.string.turn_tool_done
+    ToolCallState.Failed -> R.string.turn_tool_failed
+    ToolCallState.Incomplete -> R.string.turn_tool_incomplete
+}
+
 @Composable
-private fun ReplyToolChain(body: String, thought: String, calls: List<ReplyToolCall>, query: String,
-    thoughtExpanded: Boolean, toggleThought: () -> Unit) {
+private fun ReplyToolChain(thought: String, calls: List<IndexedValue<ReplyToolCall>>, query: String,
+    thoughtExpanded: Boolean, toggleThought: () -> Unit, streamingThought: Boolean = false, openRecord: (Int) -> Unit) {
     val hasThought = thought.isNotBlank()
     val firstCall = if (hasThought) 1 else 0
     val size = firstCall + calls.size
-    val compact = hasThought && size == 1 && !thoughtExpanded
+    val compact = hasThought && calls.isEmpty() && !streamingThought && !thoughtExpanded
     val width = if (compact) Modifier.width(IntrinsicSize.Max) else Modifier.fillMaxWidth()
     ChatTintedSurface(ChatSurface.ThoughtAndTools, width.testTag(if (hasThought) "message-thought" else "message-tool-chain")) {
         Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             if (hasThought) {
-                TimelineStep(R.drawable.lucide_lightbulb, stringResource(R.string.turn_thinking), query, 0, size,
+                TimelineStep(R.drawable.thinking_idea, stringResource(R.string.turn_thinking), query, 0, size,
                     detail = thought, open = thoughtExpanded, toggle = toggleThought)
             }
-            calls.forEachIndexed { i, call ->
-                key(i, call.name) {
-                    var open by rememberSaveable { mutableStateOf(false) }
-                    val status = when (call.state) {
-                        ToolCallState.Requested -> R.string.turn_tool_requested
-                        ToolCallState.Running -> R.string.turn_tool_running
-                        ToolCallState.Completed -> R.string.turn_tool_done
-                        ToolCallState.Failed -> R.string.turn_tool_failed
-                        ToolCallState.Incomplete -> R.string.turn_tool_incomplete
-                    }
-                    val offset = call.bodyOffset?.takeIf { it in 0..body.length }
-                    val detail = when {
-                        !open || offset == null -> null
-                        offset == 0 -> stringResource(R.string.turn_tool_before_body)
-                        else -> stringResource(R.string.turn_tool_position, body.codePointCount(0, offset))
-                    }
+            calls.forEachIndexed { i, step ->
+                key(step.recordKey) {
+                    val call = step.value
                     TimelineStep(toolIcon(call.name), call.name.ifBlank { stringResource(R.string.turn_unnamed_tool) },
-                        query, firstCall + i, size, stringResource(status), detail, open, toggle = offset?.let { { open = !open } })
+                        query, firstCall + i, size, status = stringResource(toolStatus(call.state)),
+                        detail = call.result, open = call.result != null, toggle = { openRecord(step.recordKey) })
                 }
             }
         }
@@ -237,9 +267,12 @@ private fun ReplyToolChain(body: String, thought: String, calls: List<ReplyToolC
 }
 
 private fun toolIcon(name: String) = when (name) {
-    "web_search", "web_search_preview" -> R.drawable.lucide_search
-    "file_search" -> R.drawable.lucide_file_search
-    "code_interpreter" -> R.drawable.lucide_terminal
+    "search_web" -> R.drawable.lucide_earth
+    "web_search", "web_search_call", "web_search_preview", "chat_search", "builtin_search" -> R.drawable.lucide_search
+    "file_search", "file_search_call" -> R.drawable.lucide_file_search
+    "bash_code_execution" -> R.drawable.lucide_terminal
+    "code_execution", "text_editor_code_execution", "code_interpreter", "code_interpreter_call" -> R.drawable.lucide_code
+    "image_generation_call" -> R.drawable.lucide_image
     else -> R.drawable.lucide_wrench
 }
 
@@ -251,6 +284,22 @@ private data object StepIndication : IndicationNodeFactory {
 }
 
 @Composable
+private fun chatMotionEnabled(): Boolean {
+    val scale = rememberCoroutineScope().coroutineContext[MotionDurationScale]
+    return (scale?.scaleFactor ?: 1f) > 0f && ValueAnimator.areAnimatorsEnabled()
+}
+
+private val cardEasing = CubicBezierEasing(.2f, .8f, .2f, 1f)
+
+@Composable
+private fun ExpandingCardBody(visible: Boolean, content: @Composable () -> Unit) {
+    if (chatMotionEnabled()) {
+        AnimatedVisibility(visible, enter = expandVertically(tween(300, easing = cardEasing), expandFrom = Alignment.Top),
+            exit = shrinkVertically(tween(300, easing = cardEasing), shrinkTowards = Alignment.Top)) { content() }
+    } else if (visible) content()
+}
+
+@Composable
 private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, index: Int, count: Int,
     status: String? = null, detail: String? = null, open: Boolean = false, toggle: (() -> Unit)? = null) {
     val ink = LocalContentColor.current
@@ -258,8 +307,9 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
     val line = ink.copy(alpha = .16f)
     val state = stringResource(if (open) R.string.turn_expanded else R.string.turn_collapsed)
     val interaction = if (toggle == null) Modifier else Modifier.clickable(
-        interactionSource = null, indication = StepIndication, onClick = toggle
-    ).semantics { stateDescription = state }
+        interactionSource = null, indication = StepIndication, role = UiRole.Button,
+        onClickLabel = if (status != null) stringResource(R.string.turn_tool_details) else null, onClick = toggle
+    ).then(if (status == null) Modifier.semantics { stateDescription = state } else Modifier)
     Row(Modifier.fillMaxWidth().drawBehind {
         val x = 12.dp.toPx()
         val middle = size.height / 2
@@ -268,49 +318,48 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
         if (index + 1 < count) drawLine(line, Offset(x, (middle + cut).coerceAtMost(size.height)), Offset(x, size.height), 1.dp.toPx())
     }.then(interaction).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-            Icon(painterResource(icon), null, Modifier.size(18.dp), tint = ink.copy(alpha = .78f))
+            Icon(painterResource(icon), null, Modifier.size(if (status == null) 18.dp else 16.dp), tint = ink.copy(alpha = .78f))
         }
         Spacer(Modifier.width(8.dp))
         Text(highlighted(label, query), Modifier.weight(1f), fontWeight = FontWeight.Medium, fontSize = 13.sp,
-            lineHeight = if (open) 1.43.em else 18.sp, letterSpacing = 0.sp, color = ink, overflow = TextOverflow.Ellipsis, maxLines = 2)
+            lineHeight = 1.43.em, letterSpacing = 0.sp, color = ink, overflow = TextOverflow.Ellipsis, maxLines = 2)
         if (status != null) Text(status, Modifier.padding(start = 8.dp), fontSize = 11.sp, lineHeight = 14.sp,
             letterSpacing = 0.sp, color = if (dark) ink else ink.copy(alpha = .65f))
-        if (toggle != null) Icon(painterResource(if (open) R.drawable.lucide_chevron_up else if (status == null)
-            R.drawable.lucide_chevron_down else R.drawable.lucide_chevron_right), null, Modifier.padding(start = 6.dp).size(if (open) 16.dp else 14.dp),
-            tint = ink.copy(alpha = .55f))
+        if (toggle != null) Icon(painterResource(if (status != null) R.drawable.lucide_chevron_right
+            else if (open) R.drawable.lucide_chevron_up else R.drawable.lucide_chevron_down),
+            null, Modifier.padding(start = 6.dp).size(16.dp), tint = ink.copy(alpha = .55f))
     }
-    if (open && detail != null) Box(Modifier.fillMaxWidth().drawBehind {
-        if (index + 1 < count) {
-            val x = 12.dp.toPx()
-            drawLine(line, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
-        }
-    }.padding(start = 32.dp, top = 4.dp, bottom = 8.dp)) {
-        val bodyInk = if (dark) ink else ink.copy(alpha = .8f)
-        if (status == null) SelectionContainer {
-            Text(highlighted(detail, query), Modifier.fillMaxWidth(), fontSize = 12.5.sp,
-                lineHeight = 16.5.sp, letterSpacing = 0.sp, color = bodyInk)
-        } else {
-            var showRecord by rememberSaveable { mutableStateOf(false) }
-            Row(Modifier.fillMaxWidth().clickable(interactionSource = null, indication = StepIndication, role = UiRole.Button,
-                onClickLabel = stringResource(R.string.turn_tool_details), onClick = { showRecord = true }),
-                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
-                Text(highlighted(detail, query), Modifier.weight(1f), fontSize = 12.sp, lineHeight = 16.8.sp,
-                    letterSpacing = 0.sp, color = bodyInk, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                Icon(painterResource(R.drawable.lucide_chevron_right), null, Modifier.size(16.dp), tint = ink.copy(alpha = .55f))
+    ExpandingCardBody(open && detail != null) {
+        if (detail == null) return@ExpandingCardBody
+        Box(Modifier.fillMaxWidth().drawBehind {
+            if (index + 1 < count) {
+                val x = 12.dp.toPx()
+                drawLine(line, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
             }
-            if (showRecord) RecordedToolSheet(label, status, detail) { showRecord = false }
+        }.padding(start = 32.dp, top = 4.dp, bottom = 8.dp)) {
+            val bodyInk = if (dark) ink else ink.copy(alpha = .8f)
+            if (status == null) SelectionContainer {
+                Text(highlighted(detail, query), Modifier.fillMaxWidth(), fontSize = 12.5.sp,
+                    lineHeight = 16.5.sp, letterSpacing = 0.sp, color = bodyInk)
+            } else {
+                Text(highlighted(detail, query), Modifier.fillMaxWidth().clickable(interactionSource = null,
+                    indication = StepIndication, role = UiRole.Button, onClickLabel = stringResource(R.string.turn_tool_details),
+                    onClick = { toggle?.invoke() }), fontSize = 12.sp, lineHeight = 16.8.sp, letterSpacing = 0.sp,
+                    color = bodyInk, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
 
 @Composable
-private fun RecordedToolSheet(name: String, status: String, position: String, close: () -> Unit) {
+private fun RecordedToolSheet(name: String, status: String, position: String?, call: ReplyToolCall, close: () -> Unit) {
     TurnActionSheet(close) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SelectionContainer(Modifier.weight(1f)) {
-                    Text(name, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium)
+                    Text(name, Modifier.semantics { heading() }, fontSize = 15.sp, lineHeight = 18.sp,
+                        letterSpacing = 0.sp, fontWeight = FontWeight.Medium)
                 }
                 IconButton(onClick = close) {
                     Icon(Icons.Outlined.Close, stringResource(R.string.turn_close_details))
@@ -318,11 +367,13 @@ private fun RecordedToolSheet(name: String, status: String, position: String, cl
             }
             SelectionContainer {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    for ((field, value) in listOf(R.string.turn_tool_status to status, R.string.turn_tool_offset_label to position)) {
+                    for ((field, value) in listOf(R.string.turn_tool_status to status, R.string.turn_tool_arguments to call.arguments,
+                        R.string.turn_tool_result to call.result, R.string.turn_tool_offset_label to position)) {
+                        if (value == null) continue
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(stringResource(field), style = MaterialTheme.typography.labelMedium,
+                            Text(stringResource(field), fontSize = 12.sp, lineHeight = 1.43.em, letterSpacing = 0.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(value, style = MaterialTheme.typography.bodyMedium)
+                            Text(value, fontSize = 12.sp, lineHeight = 1.43.em, letterSpacing = 0.sp)
                         }
                     }
                 }
@@ -355,11 +406,13 @@ internal fun ReplyTranslationBody(chatId: String, msg: Message, query: String, t
             if (run != null) TextButton(onClick = { translations.cancel(msg.id) }) {
                 Text(stringResource(if (run.failed) android.R.string.ok else R.string.settings_cancel))
             }
-            if (expanded) {
-                if (run?.failed == true) Text(stringResource(R.string.turn_translation_failed), color = MaterialTheme.colorScheme.error)
-                else if (run != null && value.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (value.isNotBlank()) MarkdownBody(value, query, Modifier.fillMaxWidth(),
-                    MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 21.sp, letterSpacing = 0.sp))
+            ExpandingCardBody(expanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (run?.failed == true) Text(stringResource(R.string.turn_translation_failed), color = MaterialTheme.colorScheme.error)
+                    else if (run != null && value.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    if (value.isNotBlank()) MarkdownBody(value, query, Modifier.fillMaxWidth(),
+                        MaterialTheme.typography.bodyMedium.copy(fontSize = 15.5.sp, lineHeight = 21.7.sp, letterSpacing = 0.sp), chat = true)
+                }
             }
         }
     }

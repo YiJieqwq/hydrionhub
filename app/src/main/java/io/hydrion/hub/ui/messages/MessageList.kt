@@ -154,7 +154,7 @@ fun MessageList(
                     .padding(6.dp) else Modifier
                 Column(itemModifier.fillMaxWidth().testTag("message-turn-${msg.id}")) {
                     if (state.current.mode == Mode.Chat && msg.id == state.current.contextStart) {
-                        Text(stringResource(R.string.turn_start), style = MaterialTheme.typography.labelSmall,
+                        Text(stringResource(R.string.turn_start), fontSize = 12.sp, letterSpacing = 0.sp,
                             color = MaterialTheme.colorScheme.primary)
                         HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     }
@@ -238,7 +238,7 @@ private fun UserTurn(msg: Message, chat: Conversation, query: String, vm: HubVie
             if (msg.attachments.isNotEmpty()) {
                 Column(Modifier.padding(start = 24.dp), horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    msg.attachments.forEach { MessageAttachment(it, query) }
+                    msg.attachments.forEach { MessageAttachment(it, query, chat = true) }
                 }
             }
             if (msg.text.isNotEmpty()) {
@@ -338,11 +338,10 @@ internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: 
             TurnByline(named?.name ?: msg.model.ifBlank { "HydrionHub" }, msg.createdAt)
         }
         val thinking = msg.remoteModel != null && msg.status.isActive && msg.text.isEmpty()
-        var thoughtExpanded by rememberSaveable(msg.id, query, thinking) {
-            mutableStateOf(thinking || (query.isNotEmpty() && msg.thought.contains(query, ignoreCase = true)))
-        }
+        var chosenExpansion by rememberSaveable(msg.id, query) { mutableStateOf<Boolean?>(null) }
+        val thoughtExpanded = chosenExpansion ?: (thinking || (query.isNotEmpty() && msg.thought.contains(query, ignoreCase = true)))
         if (mode == Mode.Image && msg.thought.isNotBlank()) {
-            Thought(msg, query, thoughtExpanded, onToggle = { thoughtExpanded = !thoughtExpanded })
+            Thought(msg, query, thoughtExpanded, onToggle = { chosenExpansion = !thoughtExpanded })
         }
         if (mode == Mode.Image) msg.tool?.let { tool ->
             MessageCard(LocalMessageStyle.current.renderPalette.assistant, Modifier.fillMaxWidth()) {
@@ -354,7 +353,7 @@ internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: 
             }
         }
         if (mode == Mode.Chat) {
-            ReplyTimeline(msg, query, thoughtExpanded) { thoughtExpanded = !thoughtExpanded }
+            ReplyTimeline(msg, query, thoughtExpanded) { chosenExpansion = !thoughtExpanded }
             ReplyTranslationBody(chat.id, msg, query, vm.translations)
         } else if (msg.text.isNotBlank()) AssistantBody(msg.text, query, mode)
         if (msg.imageKeys.isNotEmpty()) ImageResult(msg, query, vm, busy, showRegenerate = mode == Mode.Image)
@@ -469,7 +468,7 @@ internal fun openMessageAttachment(launch: () -> Unit, onFailure: (Int) -> Unit)
 }
 
 @Composable
-internal fun MessageAttachment(attachment: Attachment, query: String) {
+internal fun MessageAttachment(attachment: Attachment, query: String, chat: Boolean = false) {
     val context = LocalContext.current
     val uri = remember(attachment.uri) {
         attachment.uri?.let(Uri::parse)?.takeIf { isMessageAttachmentTarget(it.scheme, it.authority) }
@@ -502,7 +501,8 @@ internal fun MessageAttachment(attachment: Attachment, query: String) {
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         Icon(Icons.Outlined.AttachFile, null, Modifier.size(16.dp))
-        Text(highlighted(attachment.name, query), style = MaterialTheme.typography.labelMedium,
+        Text(highlighted(attachment.name, query), style = if (chat) MaterialTheme.typography.bodyMedium.copy(
+            fontSize = 13.sp, letterSpacing = 0.sp) else MaterialTheme.typography.labelMedium,
             maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }

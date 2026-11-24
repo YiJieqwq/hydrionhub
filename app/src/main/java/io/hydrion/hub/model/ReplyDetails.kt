@@ -8,7 +8,13 @@ data class ReplyTiming(val firstTokenMs: Long?, val firstBodyMs: Long?, val elap
 
 enum class ToolCallState { Requested, Running, Completed, Failed, Incomplete }
 /** UTF-16 offset into this revision's body, when the protocol supplied an ordering. */
-data class ReplyToolCall(val name: String, val state: ToolCallState, val bodyOffset: Int? = null)
+data class ReplyToolCall(
+    val name: String, val state: ToolCallState, val bodyOffset: Int? = null,
+    val arguments: String? = null, val result: String? = null, val slot: Int? = null
+) {
+    // A message may be included in diagnostics. Tool contents are only for the local transcript.
+    override fun toString() = "ReplyToolCall(slot=$slot, state=$state)"
+}
 data class ReplyTranslation(val language: String, val text: String)
 
 internal class ReplyObservation(private val clockMs: () -> Long) {

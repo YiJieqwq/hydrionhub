@@ -8,6 +8,7 @@ import org.json.JSONObject
 internal suspend fun readChatCompletionsEvents(
     reader: BufferedReader,
     request: Message,
+    privacy: ToolRecordText = ToolRecordText(),
     emit: suspend (Message) -> Unit
 ) {
     var message = request.copy(status = Generation.Generating, tool = null, usage = null, totalTokens = null)
@@ -15,10 +16,15 @@ internal suspend fun readChatCompletionsEvents(
     var finish: String? = null
     var pendingTool: String? = null
     val callsByIndex = sortedMapOf<Int, ReplyToolCall>()
+    val arguments = mutableMapOf<Int, ToolArgumentFragments>()
+    val names = mutableMapOf<Int, String>()
+    val indicesById = mutableMapOf<String, Int>()
     fun recordCall(index: Int, function: JSONObject?) {
-        val fragment = function?.optionalText("name").orEmpty()
-        val current = callsByIndex[index] ?: ReplyToolCall("", ToolCallState.Requested, message.text.length)
-        callsByIndex[index] = current.copy(name = (current.name + fragment.take(128)).take(128))
+        val current = callsByIndex[index] ?: ReplyToolCall("", ToolCallState.Requested, message.text.length, slot = index)
+        function?.optionalText("name")?.let { names[index] = (names[index].orEmpty() + it.take(129)).take(129) }
+        function?.optionalText("arguments")?.let { arguments.getOrPut(index) { ToolArgumentFragments() }.append(it) }
+        // A streamed name or argument can split a credential across frames. Publish it only at finish.
+        callsByIndex[index] = current
     }
     var done = false
     for ((event, data) in reader.sseEvents()) {
@@ -51,13 +57,21 @@ internal suspend fun readChatCompletionsEvents(
                 delta?.optJSONArray("tool_calls")?.let { calls ->
                     for (j in 0 until calls.length()) {
                         val call = calls.getJSONObject(j)
-                        recordCall(call.optInt("index", j), call.optJSONObject("function"))
+                        val id = call.optionalText("id")
+                        val index = if (call.has("index")) call.getInt("index") else indicesById[id] ?: j
+                        if (index < 0) throw JSONException("tool_calls index")
+                        if (id != null) indicesById[id] = index
+                        recordCall(index, call.optJSONObject("function"))
                         pendingTool = "tool_calls"
                     }
                 }
                 delta?.optJSONObject("function_call")?.let {
                     recordCall(0, it)
                     pendingTool = "function_call"
+                }
+                if (reason != null && pendingTool != null) {
+                    for ((index, call) in callsByIndex.toMap()) callsByIndex[index] = call.copy(
+                        name = privacy.name(names[index].orEmpty()), arguments = arguments[index]?.finish(privacy))
                 }
                 if (pendingTool != null) message = message.copy(toolCalls = callsByIndex.values.toList())
                 if (content.isNotEmpty() || reasoning.isNotEmpty()) {

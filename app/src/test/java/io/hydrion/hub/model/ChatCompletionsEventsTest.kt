@@ -77,14 +77,14 @@ class ChatCompletionsEventsTest {
         assertEquals(ReplyTiming(null, null, 7), timer.record(error, false).timing)
     }
 
-    @Test fun fragmentedParallelCallsKeepTheirOrderWithoutExecutingOrStoringArguments() = runBlocking {
+    @Test fun fragmentedParallelCallsKeepTheirOrderAndDiscardMalformedArguments() = runBlocking {
         val prefix = frame(choice("""{"content":"Plan."}"""))
         val first = frame(choice("""{"tool_calls":[{"index":1,"function":{"name":"wea"}},{"index":0,"function":{"name":"time"}}]}"""))
         val second = frame(choice("""{"tool_calls":[{"index":1,"function":{"name":"ther","arguments":"fixture payload"}}]}""", "tool_calls"))
         val (reply, error) = failure(prefix + first + second + done)
         assertEquals("Plan.", reply.text)
-        assertEquals(listOf(ReplyToolCall("time", ToolCallState.Requested, 5),
-            ReplyToolCall("weather", ToolCallState.Requested, 5)), reply.toolCalls)
+        assertEquals(listOf(ReplyToolCall("time", ToolCallState.Requested, 5, slot = 0),
+            ReplyToolCall("weather", ToolCallState.Requested, 5, slot = 1)), reply.toolCalls)
         assertFalse(reply.toString().contains("fixture payload"))
         assertTrue(error.contains("tool_calls"))
     }

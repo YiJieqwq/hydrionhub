@@ -113,7 +113,7 @@ internal class ResponsesWebSocketTransport(
             }
         }
 
-        val turn = ResponsesEventAccumulator(request)
+        val turn = ResponsesEventAccumulator(request, ToolRecordText(prepared.headers))
         emit(turn.message)
         currentCoroutineContext().ensureActive()
         val socket = open(handshake, listener)

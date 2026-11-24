@@ -87,16 +87,16 @@ class DeepSeekResponsesTransportTest {
         fun observe(type: String, data: String) = turn.accept(data, type).snapshot
         observe("response.output_text.delta", """{"output_index":0,"delta":"Before."}""")
         val added = observe("response.output_item.added", """{"output_index":1,"item":{"id":"w","type":"web_search_call"}}""")!!
-        assertEquals(listOf(ReplyToolCall("web_search_call", ToolCallState.Requested, 7)), added.toolCalls)
+        assertEquals(listOf(ReplyToolCall("web_search_call", ToolCallState.Requested, 7, slot = 1)), added.toolCalls)
         val running = observe("response.web_search_call.searching", """{"item_id":"w"}""")!!
         assertEquals(ToolCallState.Running, running.toolCalls.single().state)
         observe("response.output_text.delta", """{"output_index":2,"delta":"After."}""")
         val complete = observe("response.web_search_call.completed", """{"item_id":"w"}""")!!
         assertEquals("Before.After.", complete.text)
-        assertEquals(listOf(ReplyToolCall("web_search_call", ToolCallState.Completed, 7)), complete.toolCalls)
+        assertEquals(listOf(ReplyToolCall("web_search_call", ToolCallState.Completed, 7, slot = 1)), complete.toolCalls)
         assertNull(observe("response.output_item.done", """{"item":{"id":"w","type":"web_search_call","status":"completed"}}"""))
         val requested = observe("response.output_item.done", """{"output_index":3,"item":{"type":"function_call","name":"lookup","status":"completed","arguments":"fixture-only"}}""")!!
-        assertEquals(ReplyToolCall("lookup", ToolCallState.Requested, 13), requested.toolCalls.last())
+        assertEquals(ReplyToolCall("lookup", ToolCallState.Requested, 13, slot = 3), requested.toolCalls.last())
         assertFalse(requested.toString().contains("fixture-only"))
     }
 

@@ -167,11 +167,11 @@ internal fun AssistantBody(text: String, query: String, mode: Mode) {
         val shape = RoundedCornerShape(if (chat) 16.dp else 19.dp)
         MessageCard(colors, Modifier.testTag("message-assistant-body"), shape = shape) {
             Box(Modifier.padding(horizontal = if (chat) 12.dp else 14.dp, vertical = if (chat) 12.dp else 10.dp)) {
-                MarkdownBody(text, query, if (chat) Modifier else Modifier.fillMaxWidth(), body)
+                MarkdownBody(text, query, if (chat) Modifier else Modifier.fillMaxWidth(), body, chat)
             }
         }
     } else CompositionLocalProvider(LocalContentColor provides colors.text.messageColor()) {
-        Box(Modifier.testTag("message-assistant-body")) { MarkdownBody(text, query, Modifier.fillMaxWidth(), body) }
+        Box(Modifier.testTag("message-assistant-body")) { MarkdownBody(text, query, Modifier.fillMaxWidth(), body, chat) }
     }
 }
 

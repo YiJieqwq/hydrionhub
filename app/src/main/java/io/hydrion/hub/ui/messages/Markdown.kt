@@ -26,6 +26,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
@@ -51,10 +53,10 @@ internal fun highlighted(value: String, query: String): AnnotatedString {
 }
 
 @Composable
-private fun richText(value: String, query: String): AnnotatedString {
+private fun richText(value: String, query: String, chat: Boolean): AnnotatedString {
     val colors = MaterialTheme.colorScheme
     val style = LocalMessageStyle.current.renderPalette.assistant
-    return remember(value, query, colors, style) {
+    return remember(value, query, colors, style, chat) {
         buildAnnotatedString {
             var start = 0
             for (match in inlineMarkdown.findAll(value)) {
@@ -63,7 +65,8 @@ private fun richText(value: String, query: String): AnnotatedString {
                 val label = match.inlineLabel()
                 when {
                     token.startsWith('`') -> withStyle(SpanStyle(
-                        fontFamily = FontFamily.Monospace, background = style.background.messageColor(), color = style.text.messageColor()
+                        fontFamily = FontFamily.Monospace, fontSize = if (chat) .86.em else TextUnit.Unspecified,
+                        background = style.background.messageColor(), color = style.text.messageColor()
                     )) { append(label) }
                     token.startsWith("**") || token.startsWith("__") ->
                         withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(label) }
@@ -94,47 +97,52 @@ private fun richText(value: String, query: String): AnnotatedString {
 private val listLine = Regex("""^(\s*)(•|[0-9]{1,6}[.)])\s+(.+)""")
 
 @Composable
-private fun Paragraph(value: String, query: String, style: TextStyle) {
+private fun Paragraph(value: String, query: String, style: TextStyle, chat: Boolean) {
     val lines = remember(value) { value.lines().map { it to listLine.matchEntire(it) } }
     val markerLength = lines.maxOfOrNull { it.second?.groupValues?.get(2)?.length ?: 0 } ?: 0
     if (markerLength == 0) {
-        Text(richText(value, query), style = style)
+        Text(richText(value, query, chat), style = style)
         return
     }
     val gutter = with(LocalDensity.current) { (markerLength * 9).sp.toDp() } + 7.dp
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         lines.forEach { (line, match) ->
             if (match == null) {
-                Text(richText(line, query), style = style)
+                Text(richText(line, query, chat), style = style)
             } else {
                 val indent = (match.groupValues[1].length.coerceAtMost(12) * 5).dp
                 Row(Modifier.fillMaxWidth().padding(start = indent)) {
                     Text(match.groupValues[2], Modifier.width(gutter), style = style)
-                    Text(richText(match.groupValues[3], query), Modifier.weight(1f), style = style)
+                    Text(richText(match.groupValues[3], query, chat), Modifier.weight(1f), style = style)
                 }
             }
         }
     }
 }
 
+private val headingScales = floatArrayOf(1.45f, 1.27f, 1.13f, 1f, .94f, .88f)
+private val headingLeads = floatArrayOf(1.3f, 1.35f, 1.4f, 1.45f, 1.45f, 1.45f)
+
 @Composable
-internal fun MarkdownBody(value: String, query: String, modifier: Modifier, body: TextStyle = MaterialTheme.typography.bodyLarge) {
+internal fun MarkdownBody(value: String, query: String, modifier: Modifier, body: TextStyle = MaterialTheme.typography.bodyLarge, chat: Boolean = false) {
     val parsed = remember(value) { markdownBlocks(value) }
     SelectionContainer {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             parsed.forEach { block ->
                 when (block) {
-                    is MarkdownBlock.Paragraph -> Paragraph(block.value, query, body)
+                    is MarkdownBlock.Paragraph -> Paragraph(block.value, query, body, chat)
                     is MarkdownBlock.Heading -> Text(
-                        richText(block.value, query),
-                        style = if (block.level < 3) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
+                        richText(block.value, query, chat),
+                        style = if (chat) body.copy(fontSize = body.fontSize * headingScales[block.level - 1],
+                            lineHeight = headingLeads[block.level - 1].em) else if (block.level < 3)
+                            MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
+                        fontWeight = if (!chat) FontWeight.SemiBold else if (block.level <= 3) FontWeight.Medium else FontWeight.Normal
                     )
                     is MarkdownBlock.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
                         Spacer(Modifier.width(3.dp).fillMaxHeight().background(LocalMessageStyle.current.renderPalette.assistant.border.messageColor()))
-                        Text(richText(block.value, query), Modifier.padding(start = 12.dp), color = LocalContentColor.current, style = body)
+                        Text(richText(block.value, query, chat), Modifier.padding(start = 12.dp), color = LocalContentColor.current, style = body)
                     }
-                    is MarkdownBlock.Code -> CodeBlock(block, query)
+                    is MarkdownBlock.Code -> CodeBlock(block, query, chat)
                     MarkdownBlock.Rule -> HorizontalDivider()
                 }
             }
@@ -143,18 +151,19 @@ internal fun MarkdownBody(value: String, query: String, modifier: Modifier, body
 }
 
 @Composable
-private fun CodeBlock(block: MarkdownBlock.Code, query: String) {
+private fun CodeBlock(block: MarkdownBlock.Code, query: String, chat: Boolean) {
     val copyText = rememberPlainTextCopier(R.string.turn_code_copied)
     val palette = LocalMessageStyle.current.renderPalette.assistant
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(palette.background.messageColor())) {
         Row(Modifier.fillMaxWidth().background(palette.border.messageColor().copy(alpha = .35f)).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(highlighted(block.language.ifEmpty { stringResource(R.string.turn_code_label) }, query), Modifier.weight(1f),
-                style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                style = if (chat) MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, letterSpacing = 0.sp) else MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             IconButton(onClick = { copyText(block.value) }) {
                 Icon(Icons.Outlined.ContentCopy, stringResource(R.string.turn_copy_code), Modifier.size(16.dp))
             }
         }
         Text(highlighted(block.value, query), Modifier.horizontalScroll(rememberScrollState()).padding(14.dp),
-            style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+            style = if (chat) MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 19.5.sp,
+                letterSpacing = 0.sp) else MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
     }
 }

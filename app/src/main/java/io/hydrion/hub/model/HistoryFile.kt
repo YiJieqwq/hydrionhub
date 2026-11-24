@@ -142,7 +142,8 @@ private fun writeMessage(m: Message): JSONObject = JSONObject().put("id", m.id).
     .put("timing", m.timing?.let { JSONObject().put("firstTokenMs", it.firstTokenMs)
         .put("firstBodyMs", it.firstBodyMs).put("elapsedMs", it.elapsedMs) })
     .put("toolCalls", m.toolCalls.takeIf { it.isNotEmpty() }?.let { calls ->
-        JSONArray(calls.map { JSONObject().put("name", it.name).put("state", it.state.name).put("bodyOffset", it.bodyOffset) })
+        JSONArray(calls.map { JSONObject().put("name", it.name).put("state", it.state.name).put("bodyOffset", it.bodyOffset)
+            .put("slot", it.slot).put("arguments", it.arguments).put("result", it.result) })
     })
     .put("translation", m.translation?.let { JSONObject().put("language", it.language).put("text", it.text) })
     .put("error", m.error).put("replyTo", m.replyTo).put("imageInvocation", m.imageInvocation?.let {
@@ -161,7 +162,10 @@ private fun readMessage(j: JSONObject): Message {
         totalTokens = j.count("totalTokens"), usage = j.optJSONObject("usage")?.readUsage(),
         timing = j.optJSONObject("timing")?.let { ReplyTiming(it.count("firstTokenMs"), it.count("firstBodyMs"), it.count("elapsedMs")) },
         toolCalls = j.optJSONArray("toolCalls").objects().mapNotNull { call ->
-            ToolCallState.entries.find { it.name == call.optString("state") }?.let { ReplyToolCall(call.optString("name"), it, call.optInt("bodyOffset", -1).takeIf { offset -> offset >= 0 }) }
+            ToolCallState.entries.find { it.name == call.optString("state") }?.let { state ->
+                ReplyToolCall(call.optString("name"), state, call.optInt("bodyOffset", -1).takeIf { it >= 0 },
+                    call.optional("arguments"), call.optional("result"), call.optInt("slot", -1).takeIf { it >= 0 })
+            }
         },
         translation = j.optJSONObject("translation")?.let { ReplyTranslation(it.optString("language"), it.optString("text")) },
         error = j.optional("error"), replyTo = j.optional("replyTo"), imageInvocation = j.optJSONObject("imageInvocation")?.let {

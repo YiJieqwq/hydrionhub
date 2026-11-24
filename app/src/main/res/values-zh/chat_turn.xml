@@ -109,4 +109,6 @@
     <string name="turn_delete_this_reply">删除本回复</string>
     <string name="turn_copy_all">全部复制</string>
     <string name="turn_text_copied">已复制文本</string>
+    <string name="turn_tool_arguments">调用参数</string>
+    <string name="turn_tool_result">调用结果</string>
 </resources>

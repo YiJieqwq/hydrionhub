@@ -40,7 +40,9 @@ import androidx.core.view.drawToBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
+import io.hydrion.hub.localtools.LocalMcpFixture
 import io.hydrion.hub.MainActivity
+import org.json.JSONObject
 import io.hydrion.hub.R
 import io.hydrion.hub.model.*
 import io.hydrion.hub.ui.profile.LocalProfileStore
@@ -167,7 +169,7 @@ class ReplyBubbleInteractionTest {
     private fun checkThoughtAndToolCards(tone: MessageTone) {
         val body = "[Guide](https://example.invalid)"
         val reply = answer.copy(text = body, thought = "Review the checklist", status = Generation.Error, error = "Offline warning",
-            toolCalls = listOf(ReplyToolCall("file_search", ToolCallState.Completed, body.length),
+            toolCalls = listOf(ReplyToolCall("file_search", ToolCallState.Completed, body.length, result = "One public match."),
                 ReplyToolCall("catalog_lookup", ToolCallState.Requested, body.length)))
         val custom = MessageCardStyle("#E9DFC4", "#E31176", "#23465A")
         val style = MessageStyle(tone = tone, light = MessagePalette(custom, defaultMessagePalette(MessageTone.Light).user),
@@ -201,9 +203,10 @@ class ReplyBubbleInteractionTest {
         screen.onNodeWithText(thought).performClick()
         screen.onNodeWithText(tool).performClick()
         screen.onNodeWithText(position).assertIsDisplayed()
+        screen.onNodeWithContentDescription(label(R.string.turn_close_details)).performClick()
         checkCards()
         val detailInk = if (dark) ink else Color(ink).copy(alpha = .8f).toArgb()
-        for ((tag, text) in listOf("message-thought" to reply.thought, "message-tool-chain" to position)) {
+        for ((tag, text) in listOf("message-thought" to reply.thought, "message-tool-chain" to "One public match.")) {
             assertEquals(detailInk, textInk(text))
             val card = screen.onNodeWithTag(tag).fetchSemanticsNode().boundsInWindow
             val detail = screen.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode().boundsInWindow
@@ -216,11 +219,10 @@ class ReplyBubbleInteractionTest {
                 setStyle(style.copy(material = material))
                 checkCards()
                 assertEquals(ink, textInk(reply.thought))
-                assertEquals(ink, textInk(position))
+                assertEquals(ink, textInk("One public match."))
             }
         }
         screen.onNodeWithText(thought).performClick()
-        screen.onNodeWithText(tool).performClick()
         screen.onNodeWithText(reply.thought).assertDoesNotExist()
         screen.onNodeWithText(position).assertDoesNotExist()
         checkCards()
@@ -790,12 +792,12 @@ class ReplyBubbleInteractionTest {
     @Test @Config(qualifiers = "en-rUS-w407dp-h915dp-xxhdpi")
     fun stepTouchesKeepCardPixelsWhileFocusAndOtherButtonsStillGiveFeedback() {
         val reply = answer.copy(thought = "Review the checklist",
-            toolCalls = listOf(ReplyToolCall("file_search", ToolCallState.Completed, answer.text.length)))
+            toolCalls = listOf(ReplyToolCall("file_search", ToolCallState.Completed, answer.text.length, result = "One public match.")))
         open(initial = usageChat(reply))
         fun button(text: String) = screen.onNode(hasText(text) and hasClickAction())
         val thought = button(label(R.string.turn_thinking))
         val tool = button("file_search")
-        val position = button(screen.activity.getString(R.string.turn_tool_position, reply.text.length))
+        val summary = button("One public match.")
         // A software window capture can omit the RenderThread ripple even when the drawable is active.
         fun nativeRipplePressed() = screen.runOnIdle {
             screen.activity.window.decorView.allViews.any {
@@ -821,11 +823,12 @@ class ReplyBubbleInteractionTest {
             press(thought, "message-thought", release = false)
             screen.onNodeWithText(reply.thought).assertIsDisplayed()
             press(tool, "message-tool-chain")
-            press(position, "message-tool-chain")
             screen.onNodeWithTag("turn-action-sheet").assertIsDisplayed()
             screen.onNodeWithContentDescription(label(R.string.turn_close_details)).performClick()
-            press(tool, "message-tool-chain")
-            position.assertDoesNotExist()
+            press(summary, "message-tool-chain")
+            screen.onNodeWithTag("turn-action-sheet").assertIsDisplayed()
+            screen.onNodeWithContentDescription(label(R.string.turn_close_details)).performClick()
+            summary.assertIsDisplayed()
             press(thought, "message-thought")
             screen.onNodeWithText(reply.thought).assertDoesNotExist()
         }
@@ -848,8 +851,10 @@ class ReplyBubbleInteractionTest {
         screen.onNodeWithText(reply.thought).assertIsDisplayed()
         tool.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         tool.performKeyInput { pressKey(Key.Enter) }
-        position.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
-        position.performKeyInput { pressKey(Key.Enter) }
+        screen.onNodeWithTag("turn-action-sheet").assertIsDisplayed()
+        screen.onNodeWithContentDescription(label(R.string.turn_close_details)).performClick()
+        summary.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        summary.performKeyInput { pressKey(Key.Enter) }
         screen.onNodeWithTag("turn-action-sheet").assertIsDisplayed()
     }
 
@@ -859,7 +864,8 @@ class ReplyBubbleInteractionTest {
         val first = "inventory_lookup"
         val last = "catalog_lookup"
         val reply = answer.copy(text = "Done", thought = thought, toolCalls = listOf(
-            ReplyToolCall(first, ToolCallState.Completed, 0), ReplyToolCall(last, ToolCallState.Requested, 0)))
+            ReplyToolCall(first, ToolCallState.Completed, 0, arguments = "{}", result = "Found a lamp."),
+            ReplyToolCall(last, ToolCallState.Completed, 0, result = "Second result.")))
         val conversation = Conversation(messages = listOf(reply))
         val vm = open(initial = conversation)
         val saved = screen.runOnIdle { vm.state.value.current }
@@ -892,22 +898,22 @@ class ReplyBubbleInteractionTest {
         header(title).performClick()
         checkBody(title, thought, first)
         assertEquals(12.5f, textLayout(thought).layoutInput.style.fontSize.value)
+        checkBody(first, "Found a lamp.", last)
+        assertEquals(12f, textLayout("Found a lamp.").layoutInput.style.fontSize.value)
         header(first).performClick()
-        checkBody(first, position, last)
-        assertEquals(12f, textLayout(position).layoutInput.style.fontSize.value)
-        header(position).performClick()
         val sheet = hasAnyAncestor(hasTestTag("turn-action-sheet"))
         screen.onNode(sheet and hasText(first), useUnmergedTree = true).assertIsDisplayed()
         screen.onNode(sheet and hasText(label(R.string.turn_tool_done)), useUnmergedTree = true).assertIsDisplayed()
         screen.onNode(sheet and hasText(position), useUnmergedTree = true).assertIsDisplayed()
+        screen.onNode(sheet and hasText("{}"), useUnmergedTree = true).assertIsDisplayed()
+        screen.onNode(sheet and hasText("Found a lamp."), useUnmergedTree = true).assertIsDisplayed()
         screen.onNodeWithContentDescription("Close details").performClick()
         header(title).performClick()
         screen.onNodeWithText(thought).assertDoesNotExist()
-        screen.onNodeWithText(position).assertIsDisplayed()
-        header(first).performClick()
+        checkBody(last, "Second result.", null)
         header(last).performClick()
-        checkBody(last, position, null)
-        header(last).performClick()
+        screen.onNode(sheet and hasText("Second result."), useUnmergedTree = true).assertIsDisplayed()
+        screen.onNodeWithContentDescription("Close details").performClick()
         assertEquals(original, card.fetchSemanticsNode().boundsInWindow)
         screen.runOnIdle { assertEquals(saved, vm.state.value.current) }
     }
@@ -916,10 +922,9 @@ class ReplyBubbleInteractionTest {
     fun narrowToolSummaryOpensTheFullSelectableRecord() {
         val body = "Follow up."
         val name = "inventory_lookup_" + "checkpoint_".repeat(8)
-        val reply = answer.copy(text = body, toolCalls = listOf(ReplyToolCall(name, ToolCallState.Completed, body.length)))
+        val summary = "A complete, selectable result for the inventory team. ".repeat(3).trimEnd()
+        val reply = answer.copy(text = body, toolCalls = listOf(ReplyToolCall(name, ToolCallState.Completed, body.length, result = summary)))
         open(width = 174.dp, fontScale = 1.8f, initial = Conversation(messages = listOf(reply)))
-        screen.onNodeWithText(name).performClick()
-        val summary = screen.activity.getString(R.string.turn_tool_position, body.length)
         val inline = textLayout(summary)
         assertEquals(4, inline.lineCount)
         assertTrue(inline.isLineEllipsized(3))
@@ -950,13 +955,19 @@ class ReplyBubbleInteractionTest {
         search.performClick()
         val recordedOffset = screen.activity.getString(R.string.turn_tool_position, 1)
         screen.onNodeWithText(recordedOffset).assertIsDisplayed()
-        val topToBottom = listOf(reply.thought, "catalog_lookup", "🙂", "file_search", recordedOffset, "Done",
+        screen.onNodeWithContentDescription(label(R.string.turn_close_details)).performClick()
+        val topToBottom = listOf(reply.thought, "catalog_lookup", "🙂", "file_search", "Done",
             label(R.string.turn_tool_position_unknown), "archived_lookup")
             .map { screen.onNodeWithText(it).getUnclippedBoundsInRoot() }
         topToBottom.zipWithNext().forEach { (previous, next) -> assertTrue(previous.bottom <= next.top) }
         thought.performClick()
         screen.onNodeWithText(reply.thought).assertDoesNotExist()
-        screen.onNodeWithText(recordedOffset).assertIsDisplayed()
+        screen.onNodeWithText("archived_lookup").performClick()
+        val sheet = hasAnyAncestor(hasTestTag("turn-action-sheet"))
+        screen.onNode(sheet and hasText(label(R.string.turn_tool_incomplete)), useUnmergedTree = true).assertIsDisplayed()
+        for (absent in listOf(R.string.turn_tool_arguments, R.string.turn_tool_result, R.string.turn_tool_offset_label))
+            screen.onNode(sheet and hasText(label(absent)), useUnmergedTree = true).assertDoesNotExist()
+        screen.onNodeWithContentDescription(label(R.string.turn_close_details)).performClick()
         screen.runOnIdle { assertEquals(fixture, vm.state.value.current) }
     }
 
@@ -970,12 +981,136 @@ class ReplyBubbleInteractionTest {
         assertTrue(tool.getUnclippedBoundsInRoot().bottom <= body.getUnclippedBoundsInRoot().top)
         tool.performClick()
         screen.onNodeWithText(label(R.string.turn_tool_before_body)).assertIsDisplayed()
-        tool.performClick()
+        screen.onNodeWithContentDescription(label(R.string.turn_close_details)).performClick()
         screen.onNodeWithText(label(R.string.turn_tool_before_body)).assertDoesNotExist()
         screen.onNodeWithText("30 tokens").performClick()
         assertUsageRows(R.string.turn_input to "20", R.string.turn_cached to "0", R.string.turn_output to "10",
             R.string.turn_reasoning to "4", R.string.turn_ttft to "12 ms", R.string.turn_first_body to "140 ms",
             R.string.turn_elapsed to "200 ms", R.string.turn_tps to "50.0 tok/s")
+    }
+
+    @Test @Config(qualifiers = "en-rUS-w407dp-h915dp-xxhdpi")
+    fun shortThinkingCardFitsItsContentAndReversesOrSnapsWithSystemMotion() {
+        val reply = answer.copy(thought = "Short thought.")
+        open(initial = Conversation(messages = listOf(reply)))
+        setStyle(MessageStyle())
+        val card = screen.onNodeWithTag("message-thought")
+        val header = screen.onNode(hasText(label(R.string.turn_thinking)) and hasClickAction())
+        fun height() = card.getUnclippedBoundsInRoot().let { (it.bottom - it.top).value }
+        fun widthOf(node: SemanticsNodeInteraction) = node.getUnclippedBoundsInRoot().let { it.right - it.left }
+        val clock = screen.mainClock
+        fun toggle() {
+            header.performSemanticsAction(SemanticsActions.OnClick)
+            clock.advanceTimeByFrame()
+            screen.waitForIdle() // Android measures the new content before the first size animation frame.
+        }
+        fun systemScale(scale: Float) = org.robolectric.util.ReflectionHelpers.callStaticMethod<Any?>(
+            android.animation.ValueAnimator::class.java, "setDurationScale",
+            org.robolectric.util.ReflectionHelpers.ClassParameter.from(Float::class.javaPrimitiveType, scale))
+        val oldScale = android.animation.ValueAnimator.getDurationScale()
+        val closed = height()
+        val width = widthOf(screen.onNodeWithTag("message-timeline"))
+        assertTrue(widthOf(card) < width * .8f)
+        clock.autoAdvance = false
+        try {
+            systemScale(1f)
+            toggle()
+            clock.advanceTimeBy(112)
+            val during = height()
+            clock.advanceTimeBy(320)
+            val expanded = height()
+            assertTrue("closed=$closed during=$during expanded=$expanded", during > closed && during < expanded)
+            assertTrue("Expanded thought uses the message column", widthOf(card) > width * .8f)
+            toggle()
+            clock.advanceTimeBy(96)
+            assertTrue(height() in (closed + 1f)..(expanded - 1f))
+            toggle()
+            clock.advanceTimeBy(360)
+            assertEquals(expanded, height(), .5f)
+            systemScale(0f)
+            toggle()
+            clock.advanceTimeByFrame()
+            assertEquals(closed, height(), .5f)
+            toggle()
+            clock.advanceTimeByFrame()
+            assertEquals(expanded, height(), .5f)
+        } finally {
+            systemScale(oldScale)
+            clock.autoAdvance = true
+        }
+    }
+
+    @Test @Config(qualifiers = "en-rUS-w407dp-h915dp-xxhdpi")
+    fun largeTextChatKeepsSixHeadingLevelsAndTheRecordedSheetScale() {
+        val headings = (1..6).map { "Heading $it" }
+        val body = headings.mapIndexed { i, name -> "#".repeat(i + 1) + " " + name }.joinToString("\n\n") +
+            "\n\nParagraph body\n\n```kotlin\nplain_sample\n```"
+        val reply = answer.copy(text = body, toolCalls = listOf(ReplyToolCall("lookup", ToolCallState.Completed, 0,
+            arguments = "{}", result = "A sample result.")))
+        open(fontScale = 1.5f, initial = Conversation(messages = listOf(reply)))
+        fun size(text: String) = textLayout(text).layoutInput.style.fontSize.value
+        assertEquals(15.7f, size("Paragraph body"), .01f)
+        for ((name, reference) in headings.zip(listOf(22.765f, 19.939f, 17.741f, 15.7f, 14.758f, 13.816f)))
+            assertEquals(name, reference, size(name), .002f)
+        assertEquals(13f, size("plain_sample"), .01f)
+        assertEquals(12f, size("A sample result."), .01f)
+        assertEquals(1.5f, textLayout("Paragraph body").layoutInput.density.fontScale, .01f)
+        screen.onNode(hasText("lookup") and hasClickAction()).performClick()
+        val sheet = hasAnyAncestor(hasTestTag("turn-action-sheet"))
+        fun sheetSize(value: String) = layoutOf(screen.onNode(sheet and hasText(value), useUnmergedTree = true)).layoutInput.style.fontSize.value
+        assertEquals(15f, sheetSize("lookup"), .01f)
+        assertEquals(12f, sheetSize("Arguments"), .01f)
+        assertEquals(12f, sheetSize("A sample result."), .01f)
+    }
+
+    @Test fun reopenedReplyOpensTheMatchingResultForEachSameNamedCallWithOneTap() = runBlocking {
+        val peer = LocalMcpFixture()
+        fun rpc(id: Int?, method: String, params: JSONObject = JSONObject()) =
+            peer.receive(JSONObject().put("jsonrpc", "2.0").put("id", id).put("method", method).put("params", params))
+        rpc(1, "initialize", JSONObject("""{"protocolVersion":"2025-11-25","clientInfo":{"name":"fixture","version":"1"},"capabilities":{}}"""))
+        rpc(null, "notifications/initialized")
+        val name = rpc(2, "tools/list")!!.getJSONObject("result").getJSONArray("tools").getJSONObject(0).getString("name")
+        val inputs = listOf(JSONObject(), JSONObject().put("mode", "unexpected"))
+        val outputs = inputs.mapIndexed { i, args -> rpc(i + 3, "tools/call", JSONObject().put("name", name).put("arguments", args))!! }
+        val first = outputs[0].getJSONObject("result").getJSONArray("content").getJSONObject(0).getString("text")
+        val second = outputs[1].getJSONObject("error").getString("message")
+        val repo = object : GenerationRepository {
+            override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String) = flow {
+                val stream = ResponsesEventAccumulator(request)
+                suspend fun event(type: String, data: JSONObject) { stream.accept(data.toString(), type).deliver { emit(it) } }
+                suspend fun item(index: Int, stage: String, call: JSONObject) =
+                    event("response.output_item.$stage", JSONObject().put("output_index", index).put("item", call))
+                for (i in inputs.indices) item(i, "added", JSONObject().put("id", "item-$i").put("type", "mcp_call")
+                    .put("name", name).put("arguments", inputs[i].toString()).put("status", "in_progress"))
+                item(1, "done", JSONObject().put("id", "item-1").put("type", "mcp_call").put("error", second).put("status", "failed"))
+                item(0, "done", JSONObject().put("id", "item-0").put("type", "mcp_call").put("output", first).put("status", "completed"))
+                event("response.output_text.done", JSONObject().put("output_index", 2).put("text", "Two calls recorded."))
+                event("response.completed", JSONObject().put("response", JSONObject().put("status", "completed")))
+            }
+        }
+        val session = ConversationSession(this, repo, {})
+        session.setDraft("Check two local fixture requests.")
+        session.send("Fixture", emptyMap(), null, null, remoteModel = RemoteModel("fixture", "chat"))
+        val saved = session.state.first { !it.isGenerating }.current
+        val vm = open(initial = saved)
+        val steps = screen.onAllNodes(hasText(name) and hasClickAction())
+        steps.assertCountEquals(2)
+        assertTrue(steps[0].getUnclippedBoundsInRoot().top < steps[1].getUnclippedBoundsInRoot().top)
+        val sheet = hasAnyAncestor(hasTestTag("turn-action-sheet"))
+        for (i in inputs.indices) {
+            screen.runOnIdle { vm.openConversation(recorded.id) }
+            screen.onNodeWithText("Answer").assertIsDisplayed()
+            screen.runOnIdle { vm.openConversation(saved.id) }
+            steps[i].performClick()
+            val expected = if (i == 0) first else second
+            for (text in listOf(name, inputs[i].toString(2), expected,
+                label(if (i == 0) R.string.turn_tool_done else R.string.turn_tool_failed))) {
+                screen.onNode(sheet and hasText(text), useUnmergedTree = true).assertIsDisplayed()
+            }
+            screen.onNode(sheet and hasText(if (i == 0) second else first), useUnmergedTree = true).assertDoesNotExist()
+            screen.onNodeWithContentDescription(label(R.string.turn_close_details)).performClick()
+        }
+        assertEquals(saved.messages.last().toolCalls, vm.state.value.current.messages.last().toolCalls)
     }
 
     /** Start at the same send entry point as the composer. Only the provider frames and clock are fixtures. */

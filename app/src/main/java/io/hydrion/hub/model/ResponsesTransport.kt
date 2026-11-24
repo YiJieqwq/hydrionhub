@@ -29,7 +29,7 @@ internal class ResponsesTransport(
         prepared: LocalModelRequest,
         request: Message,
         protocol: String,
-        parse: suspend (BufferedReader, Message, suspend (Message) -> Unit) -> Unit
+        parse: suspend (BufferedReader, Message, ToolRecordText, suspend (Message) -> Unit) -> Unit
     ): Flow<Message> = callbackFlow {
         val connection = try {
             openConnection(URL(prepared.url))
@@ -62,7 +62,7 @@ internal class ResponsesTransport(
                     throw IOException("服务端未返回 $protocol 事件流（text/event-stream）。")
                 }
                 connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
-                    parse(input, request) { send(it) }
+                    parse(input, request, ToolRecordText(prepared.headers)) { send(it) }
                 }
                 close()
             } catch (cancelled: CancellationException) {
@@ -107,7 +107,10 @@ private fun HttpURLConnection.httpError(status: Int, protocol: String): String {
     return if (detail.isNullOrBlank()) prefix else "$prefix · $detail"
 }
 
-internal fun redactTransportError(detail: String, headers: Map<String, String>): String {
+internal fun redactTransportError(detail: String, headers: Map<String, String>): String =
+    redactTransportSecrets(detail, headers).take(800)
+
+internal fun redactTransportSecrets(detail: String, headers: Map<String, String>): String {
     var safe = detail
     for ((name, value) in headers) {
         if (value.isBlank() || name.equals("Content-Type", true) || name.equals("Accept", true)) continue
@@ -119,7 +122,7 @@ internal fun redactTransportError(detail: String, headers: Map<String, String>):
     }
     safe = bearerToken.replace(safe, "Bearer [redacted]")
     safe = apiKey.replace(safe, "[redacted]")
-    return safe.take(800)
+    return safe
 }
 
 private val bearerToken = Regex("""(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+""")

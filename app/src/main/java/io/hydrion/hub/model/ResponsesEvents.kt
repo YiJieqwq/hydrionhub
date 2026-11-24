@@ -9,9 +9,10 @@ import org.json.JSONObject
 internal suspend fun readResponsesEvents(
     reader: BufferedReader,
     request: Message,
+    privacy: ToolRecordText = ToolRecordText(),
     emit: suspend (Message) -> Unit
 ) {
-    val turn = ResponsesEventAccumulator(request)
+    val turn = ResponsesEventAccumulator(request, privacy)
     emit(turn.message)
     for ((eventName, data) in reader.sseEvents()) {
         if (data.trim() == "[DONE]") break
@@ -29,10 +30,10 @@ internal data class ResponsesUpdate(val snapshot: Message? = null, val failure: 
 }
 
 /** Each collected turn owns its own reducer, regardless of the framing transport. */
-internal class ResponsesEventAccumulator(request: Message) {
+internal class ResponsesEventAccumulator(request: Message, privacy: ToolRecordText = ToolRecordText()) {
     var message = request.copy(status = Generation.Generating, tool = null, totalTokens = null, usage = null)
         private set
-    private val parts = ResponseParts()
+    private val parts = ResponseParts(privacy)
 
     fun accept(data: String, eventName: String): ResponsesUpdate {
         try {
@@ -109,9 +110,10 @@ private fun JSONObject.tokenUsage(): TokenUsage? {
 }
 
 /** Full .done parts and output snapshots replace deltas at the same indices. */
-private class ResponseParts {
+private class ResponseParts(private val privacy: ToolRecordText) {
     private class Item {
         var tool: ReplyToolCall? = null
+        var fragments: ToolArgumentFragments? = null
         val answer = sortedMapOf<Int, StringBuilder>()
         val reasoning = sortedMapOf<Int, StringBuilder>()
         val summary = sortedMapOf<Int, StringBuilder>()
@@ -124,6 +126,9 @@ private class ResponseParts {
 
     private val items = sortedMapOf<Int, Item>()
     private val indicesById = mutableMapOf<String, Int>()
+    // A function output is a separate item and can precede its call in a received snapshot.
+    private val callsById = mutableMapOf<String, Int>()
+    private val pendingResults = mutableMapOf<String, Pair<String?, ToolCallState>>()
 
     fun applyTo(message: Message) = message.copy(
         toolCalls = buildList {
@@ -138,8 +143,12 @@ private class ResponseParts {
     )
 
     fun update(type: String, event: JSONObject): Boolean {
+        if (type !in partEvents && (type.removePrefix("response.").substringBefore('.') !in hostedToolTypes ||
+                toolState(type.substringAfterLast('.')) == null)) return false
         val itemId = event.opt("item_id") as? String ?: event.optJSONObject("item")?.opt("id") as? String
-        val index = if (event.has("output_index")) event.getInt("output_index") else indicesById[itemId] ?: 0
+        val index = if (event.has("output_index")) event.getInt("output_index") else indicesById[itemId]
+            ?: if (itemId == null || items.isEmpty()) 0 else (items.lastKey() + 1)
+        if (index < 0) throw JSONException("output_index")
         (event.opt("item_id") as? String)?.let { indicesById[it] = index }
         val item = items.getOrPut(index) { Item() }
         val part = event.optInt("content_index")
@@ -154,17 +163,27 @@ private class ResponseParts {
             "response.reasoning_summary_text.done" -> item.summary.replace(summary, event.getString("text"))
             "response.reasoning_summary_part.added", "response.reasoning_summary_part.done" ->
                 item.content(summary, event.getJSONObject("part"))
-            "response.function_call_arguments.delta", "response.function_call_arguments.done" -> {
-                val name = (event.opt("name") as? String)?.take(128) ?: item.tool?.name.orEmpty()
-                item.tool = ReplyToolCall(name, ToolCallState.Requested)
+            "response.function_call_arguments.delta", "response.function_call_arguments.done",
+            "response.mcp_call_arguments.delta", "response.mcp_call_arguments.done" -> {
+                val call = item.tool ?: ReplyToolCall("", ToolCallState.Requested, slot = index)
+                val name = (event.opt("name") as? String)?.let(privacy::name) ?: call.name
+                val fragments = item.fragments ?: ToolArgumentFragments().also { item.fragments = it }
+                if (type.endsWith(".delta")) {
+                    fragments.append(event.getString("delta"))
+                    item.tool = call.copy(name = name)
+                } else {
+                    val args = privacy.arguments(event.opt("arguments")) ?: fragments.finish(privacy)
+                    item.tool = call.copy(name = name, arguments = args ?: call.arguments)
+                    item.fragments = null
+                }
             }
             "response.content_part.added", "response.content_part.done" -> item.content(part, event.getJSONObject("part"))
-            "response.output_item.added", "response.output_item.done" -> output(index, event.getJSONObject("item"))
+            "response.output_item.added", "response.output_item.done" -> output(index, event.getJSONObject("item"), final = type.endsWith(".done"))
             else -> {
                 val kind = type.removePrefix("response.").substringBefore('.')
                 if (kind !in hostedToolTypes) return false
                 val state = toolState(type.substringAfterLast('.')) ?: return false
-                item.tool = ReplyToolCall(item.tool?.name ?: kind, state)
+                item.tool = (item.tool ?: ReplyToolCall(kind, state, slot = index)).copy(state = state)
             }
         }
         return true
@@ -173,21 +192,64 @@ private class ResponseParts {
     fun reconcile(outputs: JSONArray, preservePartial: Boolean) {
         for (i in 0 until outputs.length()) {
             val item = outputs.getJSONObject(i)
-            val index = indicesById[item.optString("id")] ?: i
-            output(index, item, preservePartial)
+            val index = indicesById[item.optString("id")] ?: callsById[item.optString("call_id")]?.takeIf {
+                item.optString("type") in clientToolTypes } ?: i
+            output(index, item, preservePartial, final = true)
         }
     }
 
-    private fun output(index: Int, json: JSONObject, preservePartial: Boolean = false) {
+    private fun output(index: Int, json: JSONObject, preservePartial: Boolean = false, final: Boolean = false) {
         (json.opt("id") as? String)?.let { indicesById[it] = index }
         val item = items.getOrPut(index) { Item() }
         val kind = json.optString("type")
-        if (kind in clientToolTypes) {
-            // Finalized arguments are a model request, not evidence that a client executed it.
-            item.tool = ReplyToolCall((json.opt("name") as? String ?: item.tool?.name ?: kind).take(128), ToolCallState.Requested)
-        } else if (kind in hostedToolTypes) {
-            val state = toolState(json.optString("status")) ?: item.tool?.state ?: ToolCallState.Requested
-            item.tool = ReplyToolCall((json.opt("name") as? String ?: item.tool?.name ?: kind).take(128), state)
+        val callId = (json.opt("call_id") as? String)?.takeIf(String::isNotBlank)
+        if (kind == "function_call_output" || kind == "custom_tool_call_output") {
+            if (callId == null) return
+            val result = json.opt("output")?.takeUnless { it == "" && !final }?.let(privacy::display)
+            val state = toolState(json.optString("status")) ?: if (final && result != null) ToolCallState.Completed else return
+            val owner = callsById[callId]?.let(items::get)
+            if (owner?.tool != null) owner.tool = owner.tool?.copy(result = result ?: owner.tool?.result, state = state)
+            else pendingResults[callId] = result to state
+            return
+        }
+        if (kind in clientToolTypes || kind in hostedToolTypes) {
+            val previous = item.tool ?: ReplyToolCall(kind, ToolCallState.Requested, slot = index)
+            val name = (json.opt("name") as? String)?.let(privacy::name) ?: previous.name
+            // An assembled client request alone is never evidence of execution.
+            val state = if (kind in clientToolTypes) previous.state else toolState(json.optString("status")) ?: previous.state
+            val args = when (kind) {
+                "web_search_call" -> json.optJSONObject("action")?.let { action ->
+                    val params = JSONObject()
+                    for (key in action.keys()) if (key != "sources") params.put(key, action.get(key))
+                    privacy.display(params)
+                }
+                "file_search_call" -> privacy.display(json.optJSONArray("queries"))
+                "code_interpreter_call" -> privacy.display(json.opt("code"))
+                "custom_tool_call" -> privacy.display(json.opt("input"))
+                else -> privacy.arguments(json.opt("arguments"))
+            } ?: if (final) item.fragments?.finish(privacy) else null
+            if (final) item.fragments = null
+            val result = when (kind) {
+                "web_search_call" -> privacy.display(json.optJSONObject("action")?.optJSONArray("sources"))
+                "file_search_call" -> privacy.display(json.opt("results"))
+                "mcp_call" -> privacy.display(if (json.isNull("output")) json.opt("error") else json.opt("output"))
+                "code_interpreter_call" -> privacy.display(json.optJSONArray("outputs")?.let { outputs ->
+                    JSONArray().apply { for (i in 0 until outputs.length()) {
+                        val field = outputs.optJSONObject(i)
+                        if (field?.optString("type") == "logs") put(field.opt("logs"))
+                    } }.takeIf { it.length() > 0 }
+                })
+                else -> null
+            }
+            item.tool = previous.copy(name = name, state = state, arguments = args ?: previous.arguments,
+                result = result ?: previous.result)
+            if (callId != null && kind in clientToolTypes) {
+                callsById[callId] = index
+                pendingResults.remove(callId)?.let { (text, status) ->
+                    item.tool = item.tool?.copy(result = text ?: item.tool?.result, state = status)
+                }
+            }
+            return
         }
         json.optJSONArray("content")?.let { parts ->
             for (i in 0 until parts.length()) item.content(i, parts.getJSONObject(i), preservePartial)
@@ -217,7 +279,7 @@ private class ResponseParts {
     }
 }
 
-// Only project provider-reported tool lifecycle. Arguments, returned documents and commands stay out of history.
+// These types are observations. Receiving them never dispatches a tool.
 private val clientToolTypes = setOf("function_call", "custom_tool_call", "computer_call", "local_shell_call")
 private val hostedToolTypes = setOf("web_search_call", "file_search_call", "code_interpreter_call", "image_generation_call",
     "mcp_call")
@@ -229,3 +291,10 @@ private fun toolState(status: String): ToolCallState? = when (status) {
     "incomplete" -> ToolCallState.Incomplete
     else -> null
 }
+
+private val partEvents = setOf("response.output_text.delta", "response.output_text.done", "response.refusal.delta",
+    "response.refusal.done", "response.reasoning_text.delta", "response.reasoning_text.done",
+    "response.reasoning_summary_text.delta", "response.reasoning_summary_text.done", "response.reasoning_summary_part.added",
+    "response.reasoning_summary_part.done", "response.content_part.added", "response.content_part.done",
+    "response.output_item.added", "response.output_item.done", "response.function_call_arguments.delta",
+    "response.function_call_arguments.done", "response.mcp_call_arguments.delta", "response.mcp_call_arguments.done")
