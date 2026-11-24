@@ -24,7 +24,9 @@ class ChatArchiveTest {
 
     @Test fun archivedMediaAndContextSurvivePortableBackupWithoutOldUris() = runBlocking {
         val old = chat.messages.single()
-        val visible = old.copy(text = "new revision", imageKeys = emptyList(), attachments = emptyList())
+        val visible = old.copy(text = "new revision", imageKeys = emptyList(), attachments = emptyList(),
+            translation = ReplyTranslation("English", "translated"), timing = ReplyTiming(0, 100, 250),
+            toolCalls = listOf(ReplyToolCall("catalog", ToolCallState.Completed, 3)))
         val thread = chat.appendVersion(old, visible).copy(contextStart = old.id)
         val zip = ChatArchive.export(root.newFolder(), SavedWorkspace(listOf(thread)),
             { uri -> assertEquals(external, uri); original.inputStream() }, { id, out -> assertEquals(key, id); out.write(png) })
@@ -40,6 +42,9 @@ class ChatArchiveTest {
         }).history.single()
         assertEquals(old.id, revived.contextStart)
         assertEquals("new revision", revived.messages.single().text)
+        assertEquals(visible.translation, revived.messages.single().translation)
+        assertEquals(visible.timing, revived.messages.single().timing)
+        assertEquals(visible.toolCalls, revived.messages.single().toolCalls)
         val previous = revived.withVersion(old.id, 0).messages.single()
         assertEquals(listOf("local-image"), previous.imageKeys)
         assertEquals("content://fresh.test/picked", previous.attachments.single().uri)

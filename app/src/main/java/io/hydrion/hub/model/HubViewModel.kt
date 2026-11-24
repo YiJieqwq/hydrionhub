@@ -45,8 +45,9 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     internal val appRestores = AppRestoreStore.current(app)
     private val images = GeneratedImageStore(app)
     internal val backups by lazy { LocalChatBackup(getApplication(), images) }
+    private val chatGeneration = ChatGenerationRepository({ providers.catalog.value }, providers::sessionKey, app::responsesImageSources)
     private val generation = ImageGenerationRepository(
-        ChatGenerationRepository({ providers.catalog.value }, providers::sessionKey, app::responsesImageSources),
+        chatGeneration,
         ::prepareImage, OpenAiImagesTransport()::generate, images::saveBatch, images::discard
     )
     private val mutableErrors = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -55,6 +56,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
         persist = { snapshot -> if (loaded) writes.trySend(storageEpoch to snapshot) else changedDuringLoad = true },
         newRoutes = providers::newThreadRoutes, showRoutes = providers::showRoutes,
         allowSearch = { webSearch.settings.value.localEnabled }, onGenerationError = ::reportError)
+    internal val translations = ReplyTranslations(viewModelScope, session, chatGeneration)
     val state = session.state
     internal fun addAssistant(name: String) = loaded && session.addAssistant(name)
     internal fun renameAssistant(id: String, name: String) = loaded && session.renameAssistant(id, name)

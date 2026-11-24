@@ -65,6 +65,30 @@ class ChatCompletionsEventsTest {
             cachedInputTokens = 6, reasoningTokens = 3), last.usage)
     }
 
+    @Test fun validatingBeforeTheStreamOrReceivingOnlyMetadataNeverCreatesTokenLatencies() {
+        var now = 500L
+        val timer = ReplyObservation { now }
+        val error = Message(role = Role.Assistant, status = Generation.Error)
+        now += 4
+        assertNull(timer.record(error, fromStream = false).timing)
+        assertEquals(ReplyTiming(null, null, null),
+            timer.record(error.copy(status = Generation.Generating, usage = TokenUsage(inputTokens = 0)), true).timing)
+        now += 3
+        assertEquals(ReplyTiming(null, null, 7), timer.record(error, false).timing)
+    }
+
+    @Test fun fragmentedParallelCallsKeepTheirOrderWithoutExecutingOrStoringArguments() = runBlocking {
+        val prefix = frame(choice("""{"content":"Plan."}"""))
+        val first = frame(choice("""{"tool_calls":[{"index":1,"function":{"name":"wea"}},{"index":0,"function":{"name":"time"}}]}"""))
+        val second = frame(choice("""{"tool_calls":[{"index":1,"function":{"name":"ther","arguments":"fixture payload"}}]}""", "tool_calls"))
+        val (reply, error) = failure(prefix + first + second + done)
+        assertEquals("Plan.", reply.text)
+        assertEquals(listOf(ReplyToolCall("time", ToolCallState.Requested, 5),
+            ReplyToolCall("weather", ToolCallState.Requested, 5)), reply.toolCalls)
+        assertFalse(reply.toString().contains("fixture payload"))
+        assertTrue(error.contains("tool_calls"))
+    }
+
     @Test fun refusalIsVisibleAndOtherChoicesCannotWriteOrFinishThePrimaryReply() = runBlocking {
         val other = choice("""{"content":"discarded","reasoning_content":"discarded"}""", "stop", index = 1)
         val first = frame(other + "," + choice("""{"refusal":"Cannot "}"""))

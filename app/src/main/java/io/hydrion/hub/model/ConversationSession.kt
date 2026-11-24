@@ -24,6 +24,7 @@ internal class ConversationSession(
     private val newRoutes: () -> Map<Mode, RemoteModel>? = { null },
     private val showRoutes: (Map<Mode, RemoteModel>?, RemoteModel?) -> Unit = { _, _ -> },
     private val allowSearch: () -> Boolean = { true },
+    private val monotonicMs: () -> Long = { System.nanoTime() / 1_000_000L },
     private val onGenerationError: (conversationId: String, detail: String) -> Unit = { _, _ -> }
 ) {
     private fun newChat(owner: String = LocalAssistant.Default.id) =
@@ -36,6 +37,7 @@ internal class ConversationSession(
     // Present only while a dictated send is active and its cleared draft is still untouched.
     private val dictatedDrafts = mutableMapOf<String, Draft>()
     private val jobs = mutableMapOf<String, Job>()
+    private val observations = mutableMapOf<String, ReplyObservation>()
     // Each assistant has at most one unsent conversation. Sent drafts remain keyed by thread ID.
     private val parked = mutableMapOf<String, Conversation>()
     private val lastThreads = mutableMapOf<String, String>()
@@ -336,6 +338,7 @@ internal class ConversationSession(
         if (screen.current.id in ids) removable += screen.current.id
         if (removable.isEmpty()) return
         removable.forEach { id ->
+            observations.remove(id)
             jobs.remove(id)?.cancel()
             dictatedDrafts.remove(id)
             drafts.remove(id)
@@ -426,7 +429,7 @@ internal class ConversationSession(
             val generation = coroutineContext[Job]
             try {
                 repository.generate(mode, response, retry, history, profile?.systemPrompt.orEmpty()).collect { message ->
-                    if (jobs[id] === generation) replaceReply(id, response.id, message)
+                    if (jobs[id] === generation) replaceReply(id, response.id, message, fromStream = true)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -438,16 +441,20 @@ internal class ConversationSession(
             }
         }
         // An observer of Sending can stop or retry synchronously, before transport startup.
+        if (mode == Mode.Chat && response.remoteModel != null && response.imageInvocation == null)
+            observations[id] = ReplyObservation(monotonicMs)
         jobs[id] = job
         if (openBranch) choose(chat, listOf(chat) + screen.history) else touch(chat)
         save()
         job.start()
     }
 
-    private fun replaceReply(conversationId: String, messageId: String, reply: Message) {
+    private fun replaceReply(conversationId: String, messageId: String, snapshot: Message, fromStream: Boolean = false) {
         val item = conversation(conversationId) ?: return
         val index = item.messages.indexOfFirst { it.id == messageId && it.status.isActive }
         if (index < 0) return
+        val reply = observations[conversationId]?.record(snapshot, fromStream) ?: snapshot
+        if (!reply.status.isActive) observations.remove(conversationId)
         val updated = item.copy(messages = item.messages.toMutableList().apply { set(index, reply) })
         if (reply.status.isActive) {
             update(updated)
@@ -532,9 +539,18 @@ internal class ConversationSession(
         val edited = target.copy(text = cleaned)
         if (item.mode == Mode.Chat) {
             val version = if (target.role == Role.Assistant) edited.copy(thought = "", tool = null, totalTokens = null,
-                usage = null, status = Generation.Completed, error = null) else edited
+                usage = null, timing = null, toolCalls = emptyList(), translation = null, status = Generation.Completed, error = null) else edited
             touch(item.appendVersion(target, version))
         } else touch(item.copy(messages = item.messages.map { if (it.id == id) edited else it }))
+        save()
+        return true
+    }
+
+    fun setTranslation(chatId: String, source: Message, translation: ReplyTranslation?): Boolean {
+        val chat = screen.current
+        if (chat.id != chatId || source.status.isActive || source.role != Role.Assistant ||
+            chat.messages.none { it === source }) return false
+        update(chat.copy(messages = chat.messages.map { if (it === source) it.copy(translation = translation) else it }))
         save()
         return true
     }
@@ -567,6 +583,7 @@ internal class ConversationSession(
         val removed = item.messages.filter { it.id == id || it.replyTo == id }
         if (removed.isEmpty() || (item.mode == Mode.Chat && removed.any { it.id == item.contextStart })) return
         if (removed.any { it.status.isActive }) {
+            observations.remove(item.id)
             jobs.remove(item.id)?.cancel()
             dictatedDrafts.remove(item.id)
         }

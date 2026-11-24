@@ -66,6 +66,7 @@ private fun SavedWorkspace.transform(application: Boolean, attachment: (Attachme
         } else emptyMap(),
         tool = m.tool, imageKeys = m.imageKeys.map(image), replyTo = m.replyTo, remoteModel = route(m.remoteModel),
         imageInvocation = m.imageInvocation?.let { ImageInvocation(it.model, emptyMap(), route(it.remoteModel)) },
+        timing = m.timing, toolCalls = m.toolCalls, translation = m.translation,
         totalTokens = m.totalTokens, usage = m.usage?.let {
             TokenUsage(it.inputTokens, it.outputTokens, it.totalTokens, it.cachedInputTokens, it.reasoningTokens)
         },

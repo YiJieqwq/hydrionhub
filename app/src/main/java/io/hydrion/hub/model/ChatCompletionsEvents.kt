@@ -14,6 +14,12 @@ internal suspend fun readChatCompletionsEvents(
     emit(message)
     var finish: String? = null
     var pendingTool: String? = null
+    val callsByIndex = sortedMapOf<Int, ReplyToolCall>()
+    fun recordCall(index: Int, function: JSONObject?) {
+        val fragment = function?.optionalText("name").orEmpty()
+        val current = callsByIndex[index] ?: ReplyToolCall("", ToolCallState.Requested, message.text.length)
+        callsByIndex[index] = current.copy(name = (current.name + fragment.take(128)).take(128))
+    }
     var done = false
     for ((event, data) in reader.sseEvents()) {
         if (data.trim() == "[DONE]") {
@@ -42,8 +48,18 @@ internal suspend fun readChatCompletionsEvents(
                 if (finish != null && (content.isNotEmpty() || reasoning.isNotEmpty() || (reason != null && finish != reason))) {
                     throw IOException("Chat Completions 在结束原因之后返回了冲突的数据。")
                 }
-                if (delta?.optJSONArray("tool_calls")?.length()?.let { it > 0 } == true) pendingTool = "tool_calls"
-                if (delta?.optJSONObject("function_call") != null) pendingTool = "function_call"
+                delta?.optJSONArray("tool_calls")?.let { calls ->
+                    for (j in 0 until calls.length()) {
+                        val call = calls.getJSONObject(j)
+                        recordCall(call.optInt("index", j), call.optJSONObject("function"))
+                        pendingTool = "tool_calls"
+                    }
+                }
+                delta?.optJSONObject("function_call")?.let {
+                    recordCall(0, it)
+                    pendingTool = "function_call"
+                }
+                if (pendingTool != null) message = message.copy(toolCalls = callsByIndex.values.toList())
                 if (content.isNotEmpty() || reasoning.isNotEmpty()) {
                     message = message.copy(text = message.text + content, thought = message.thought + reasoning)
                 }

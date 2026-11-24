@@ -139,6 +139,12 @@ private fun writeMessage(m: Message): JSONObject = JSONObject().put("id", m.id).
     .put("thought", m.thought).put("tool", m.tool).put("imageKeys", JSONArray(m.imageKeys))
     .put("remoteModel", m.remoteModel?.toJson())
     .put("totalTokens", m.reportedUsage?.contextTokens).put("usage", m.usage?.toStoredJson())
+    .put("timing", m.timing?.let { JSONObject().put("firstTokenMs", it.firstTokenMs)
+        .put("firstBodyMs", it.firstBodyMs).put("elapsedMs", it.elapsedMs) })
+    .put("toolCalls", m.toolCalls.takeIf { it.isNotEmpty() }?.let { calls ->
+        JSONArray(calls.map { JSONObject().put("name", it.name).put("state", it.state.name).put("bodyOffset", it.bodyOffset) })
+    })
+    .put("translation", m.translation?.let { JSONObject().put("language", it.language).put("text", it.text) })
     .put("error", m.error).put("replyTo", m.replyTo).put("imageInvocation", m.imageInvocation?.let {
         JSONObject().put("model", it.model).put("parameters", JSONObject(it.parameters)).put("remoteModel", it.remoteModel?.toJson())
     })
@@ -153,6 +159,11 @@ private fun readMessage(j: JSONObject): Message {
         thought = j.optString("thought"), tool = j.optional("tool"), imageKeys = (0 until keys.length()).map { keys.getString(it) },
         remoteModel = j.readRoute("remoteModel"),
         totalTokens = j.count("totalTokens"), usage = j.optJSONObject("usage")?.readUsage(),
+        timing = j.optJSONObject("timing")?.let { ReplyTiming(it.count("firstTokenMs"), it.count("firstBodyMs"), it.count("elapsedMs")) },
+        toolCalls = j.optJSONArray("toolCalls").objects().mapNotNull { call ->
+            ToolCallState.entries.find { it.name == call.optString("state") }?.let { ReplyToolCall(call.optString("name"), it, call.optInt("bodyOffset", -1).takeIf { offset -> offset >= 0 }) }
+        },
+        translation = j.optJSONObject("translation")?.let { ReplyTranslation(it.optString("language"), it.optString("text")) },
         error = j.optional("error"), replyTo = j.optional("replyTo"), imageInvocation = j.optJSONObject("imageInvocation")?.let {
             val imageParameters = it.getJSONObject("parameters")
             ImageInvocation(it.getString("model"), imageParameters.keys().asSequence().associateWith(imageParameters::getString),

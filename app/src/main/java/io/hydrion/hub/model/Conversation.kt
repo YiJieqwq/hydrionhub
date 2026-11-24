@@ -72,7 +72,10 @@ data class Message(
     val imageInvocation: ImageInvocation? = null,
     val remoteModel: RemoteModel? = null,
     val totalTokens: Long? = null,
-    val usage: TokenUsage? = null
+    val usage: TokenUsage? = null,
+    val timing: ReplyTiming? = null,
+    val toolCalls: List<ReplyToolCall> = emptyList(),
+    val translation: ReplyTranslation? = null,
 ) {
     val reportedUsage: TokenUsage? get() = usage ?: totalTokens?.let { TokenUsage(totalTokens = it) }
 }

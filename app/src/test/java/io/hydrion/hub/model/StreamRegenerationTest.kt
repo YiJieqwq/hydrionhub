@@ -81,9 +81,10 @@ class StreamRegenerationTest {
         }
 
         val historyFile = File(files.root, "conversation-history-v1.json")
+        var elapsed = 0L
         fun session() = ConversationSession(this, repository, { state ->
             publishBackupFile(stageBackupHistory(historyFile, state), historyFile)
-        }, newRoutes = providers::newThreadRoutes, showRoutes = providers::showRoutes)
+        }, newRoutes = providers::newThreadRoutes, showRoutes = providers::showRoutes, monotonicMs = { elapsed })
         fun persisted() = decodeWorkspace(JSONObject(historyFile.readText())).history.single()
         suspend fun submit(session: ConversationSession, text: String) {
             session.setDraft(text)
@@ -102,9 +103,11 @@ class StreamRegenerationTest {
         submit(chat, "Current question")
         val partial = latest(chat) { it.status == Generation.Generating && it.text == "Partial answer" }
         assertEquals("Partial thought", partial.thought)
+        elapsed = 125L
         chat.stop()
         withTimeout(5_000) { cancelled.await() }
-        val stopped = partial.copy(status = Generation.Stopped)
+        assertEquals(ReplyTiming(0L, 0L, null), partial.timing)
+        val stopped = partial.copy(status = Generation.Stopped, timing = ReplyTiming(0L, 0L, 125L))
         assertEquals(stopped, chat.state.value.current.messages.last())
         assertEquals(stopped, persisted().messages.last())
 

@@ -52,6 +52,7 @@ import io.hydrion.hub.model.*
 import io.hydrion.hub.R
 import io.hydrion.hub.provider.DEEPSEEK_PROVIDER_ID
 import io.hydrion.hub.ui.profile.LocalProfileStore
+import io.hydrion.hub.ui.sidebar.AssistantAvatar
 import io.hydrion.hub.ui.profile.ProfileAvatar
 import io.hydrion.hub.ui.theme.IonMark
 import kotlinx.coroutines.flow.collect
@@ -65,6 +66,8 @@ fun matchingMessages(state: HubState, query: String): List<String> {
         message.containsVisibleBody(needle) ||
             message.thought.contains(needle, ignoreCase = true) ||
             message.tool?.contains(needle, ignoreCase = true) == true ||
+            message.toolCalls.any { it.name.contains(needle, ignoreCase = true) } ||
+            message.translation?.text?.contains(needle, ignoreCase = true) == true ||
             message.error?.contains(needle, ignoreCase = true) == true ||
             (message.role == Role.User && message.attachments.any { it.name.contains(needle, ignoreCase = true) })
     }.map { it.id }
@@ -82,6 +85,10 @@ fun MessageList(
     composerBoundsInWindow: () -> IntRect? = { null },
 ) {
     val messages = state.current.messages
+    LaunchedEffect(state.current.id, messages) { vm.translations.retain(state.current.id, messages) }
+    DisposableEffect(state.current.id) {
+        onDispose { vm.translations.retain(state.current.id, emptyList()) }
+    }
     val needle = searchQuery.trim()
     val list = rememberLazyListState()
     var followBottom by rememberSaveable { mutableStateOf(true) }
@@ -143,7 +150,8 @@ fun MessageList(
                     }
                     if (msg.role == Role.User) {
                         UserTurn(msg, state.current, needle, vm, state.isGenerating, open)
-                    } else AssistantTurn(msg, state.current, needle, vm, state.isGenerating, open)
+                    } else AssistantTurn(msg, state.current, needle, vm, state.isGenerating,
+                        state.assistants.find { it.id == state.current.assistantId }, open)
                 }
             }
             item(key = "timeline-bottom") { Spacer(Modifier.height(1.dp)) }
@@ -211,9 +219,9 @@ private fun UserTurn(msg: Message, chat: Conversation, query: String, vm: HubVie
             val context = LocalContext.current
             val profile by remember(context) { LocalProfileStore.shared(context).profile }.collectAsState()
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(profile.name.ifBlank { stringResource(R.string.drawer_you) }, Modifier.weight(1f, fill = false),
-                    style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                ProfileAvatar(profile, Modifier.size(28.dp))
+                TurnByline(profile.name.ifBlank { stringResource(R.string.drawer_you) }, msg.createdAt,
+                    Modifier.weight(1f, fill = false), Alignment.End)
+                ProfileAvatar(profile, Modifier.size(32.dp))
             }
             if (msg.attachments.isNotEmpty()) {
                 Column(Modifier.padding(start = 24.dp), horizontalAlignment = Alignment.End,
@@ -264,7 +272,7 @@ internal fun UserBubble(msg: Message, query: String, mode: Mode, modifier: Modif
 
 @Composable
 internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: HubViewModel, busy: Boolean,
-    open: (Message, TurnSheet) -> Unit) {
+    assistant: LocalAssistant? = null, open: (Message, TurnSheet) -> Unit) {
     val mode = chat.mode
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth(),
@@ -277,14 +285,16 @@ internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: 
             Text(messageTime(msg.createdAt), style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
             ImageMessageActions(msg, vm, busy)
         } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (msg.remoteModel?.providerId == DEEPSEEK_PROVIDER_ID) {
-                Box(Modifier.size(28.dp).clip(CircleShape).background(colors.surfaceContainerHigh),
+            val named = assistant?.takeIf { it.id != LocalAssistant.Default.id ||
+                it.name != LocalAssistant.Default.name || it.avatarText.isNotBlank() }
+            if (named != null) AssistantAvatar(named)
+            else if (msg.remoteModel?.providerId == DEEPSEEK_PROVIDER_ID) {
+                Box(Modifier.size(32.dp).clip(CircleShape).background(colors.surfaceContainerHigh),
                     contentAlignment = Alignment.Center) {
                     Image(painterResource(R.drawable.deepseek_whale), "DeepSeek", Modifier.size(21.dp))
                 }
-            } else IonMark(28.dp)
-            Text(msg.model.ifBlank { "HydrionHub" }, style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            } else AssistantAvatar(LocalAssistant.Default)
+            TurnByline(named?.name ?: msg.model.ifBlank { "HydrionHub" }, msg.createdAt)
         }
         val thinking = msg.remoteModel != null && msg.status.isActive && msg.text.isEmpty()
         var thoughtExpanded by rememberSaveable(msg.id, query, thinking) {
@@ -297,12 +307,16 @@ internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: 
             MessageCard(LocalMessageStyle.current.renderPalette.assistant, Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Outlined.Build, "工具调用", Modifier.size(16.dp))
+                    Icon(Icons.Outlined.Build, null, Modifier.size(16.dp))
+                    if (mode == Mode.Chat) Text(stringResource(R.string.turn_local_tool), style = MaterialTheme.typography.labelSmall)
                     Text(highlighted(tool, query), style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
-        if (msg.text.isNotBlank()) AssistantBody(msg.text, query, mode)
+        if (mode == Mode.Chat) {
+            ReplyTimeline(msg, query)
+            ReplyTranslationBody(chat.id, msg, query, vm.translations)
+        } else if (msg.text.isNotBlank()) AssistantBody(msg.text, query, mode)
         if (msg.imageKeys.isNotEmpty()) ImageResult(msg, query, vm, busy, showRegenerate = mode == Mode.Image)
         when (msg.status) {
             Generation.Sending, Generation.Generating -> Row(
