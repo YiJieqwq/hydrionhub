@@ -688,6 +688,87 @@ class ReplyBubbleInteractionTest {
             R.string.turn_first_body to "1.00 s", R.string.turn_elapsed to "1.25 s")
     }
 
+    @Test @Config(qualifiers = "en-rUS-w407dp-h915dp-xxhdpi")
+    fun expandedStepsKeepTheirInsetsConnectorAndRecordedToolDetails() {
+        val thought = "Check the inventory\nbefore handoff."
+        val first = "inventory_lookup"
+        val last = "catalog_lookup"
+        val reply = answer.copy(text = "Done", thought = thought, toolCalls = listOf(
+            ReplyToolCall(first, ToolCallState.Completed, 0), ReplyToolCall(last, ToolCallState.Requested, 0)))
+        val conversation = Conversation(messages = listOf(reply))
+        val vm = open(initial = conversation)
+        val saved = screen.runOnIdle { vm.state.value.current }
+        setStyle(MessageStyle(tone = MessageTone.Dark))
+        fun header(text: String) = screen.onNode(hasText(text) and hasClickAction())
+        fun rect(text: String) = screen.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode().boundsInWindow
+        val card = screen.onNodeWithTag("message-thought")
+        val title = label(R.string.turn_thinking)
+        val position = label(R.string.turn_tool_before_body)
+        val density = screen.density.density
+        val original = card.fetchSemanticsNode().boundsInWindow
+        fun checkBody(headerText: String, bodyText: String, next: String?) {
+            val headerBox = header(headerText).fetchSemanticsNode().boundsInWindow
+            val body = rect(bodyText)
+            val bounds = card.fetchSemanticsNode().boundsInWindow
+            assertEquals(4 * density, body.top - headerBox.bottom, 1f)
+            assertEquals(rect(headerText).left, body.left, 1f)
+            assertEquals(40 * density, body.left - bounds.left, 1f)
+            val bottom = if (next != null) header(next).fetchSemanticsNode().boundsInWindow.top else bounds.bottom - 4 * density
+            assertEquals(8 * density, bottom - body.bottom, 1f)
+            val bitmap = snapshot("message-thought")
+            val x = (20 * density).roundToInt()
+            val fill = parseColor("#242628")
+            for (y in headerBox.bottom.roundToInt() until bottom.roundToInt()) {
+                val row = y - bounds.top.roundToInt()
+                val hasRail = (x - 1..x + 1).any { bitmap.getPixel(it, row) != fill }
+                assertEquals("Connector at row $row", next != null, hasRail)
+            }
+        }
+        header(title).performClick()
+        checkBody(title, thought, first)
+        assertEquals(12.5f, textLayout(thought).layoutInput.style.fontSize.value)
+        header(first).performClick()
+        checkBody(first, position, last)
+        assertEquals(12f, textLayout(position).layoutInput.style.fontSize.value)
+        header(position).performClick()
+        val sheet = hasAnyAncestor(hasTestTag("turn-action-sheet"))
+        screen.onNode(sheet and hasText(first), useUnmergedTree = true).assertIsDisplayed()
+        screen.onNode(sheet and hasText(label(R.string.turn_tool_done)), useUnmergedTree = true).assertIsDisplayed()
+        screen.onNode(sheet and hasText(position), useUnmergedTree = true).assertIsDisplayed()
+        screen.onNodeWithContentDescription("Close details").performClick()
+        header(title).performClick()
+        screen.onNodeWithText(thought).assertDoesNotExist()
+        screen.onNodeWithText(position).assertIsDisplayed()
+        header(first).performClick()
+        header(last).performClick()
+        checkBody(last, position, null)
+        header(last).performClick()
+        assertEquals(original, card.fetchSemanticsNode().boundsInWindow)
+        screen.runOnIdle { assertEquals(saved, vm.state.value.current) }
+    }
+
+    @Test @Config(qualifiers = "en-rUS-w320dp-h915dp-xxhdpi")
+    fun narrowToolSummaryOpensTheFullSelectableRecord() {
+        val body = "Follow up."
+        val name = "inventory_lookup_" + "checkpoint_".repeat(8)
+        val reply = answer.copy(text = body, toolCalls = listOf(ReplyToolCall(name, ToolCallState.Completed, body.length)))
+        open(width = 174.dp, fontScale = 1.8f, initial = Conversation(messages = listOf(reply)))
+        screen.onNodeWithText(name).performClick()
+        val summary = screen.activity.getString(R.string.turn_tool_position, body.length)
+        val inline = textLayout(summary)
+        assertEquals(4, inline.lineCount)
+        assertTrue(inline.isLineEllipsized(3))
+        screen.onNode(hasText(summary) and hasClickAction()).performClick()
+        val sheet = hasAnyAncestor(hasTestTag("turn-action-sheet"))
+        for (value in listOf(name, summary)) {
+            val node = screen.onNode(sheet and hasText(value), useUnmergedTree = true)
+            node.performScrollTo().assertIsDisplayed()
+            assertFalse(layoutOf(node).hasVisualOverflow)
+        }
+        screen.onNodeWithContentDescription("Close details").performClick()
+        screen.onNodeWithText(summary).assertIsDisplayed()
+    }
+
     @Test fun expandingAThoughtAndTwoToolStepsPreservesTheirOrderAroundVisibleText() {
         val reply = answer.copy(text = "🙂Done", thought = "Review both entries", tool = "Chosen offline option",
             toolCalls = listOf(ReplyToolCall("catalog_lookup", ToolCallState.Requested, 0),

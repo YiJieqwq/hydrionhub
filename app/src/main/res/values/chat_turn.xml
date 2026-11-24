@@ -87,6 +87,10 @@
     <string name="turn_expanded">Expanded</string>
     <string name="turn_collapsed">Collapsed</string>
     <string name="turn_thinking">Deep thinking</string>
+    <string name="turn_tool_details">Tool call details</string>
+    <string name="turn_close_details">Close details</string>
+    <string name="turn_tool_status">Status</string>
+    <string name="turn_tool_offset_label">Reply position</string>
     <string name="turn_tool_position_unknown">Tool calls with no recorded position</string>
     <string name="turn_tool_before_body">Received before the first reply text</string>
     <string name="turn_tool_position">Reply characters received before this call: %1$d</string>

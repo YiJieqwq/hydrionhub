@@ -47,7 +47,7 @@ private fun TurnIcon(@DrawableRes icon: Int, label: Int, enabled: Boolean = true
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TurnActionSheet(close: () -> Unit, containerColor: Color = MaterialTheme.colorScheme.surface,
+internal fun TurnActionSheet(close: () -> Unit, containerColor: Color = MaterialTheme.colorScheme.surface,
     content: @Composable ColumnScope.() -> Unit) {
     ModalBottomSheet(onDismissRequest = close, modifier = Modifier.testTag("turn-action-sheet"),
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),

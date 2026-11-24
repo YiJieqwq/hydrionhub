@@ -86,6 +86,10 @@
     <string name="turn_expanded">已展开</string>
     <string name="turn_collapsed">已收起</string>
     <string name="turn_thinking">深度思考</string>
+    <string name="turn_tool_details">工具调用详情</string>
+    <string name="turn_close_details">关闭详情</string>
+    <string name="turn_tool_status">状态</string>
+    <string name="turn_tool_offset_label">正文位置</string>
     <string name="turn_tool_position_unknown">正文位置未记录的工具调用</string>
     <string name="turn_tool_before_body">在正文首字之前收到调用</string>
     <string name="turn_tool_position">收到调用时，已有 %1$d 个正文字符</string>

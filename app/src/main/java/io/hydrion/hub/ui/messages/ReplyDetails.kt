@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role as UiRole
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.IntOffset
@@ -29,6 +30,8 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.style.TextOverflow
@@ -256,19 +259,62 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
         }
         Spacer(Modifier.width(8.dp))
         Text(highlighted(label, query), Modifier.weight(1f), fontWeight = FontWeight.Medium, fontSize = 13.sp,
-            lineHeight = 18.sp, letterSpacing = 0.sp, color = ink, overflow = TextOverflow.Ellipsis, maxLines = 2)
+            lineHeight = if (open) 1.43.em else 18.sp, letterSpacing = 0.sp, color = ink, overflow = TextOverflow.Ellipsis, maxLines = 2)
         if (status != null) Text(status, Modifier.padding(start = 8.dp), fontSize = 11.sp, lineHeight = 14.sp,
             letterSpacing = 0.sp, color = if (dark) ink else ink.copy(alpha = .65f))
         if (toggle != null) Icon(painterResource(if (open) R.drawable.lucide_chevron_up else if (status == null)
-            R.drawable.lucide_chevron_down else R.drawable.lucide_chevron_right), null, Modifier.padding(start = 6.dp).size(14.dp),
+            R.drawable.lucide_chevron_down else R.drawable.lucide_chevron_right), null, Modifier.padding(start = 6.dp).size(if (open) 16.dp else 14.dp),
             tint = ink.copy(alpha = .55f))
     }
-    if (open && detail != null) SelectionContainer {
-        Text(highlighted(detail, query), Modifier.fillMaxWidth().drawBehind {
+    if (open && detail != null) Box(Modifier.fillMaxWidth().drawBehind {
+        if (index + 1 < count) {
             val x = 12.dp.toPx()
-            if (index + 1 < count) drawLine(line, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
-        }.padding(start = 32.dp, bottom = 8.dp), fontSize = 13.sp, lineHeight = 19.sp, letterSpacing = 0.sp,
-            color = if (dark) ink else ink.copy(alpha = .8f))
+            drawLine(line, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
+        }
+    }.padding(start = 32.dp, top = 4.dp, bottom = 8.dp)) {
+        val bodyInk = if (dark) ink else ink.copy(alpha = .8f)
+        if (status == null) SelectionContainer {
+            Text(highlighted(detail, query), Modifier.fillMaxWidth(), fontSize = 12.5.sp,
+                lineHeight = 16.5.sp, letterSpacing = 0.sp, color = bodyInk)
+        } else {
+            var showRecord by rememberSaveable { mutableStateOf(false) }
+            Row(Modifier.fillMaxWidth().clickable(role = UiRole.Button,
+                onClickLabel = stringResource(R.string.turn_tool_details), onClick = { showRecord = true }),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+                Text(highlighted(detail, query), Modifier.weight(1f), fontSize = 12.sp, lineHeight = 16.8.sp,
+                    letterSpacing = 0.sp, color = bodyInk, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                Icon(painterResource(R.drawable.lucide_chevron_right), null, Modifier.size(16.dp), tint = ink.copy(alpha = .55f))
+            }
+            if (showRecord) RecordedToolSheet(label, status, detail) { showRecord = false }
+        }
+    }
+}
+
+@Composable
+private fun RecordedToolSheet(name: String, status: String, position: String, close: () -> Unit) {
+    TurnActionSheet(close) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SelectionContainer(Modifier.weight(1f)) {
+                    Text(name, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleMedium)
+                }
+                IconButton(onClick = close) {
+                    Icon(Icons.Outlined.Close, stringResource(R.string.turn_close_details))
+                }
+            }
+            SelectionContainer {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    for ((field, value) in listOf(R.string.turn_tool_status to status, R.string.turn_tool_offset_label to position)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(stringResource(field), style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(value, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
