@@ -25,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.hydrion.hub.model.Message
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.Role
+import io.hydrion.hub.ui.theme.HubStyle
 import kotlin.random.Random
 
 val LocalMessageStyleStore = staticCompositionLocalOf<MessageStyleStore> { error("ProvideMessageStyle is required") }
@@ -101,6 +102,15 @@ internal enum class ChatSurface { UserBubble, ThoughtAndTools, Translation }
 
 private val darkThoughtToolFill = defaultMessagePalette(MessageTone.Dark).assistant.background.messageColor()
 
+private fun uneditedUserFill(scheme: ColorScheme, dark: Boolean): Color {
+    val stockAccent = if (dark) HubStyle.Blue else lightTimeline.primary
+    val stockCanvas = if (dark) HubStyle.Background else lightTimeline.background
+    if (scheme.primary == stockAccent && scheme.background == stockCanvas) {
+        return if (dark) Color(0xFF161F22) else Color(0xFFECF3F5)
+    }
+    return scheme.primary.copy(alpha = if (dark) .15f else .08f)
+}
+
 @Composable
 internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content: @Composable () -> Unit) {
     val style = LocalMessageStyle.current
@@ -118,7 +128,7 @@ internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content:
     }
     val scheme = MaterialTheme.colorScheme
     val fill = if (fixedDarkCard) darkThoughtToolFill
-        else if (user) scheme.primary.copy(alpha = if (dark) .15f else .08f)
+        else if (user) uneditedUserFill(scheme, dark)
         else scheme.primaryContainer.copy(alpha = if (dark) .25f else .30f)
     Box(modifier.clip(shape).background(fill)) {
         CompositionLocalProvider(LocalContentColor provides (if (fixedDarkCard) Color.White else scheme.onSurface), content = content)

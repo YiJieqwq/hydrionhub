@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.graphics.toArgb
@@ -382,6 +383,58 @@ class ReplyBubbleInteractionTest {
         assertTrue(after.width < before.width)
         assertTrue(after.height < before.height)
         assertEquals(1, textLayout("好").lineCount)
+    }
+
+    @Test @Config(qualifiers = "zh-rCN-w407dp-h915dp-xxhdpi")
+    fun onlyTheStockUserBubbleGetsThePhoneFillForEachTone() {
+        val prompt = question.copy(text = "给我一份灯塔巡检清单。")
+        open(initial = Conversation(messages = listOf(prompt)))
+        fun fill() = snapshot("message-user-bubble").let { it.getPixel(it.width / 2, it.height / 5) }
+        for (tone in MessageTone.entries) {
+            val stock = MessageStyle(tone = tone)
+            val palette = stock.palette
+            val expected = parseColor(if (tone == MessageTone.Dark) "#161F22" else "#ECF3F5")
+            setStyle(stock)
+            val bounds = screen.onNodeWithTag("message-user-bubble").getUnclippedBoundsInRoot()
+            assertEquals(194.5f, (bounds.right - bounds.left).value, .5f)
+            assertEquals(46.dp, bounds.bottom - bounds.top)
+            assertEquals("Stock $tone", expected, fill())
+            setStyle(stock.withPalette(tone, palette.copy(assistant = palette.assistant.copy(text = "#FF5599"))))
+            assertEquals(expected, fill())
+
+            setStyle(stock.copy(material = CardMaterial.Default))
+            assertEquals(parseColor(if (tone == MessageTone.Dark) "#303030" else "#E3E4E7"), fill())
+            val custom = stock.withPalette(tone, palette.copy(user = palette.user.copy(background = "#D98A59", text = "#130F0A")))
+            setStyle(custom)
+            assertEquals(parseColor("#D98A59"), fill())
+            assertEquals(parseColor("#130F0A"), textInk(prompt.text))
+            setStyle(custom.copy(material = CardMaterial.Frosted))
+            val frosted = fill()
+            assertNotEquals(expected, frosted)
+            assertNotEquals(parseColor("#D98A59"), frosted)
+            setStyle(stock)
+            assertEquals(expected, fill())
+        }
+    }
+
+    @Test fun aCustomTimelineAccentStillTintsTheUneditedUserBubble() {
+        val accent = Color.Green
+        screen.activityRule.scenario.onActivity { activity ->
+            activity.setContent {
+                HydrionTheme {
+                    MaterialTheme(
+                        colorScheme = MaterialTheme.colorScheme.copy(primary = accent)
+                    ) {
+                        MessageCanvas(MessageStyle(), Modifier.fillMaxWidth()) { UserBubble(question, "", Mode.Chat) }
+                    }
+                }
+            }
+        }
+        val shot = snapshot("message-user-bubble")
+        val sampled = shot.getPixel(shot.width / 2, shot.height / 5)
+        assertEquals(0, android.graphics.Color.red(sampled))
+        assertEquals(0, android.graphics.Color.blue(sampled))
+        assertEquals(255 * .15f, android.graphics.Color.green(sampled).toFloat(), 1f)
     }
 
     @Test fun assistantHeaderFooterAndMenuUseTheReferencePhoneGeometry() {
