@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.round
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.hydrion.hub.model.*
 import io.hydrion.hub.R
 import io.hydrion.hub.provider.DEEPSEEK_PROVIDER_ID
@@ -134,7 +135,7 @@ fun MessageList(
         } else Modifier
         LazyColumn(
             state = list, modifier = Modifier.fillMaxSize().testTag("message-timeline").then(edges), contentPadding = padding,
-            verticalArrangement = Arrangement.spacedBy(if (state.current.mode == Mode.Chat) 12.dp else 14.dp)
+            verticalArrangement = Arrangement.spacedBy(if (state.current.mode == Mode.Chat) 24.dp else 14.dp)
         ) {
             itemsIndexed(messages, key = { _, msg -> msg.id }, contentType = { _, msg -> msg.role }) { _, msg ->
                 val selected = msg.id == match
@@ -156,10 +157,10 @@ fun MessageList(
             }
             item(key = "timeline-bottom") { Spacer(Modifier.height(1.dp)) }
         }
-    }
-    actionSheet?.let { sheet ->
-        messages.firstOrNull { it.id == actionOwner }?.let { target ->
-            ChatTurnOverlay(target, state.current, vm, state.isGenerating, sheet) { actionSheet = it }
+        actionSheet?.let { sheet ->
+            messages.firstOrNull { it.id == actionOwner }?.let { target ->
+                ChatTurnOverlay(target, state.current, vm, state.isGenerating, sheet) { actionSheet = it }
+            }
         }
     }
 }
@@ -214,14 +215,16 @@ private fun UserTurn(msg: Message, chat: Conversation, query: String, vm: HubVie
     val mode = chat.mode
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(if (mode == Mode.Chat) 4.dp else 0.dp)) {
+        verticalArrangement = Arrangement.spacedBy(if (mode == Mode.Chat) 8.dp else 0.dp)) {
         if (mode == Mode.Chat) {
             val context = LocalContext.current
             val profile by remember(context) { LocalProfileStore.shared(context).profile }.collectAsState()
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TurnByline(profile.name.ifBlank { stringResource(R.string.drawer_you) }, msg.createdAt,
                     Modifier.weight(1f, fill = false), Alignment.End)
-                ProfileAvatar(profile, Modifier.size(32.dp))
+                ProfileAvatar(profile, Modifier.size(32.dp).testTag("turn-user-avatar"), colors.primary.copy(alpha = .1f)) {
+                    Icon(painterResource(R.drawable.lucide_user), null, Modifier.size(18.dp), tint = colors.primary)
+                }
             }
             if (msg.attachments.isNotEmpty()) {
                 Column(Modifier.padding(start = 24.dp), horizontalAlignment = Alignment.End,
@@ -250,24 +253,23 @@ private fun UserTurn(msg: Message, chat: Conversation, query: String, vm: HubVie
 @Composable
 internal fun UserBubble(msg: Message, query: String, mode: Mode, modifier: Modifier = Modifier) {
     val chat = mode == Mode.Chat
-    val bubble = if (chat) chatBubbleShape(Role.User) else RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
-    val bounds = if (chat) Modifier.padding(start = 24.dp)
+    val bubble = if (chat) RoundedCornerShape(16.dp) else RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
+    val bounds = if (chat) Modifier.padding(start = 24.dp).widthIn(max = (LocalConfiguration.current.screenWidthDp * .75f).dp)
         else Modifier.widthIn(max = (LocalConfiguration.current.screenWidthDp * .81f).dp)
-    MessageCard(
-        colors = LocalMessageStyle.current.renderPalette.user,
-        modifier = bounds.testTag("message-user-bubble").clip(bubble).then(modifier),
-        shape = bubble
-    ) {
-        Column(Modifier.padding(horizontal = if (chat) 14.dp else 16.dp, vertical = 10.dp),
+    val surface = bounds.testTag("message-user-bubble").clip(bubble).then(modifier)
+    val content: @Composable () -> Unit = {
+        Column(Modifier.padding(horizontal = if (chat) 12.dp else 16.dp, vertical = if (chat) 12.dp else 10.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (mode == Mode.Image) msg.attachments.forEach { MessageAttachment(it, query) }
             if (msg.text.isNotEmpty()) {
                 val text = highlighted(msg.text, query)
-                if (mode == Mode.Chat) Text(text, style = MaterialTheme.typography.bodyLarge)
+                if (chat) Text(text, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.5.sp, lineHeight = 21.7.sp, letterSpacing = 0.sp))
                 else SelectionContainer { Text(text, style = MaterialTheme.typography.bodyLarge) }
             }
         }
     }
+    if (chat) ChatTintedSurface(Role.User, surface, content)
+    else MessageCard(LocalMessageStyle.current.renderPalette.user, surface, bubble, content)
 }
 
 @Composable
@@ -275,8 +277,8 @@ internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: 
     assistant: LocalAssistant? = null, open: (Message, TurnSheet) -> Unit) {
     val mode = chat.mode
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(if (mode == Mode.Chat) 4.dp else 7.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = if (mode == Mode.Chat) 4.dp else 0.dp),
+        verticalArrangement = Arrangement.spacedBy(if (mode == Mode.Chat) 8.dp else 7.dp)) {
         if (mode == Mode.Image) Row(verticalAlignment = Alignment.CenterVertically) {
             IonMark(26.dp)
             Spacer(Modifier.width(8.dp))
@@ -287,34 +289,35 @@ internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: 
         } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val named = assistant?.takeIf { it.id != LocalAssistant.Default.id ||
                 it.name != LocalAssistant.Default.name || it.avatarText.isNotBlank() }
-            if (named != null) AssistantAvatar(named)
-            else if (msg.remoteModel?.providerId == DEEPSEEK_PROVIDER_ID) {
-                Box(Modifier.size(32.dp).clip(CircleShape).background(colors.surfaceContainerHigh),
-                    contentAlignment = Alignment.Center) {
-                    Image(painterResource(R.drawable.deepseek_whale), "DeepSeek", Modifier.size(21.dp))
-                }
-            } else AssistantAvatar(LocalAssistant.Default)
+            Box(Modifier.size(32.dp).testTag("turn-assistant-avatar")) {
+                if (named != null) AssistantAvatar(named)
+                else if (msg.remoteModel?.providerId == DEEPSEEK_PROVIDER_ID) {
+                    Box(Modifier.size(32.dp).clip(CircleShape).background(colors.surfaceContainerHigh),
+                        contentAlignment = Alignment.Center) {
+                        Image(painterResource(R.drawable.deepseek_whale), "DeepSeek", Modifier.size(21.dp))
+                    }
+                } else AssistantAvatar(LocalAssistant.Default)
+            }
             TurnByline(named?.name ?: msg.model.ifBlank { "HydrionHub" }, msg.createdAt)
         }
         val thinking = msg.remoteModel != null && msg.status.isActive && msg.text.isEmpty()
         var thoughtExpanded by rememberSaveable(msg.id, query, thinking) {
             mutableStateOf(thinking || (query.isNotEmpty() && msg.thought.contains(query, ignoreCase = true)))
         }
-        if (msg.thought.isNotBlank()) {
+        if (mode == Mode.Image && msg.thought.isNotBlank()) {
             Thought(msg, query, thoughtExpanded, onToggle = { thoughtExpanded = !thoughtExpanded })
         }
-        msg.tool?.let { tool ->
+        if (mode == Mode.Image) msg.tool?.let { tool ->
             MessageCard(LocalMessageStyle.current.renderPalette.assistant, Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Outlined.Build, null, Modifier.size(16.dp))
-                    if (mode == Mode.Chat) Text(stringResource(R.string.turn_local_tool), style = MaterialTheme.typography.labelSmall)
                     Text(highlighted(tool, query), style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
         if (mode == Mode.Chat) {
-            ReplyTimeline(msg, query)
+            ReplyTimeline(msg, query, thoughtExpanded) { thoughtExpanded = !thoughtExpanded }
             ReplyTranslationBody(chat.id, msg, query, vm.translations)
         } else if (msg.text.isNotBlank()) AssistantBody(msg.text, query, mode)
         if (msg.imageKeys.isNotEmpty()) ImageResult(msg, query, vm, busy, showRegenerate = mode == Mode.Image)

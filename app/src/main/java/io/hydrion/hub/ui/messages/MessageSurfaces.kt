@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.hydrion.hub.model.Message
 import io.hydrion.hub.model.Mode
@@ -95,26 +96,42 @@ internal fun MessageCard(
     }
 }
 
-internal fun chatBubbleShape(role: Role) = RoundedCornerShape(
-    topStart = if (role == Role.Assistant) 6.dp else 24.dp,
-    topEnd = if (role == Role.User) 6.dp else 24.dp,
-    bottomStart = 24.dp, bottomEnd = 24.dp
-)
+@Composable
+internal fun ChatTintedSurface(role: Role, modifier: Modifier, content: @Composable () -> Unit) {
+    val style = LocalMessageStyle.current
+    val user = role == Role.User
+    val palette = if (user) style.renderPalette.user else style.renderPalette.assistant
+    val defaults = defaultMessagePalette(style.tone)
+    val shape = RoundedCornerShape(16.dp)
+    if (style.material != CardMaterial.Solid || palette != (if (user) defaults.user else defaults.assistant)) {
+        MessageCard(palette, modifier, shape, content)
+        return
+    }
+    val scheme = MaterialTheme.colorScheme
+    val dark = style.tone == MessageTone.Dark
+    val fill = if (user) scheme.primary.copy(alpha = if (dark) .15f else .08f)
+        else scheme.primaryContainer.copy(alpha = if (dark) .25f else .30f)
+    Box(modifier.clip(shape).background(fill)) {
+        CompositionLocalProvider(LocalContentColor provides scheme.onSurface, content = content)
+    }
+}
 
 @Composable
 internal fun AssistantBody(text: String, query: String, mode: Mode) {
     val style = LocalMessageStyle.current
     val colors = style.renderPalette.assistant
+    val chat = mode == Mode.Chat
+    val type = MaterialTheme.typography.bodyLarge
+    val body = if (chat) type.copy(fontSize = 15.7.sp, lineHeight = 23.55.sp, letterSpacing = 0.sp) else type
     if (style.assistantBubble) {
-        val chat = mode == Mode.Chat
-        val shape = if (chat) chatBubbleShape(Role.Assistant) else RoundedCornerShape(19.dp)
+        val shape = RoundedCornerShape(if (chat) 16.dp else 19.dp)
         MessageCard(colors, Modifier.testTag("message-assistant-body"), shape = shape) {
-            Box(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                MarkdownBody(text, query, if (chat) Modifier else Modifier.fillMaxWidth())
+            Box(Modifier.padding(horizontal = if (chat) 12.dp else 14.dp, vertical = if (chat) 12.dp else 10.dp)) {
+                MarkdownBody(text, query, if (chat) Modifier else Modifier.fillMaxWidth(), body)
             }
         }
     } else CompositionLocalProvider(LocalContentColor provides colors.text.messageColor()) {
-        Box(Modifier.testTag("message-assistant-body")) { MarkdownBody(text, query, Modifier.fillMaxWidth()) }
+        Box(Modifier.testTag("message-assistant-body")) { MarkdownBody(text, query, Modifier.fillMaxWidth(), body) }
     }
 }
 

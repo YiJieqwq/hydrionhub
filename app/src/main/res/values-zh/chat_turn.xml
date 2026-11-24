@@ -21,7 +21,7 @@
     <string name="turn_resend_unavailable">原回复的模型不可用。请恢复原供应商和模型配置，再保存并重发。</string>
     <string name="turn_retry_model">重新生成模型：%1$s</string>
     <string name="turn_save_send">保存并重发</string>
-    <string name="turn_fork">从此处分支</string>
+    <string name="turn_fork">创建分支</string>
     <string name="turn_fork_title">%1$s（分支）</string>
     <string name="turn_set_start">从此处开始上下文</string>
     <string name="turn_clear_start">取消上下文起点</string>
@@ -31,10 +31,10 @@
     <string name="turn_copy_markdown_source">复制源码 / Markdown</string>
     <string name="turn_markdown_copied">已复制 Markdown 原文</string>
     <string name="turn_copy_failed">复制到剪贴板失败</string>
-    <string name="turn_select_copy">选择文本复制</string>
-    <string name="turn_delete_version">删除当前版本</string>
+    <string name="turn_select_copy">选择复制</string>
+    <string name="turn_delete_version">删除本版本</string>
     <string name="turn_delete_others">删除其他版本</string>
-    <string name="turn_delete_all">删除所有版本</string>
+    <string name="turn_delete_all">删除全部版本</string>
     <string name="turn_delete">删除消息</string>
     <string name="turn_delete_reply">删除这条回复？</string>
     <string name="turn_delete_pair">删除这条消息及其回复的所有版本？</string>
@@ -61,8 +61,8 @@
     <string name="turn_show_image_controls">显示操作栏</string>
     <string name="turn_image_preview_failed">无法读取图片</string>
     <string name="turn_media">附件</string>
-    <string name="turn_tokens">%1$d 词元</string>
-    <string name="turn_usage">词元用量</string>
+    <string name="turn_tokens">%1$d tokens</string>
+    <string name="turn_usage">Token 用量</string>
     <string name="turn_input_tokens">输入：%1$d</string>
     <string name="turn_output_tokens">输出：%1$d</string>
     <string name="turn_no_text">无文本</string>
@@ -71,7 +71,7 @@
     <string name="turn_input">输入</string>
     <string name="turn_cached">缓存输入</string>
     <string name="turn_output">输出（含推理）</string>
-    <string name="turn_reasoning">推理词元</string>
+    <string name="turn_reasoning">推理 tokens</string>
     <string name="turn_tps">TPS</string>
     <string name="turn_tps_value">%1$.1f tok/s</string>
     <string name="turn_ttft">首个 token（TTFT）</string>
@@ -82,7 +82,12 @@
     <string name="turn_web_preview">网页视图渲染</string>
     <string name="turn_web_unavailable">Android 系统 WebView 不可用。</string>
     <string name="turn_local_tool">所选工具</string>
-    <string name="turn_tool_chain">工具调用（%1$d）</string>
+    <string name="turn_expanded">已展开</string>
+    <string name="turn_collapsed">已收起</string>
+    <string name="turn_thinking">深度思考</string>
+    <string name="turn_tool_position_unknown">正文位置未记录的工具调用</string>
+    <string name="turn_tool_before_body">在正文首字之前收到调用</string>
+    <string name="turn_tool_position">收到调用时，已有 %1$d 个正文字符</string>
     <string name="turn_tool_requested">已请求</string>
     <string name="turn_tool_running">进行中</string>
     <string name="turn_tool_done">已完成</string>
@@ -97,5 +102,6 @@
     <string name="turn_translation_failed">翻译失败，请检查所选模型后重试。</string>
     <string name="turn_translation_model_needed">请选择在线聊天模型来翻译此回复。</string>
     <string name="turn_delete_this_reply">删除本回复</string>
+    <string name="turn_copy_all">全部复制</string>
     <string name="turn_text_copied">已复制文本</string>
 </resources>

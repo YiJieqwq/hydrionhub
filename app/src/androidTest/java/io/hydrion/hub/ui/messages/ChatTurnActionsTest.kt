@@ -110,7 +110,7 @@ class ChatTurnActionsTest {
         screen.onNodeWithContentDescription("发送消息").assertIsEnabled().performClick()
         awaitReply(prompt)
 
-        val thought = hasText("思考过程") and hasClickAction()
+        val thought = hasText(screen.activity.getString(R.string.turn_thinking)) and hasClickAction()
         val details = hasText("已读取当前消息与附件", substring = true)
         turnControl(1, thought)
         screen.onNode(details).assertDoesNotExist()

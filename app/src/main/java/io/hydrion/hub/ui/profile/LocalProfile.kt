@@ -22,6 +22,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import io.hydrion.hub.ui.messages.decodeAttachment
@@ -74,7 +75,9 @@ internal class LocalProfileStore(context: Context) {
 }
 
 @Composable
-internal fun ProfileAvatar(profile: LocalProfile, modifier: Modifier = Modifier) {
+internal fun ProfileAvatar(profile: LocalProfile, modifier: Modifier = Modifier,
+    background: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    fallback: @Composable () -> Unit = { Icon(Icons.Outlined.PersonOutline, null, Modifier.fillMaxWidth(.55f)) }) {
     val photo = profile.avatar
     val bitmap by key(photo) {
         produceState<Bitmap?>(initialValue = null) {
@@ -88,10 +91,10 @@ internal fun ProfileAvatar(profile: LocalProfile, modifier: Modifier = Modifier)
             }
         }
     }
-    Box(modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+    Box(modifier.clip(CircleShape).background(background),
         contentAlignment = Alignment.Center) {
         val image = bitmap
-        if (image == null) Icon(Icons.Outlined.PersonOutline, null, Modifier.fillMaxWidth(.55f))
+        if (image == null) fallback()
         else Image(image.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
     }
 }

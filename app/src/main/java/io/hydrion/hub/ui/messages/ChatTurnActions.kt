@@ -1,5 +1,7 @@
 package io.hydrion.hub.ui.messages
 
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -7,16 +9,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.CallSplit
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -33,34 +38,49 @@ import kotlinx.coroutines.launch
 internal enum class TurnSheet { More, Edit, Retry, Fork, SelectText, WebPreview, Translate, Selection, Delete, DeleteOthers, DeleteAll }
 
 @Composable
-private fun TurnIcon(icon: ImageVector, label: Int, enabled: Boolean = true, action: () -> Unit) {
-    IconButton(onClick = action, enabled = enabled, modifier = Modifier.size(40.dp),
-        colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)) {
-        Icon(icon, stringResource(label), Modifier.size(18.dp))
+private fun TurnIcon(@DrawableRes icon: Int, label: Int, enabled: Boolean = true, action: () -> Unit) {
+    val ink = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) .9f else .35f)
+    IconButton(onClick = action, enabled = enabled, modifier = Modifier.size(28.dp)) {
+        Icon(painterResource(icon), stringResource(label), Modifier.size(16.dp), tint = ink)
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TurnActionSheet(close: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    ModalBottomSheet(onDismissRequest = close, modifier = Modifier.testTag("turn-action-sheet"),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        dragHandle = {
+            Box(Modifier.padding(vertical = 6.dp).size(40.dp, 4.dp)
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .20f), RoundedCornerShape(2.dp)))
+        }, content = content)
 }
 
 @Composable
 private fun SheetGroup(content: @Composable ColumnScope.() -> Unit) {
-    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+    Surface(shape = RoundedCornerShape(12.dp), color = Color.Transparent) {
         Column(content = content)
     }
 }
 
 @Composable
 private fun SheetDivider() {
-    HorizontalDivider(Modifier.padding(start = 44.dp, end = 12.dp), thickness = .5.dp)
+    HorizontalDivider(Modifier.padding(start = 44.dp, end = 12.dp), thickness = .5.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (LocalMessageStyle.current.tone == MessageTone.Dark) .08f else .06f))
 }
 
 @Composable
-private fun SheetAction(id: Int, icon: ImageVector, enabled: Boolean = true, destructive: Boolean = false, action: () -> Unit) {
+private fun SheetAction(id: Int, @DrawableRes icon: Int, enabled: Boolean = true, destructive: Boolean = false, action: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = action)
-        .heightIn(min = 48.dp).padding(horizontal = 12.dp),
+        .heightIn(min = 44.dp).padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         val color = (if (destructive) colors.error else colors.onSurface).copy(alpha = if (enabled) 1f else .38f)
-        Icon(icon, null, Modifier.size(19.dp), tint = color)
-        Text(stringResource(id), color = color)
+        Icon(painterResource(icon), null, Modifier.size(20.dp), tint = color)
+        Text(stringResource(id), color = color, fontSize = 15.sp, lineHeight = 18.75.sp,
+            letterSpacing = 0.sp, fontWeight = FontWeight.Normal)
     }
 }
 
@@ -72,34 +92,41 @@ internal fun ChatTurnActions(msg: Message, chat: Conversation, vm: HubViewModel,
     val user = msg.role == Role.User
     val copyText = rememberPlainTextCopier(R.string.turn_text_copied)
     FlowRow(Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(2.dp, if (user) Alignment.End else Alignment.Start)) {
-        if (msg.text.isNotBlank()) {
-            TurnIcon(Icons.Outlined.ContentCopy, if (user) R.string.turn_copy else R.string.turn_copy_reply) {
-                copyText(msg.text)
-            }
-        }
-        TurnIcon(Icons.Outlined.Refresh, if (user) R.string.turn_resend else R.string.turn_retry,
-            !busy && chat.canRetryChatMessage(msg)) { open(msg, TurnSheet.Retry) }
-        if (user) {
-            TurnIcon(Icons.Outlined.Edit, R.string.turn_edit, !busy) { open(msg, TurnSheet.Edit) }
-        } else if (msg.text.isNotBlank()) {
-            TurnIcon(Icons.Outlined.Translate, R.string.turn_translate) { open(msg, TurnSheet.Translate) }
-        }
-        TurnIcon(Icons.Outlined.MoreHoriz, if (user) R.string.turn_more else R.string.turn_more_reply) {
-            open(msg, TurnSheet.More)
-        }
-        chat.versions[msg.id]?.let { group ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TurnIcon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, R.string.turn_previous, !busy && group.selected > 0) {
-                    vm.chooseMessageVersion(msg.id, group.selected - 1)
-                }
-                Text("${group.selected + 1}/${group.others.size + 1}", style = MaterialTheme.typography.labelSmall)
-                TurnIcon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, R.string.turn_next, !busy && group.selected < group.others.size) {
-                    vm.chooseMessageVersion(msg.id, group.selected + 1)
+        horizontalArrangement = if (user) Arrangement.End else Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        FlowRow(Modifier.align(Alignment.CenterVertically).padding(end = if (user) 0.dp else 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp, if (user) Alignment.End else Alignment.Start),
+            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (msg.text.isNotBlank()) {
+                TurnIcon(R.drawable.lucide_copy, if (user) R.string.turn_copy else R.string.turn_copy_reply) {
+                    copyText(msg.text)
                 }
             }
+            TurnIcon(R.drawable.lucide_refresh_cw, if (user) R.string.turn_resend else R.string.turn_retry,
+                !busy && chat.canRetryChatMessage(msg)) { open(msg, TurnSheet.Retry) }
+            if (user) {
+                TurnIcon(R.drawable.lucide_pencil, R.string.turn_edit, !busy) { open(msg, TurnSheet.Edit) }
+            } else if (msg.text.isNotBlank()) {
+                TurnIcon(R.drawable.lucide_languages, R.string.turn_translate) { open(msg, TurnSheet.Translate) }
+            }
+            TurnIcon(R.drawable.lucide_ellipsis, if (user) R.string.turn_more else R.string.turn_more_reply) {
+                open(msg, TurnSheet.More)
+            }
+            chat.versions[msg.id]?.let { group ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TurnIcon(R.drawable.lucide_chevron_left, R.string.turn_previous, !busy && group.selected > 0) {
+                        vm.chooseMessageVersion(msg.id, group.selected - 1)
+                    }
+                    Text("${group.selected + 1}/${group.others.size + 1}", Modifier.widthIn(min = 28.dp),
+                        textAlign = TextAlign.Center, fontSize = 12.sp, letterSpacing = 0.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = .8f))
+                    TurnIcon(R.drawable.lucide_chevron_right, R.string.turn_next, !busy && group.selected < group.others.size) {
+                        vm.chooseMessageVersion(msg.id, group.selected + 1)
+                    }
+                }
+            }
         }
-        if (!user) ReplyUsageButton(msg)
+        if (!user) ReplyUsageButton(msg, Modifier.align(Alignment.CenterVertically))
     }
 }
 
@@ -136,32 +163,32 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
     }
     val close = { show(null) }
     when (sheet) {
-        TurnSheet.More -> ModalBottomSheet(onDismissRequest = close,
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        TurnSheet.More -> TurnActionSheet(close) {
+            Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp.dp * .8f - 16.dp).coerceAtLeast(1.dp))
+                .verticalScroll(rememberScrollState()).padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (msg.text.isNotBlank()) SheetGroup {
-                    SheetAction(R.string.turn_select_copy, Icons.Outlined.TextFields) { show(TurnSheet.SelectText) }
+                    SheetAction(R.string.turn_select_copy, R.drawable.lucide_text_cursor_input) { show(TurnSheet.SelectText) }
                     SheetDivider()
-                    SheetAction(R.string.turn_copy_markdown_source, Icons.Outlined.Code) { copySource(msg.text); close() }
+                    SheetAction(R.string.turn_copy_markdown_source, R.drawable.lucide_code) { copySource(msg.text); close() }
                     SheetDivider()
-                    SheetAction(R.string.turn_web_preview, Icons.Outlined.Web) { show(TurnSheet.WebPreview) }
+                    SheetAction(R.string.turn_web_preview, R.drawable.lucide_book_open_text) { show(TurnSheet.WebPreview) }
                 }
                 SheetGroup {
-                    SheetAction(R.string.turn_edit, Icons.Outlined.Edit, !busy) { show(TurnSheet.Edit) }
+                    SheetAction(R.string.turn_edit, R.drawable.lucide_pencil, !busy) { show(TurnSheet.Edit) }
                     if (!user && msg.imageKeys.isNotEmpty()) {
                         SheetDivider()
-                        SheetAction(R.string.turn_prompt, Icons.Outlined.Image, !busy) { vm.preparePrompt(msg.id); close() }
+                        SheetAction(R.string.turn_prompt, R.drawable.lucide_image, !busy) { vm.preparePrompt(msg.id); close() }
                     }
                     SheetDivider()
-                    SheetAction(R.string.turn_selection, Icons.Outlined.Checklist, !busy) { show(TurnSheet.Selection) }
+                    SheetAction(R.string.turn_selection, R.drawable.lucide_square_check, !busy) { show(TurnSheet.Selection) }
                 }
                 SheetGroup {
-                    SheetAction(if (fixed) R.string.turn_clear_start else R.string.turn_set_start, Icons.Outlined.Flag, !busy) {
+                    SheetAction(if (fixed) R.string.turn_clear_start else R.string.turn_set_start, R.drawable.lucide_flag, !busy) {
                         vm.setContextStart(if (fixed) null else msg.id); close()
                     }
                     SheetDivider()
-                    SheetAction(R.string.turn_fork, Icons.AutoMirrored.Outlined.CallSplit, !busy) { show(TurnSheet.Fork) }
+                    SheetAction(R.string.turn_fork, R.drawable.lucide_git_fork, !busy) { show(TurnSheet.Fork) }
                 }
                 SheetGroup {
                     val deleteLabel = when {
@@ -169,16 +196,16 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
                         user -> R.string.turn_delete
                         else -> R.string.turn_delete_this_reply
                     }
-                    SheetAction(deleteLabel, Icons.Outlined.Delete, !busy && (group != null || !protected), destructive = true) {
+                    SheetAction(deleteLabel, R.drawable.lucide_trash2, !busy && (group != null || !protected), destructive = true) {
                         show(TurnSheet.Delete)
                     }
                     if (group != null) {
                         SheetDivider()
-                        SheetAction(R.string.turn_delete_others, Icons.Outlined.PlaylistRemove, !busy, destructive = true) {
+                        SheetAction(R.string.turn_delete_others, R.drawable.lucide_list_minus, !busy, destructive = true) {
                             show(TurnSheet.DeleteOthers)
                         }
                         SheetDivider()
-                        SheetAction(R.string.turn_delete_all, Icons.Outlined.DeleteSweep, !busy && !protected, destructive = true) {
+                        SheetAction(R.string.turn_delete_all, R.drawable.lucide_trash2, !busy && !protected, destructive = true) {
                             show(TurnSheet.DeleteAll)
                         }
                     }
@@ -190,13 +217,23 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
         TurnSheet.Selection -> ChatMessageSelection(chat, msg, close) { ids, all ->
             vm.deleteSelectedVersions(chat.id, ids, all)
         }
-        TurnSheet.SelectText -> {
-            AlertDialog(onDismissRequest = close, title = { Text(stringResource(R.string.turn_select_copy)) },
-                text = { SelectionContainer { Text(msg.text, Modifier.verticalScroll(rememberScrollState())) } },
-                confirmButton = { TextButton(onClick = close) { Text(stringResource(android.R.string.ok)) } },
-                dismissButton = {
-                    TextButton(onClick = { copySource(msg.text) }) { Text(stringResource(R.string.turn_copy_markdown_source)) }
-                })
+        TurnSheet.SelectText -> TurnActionSheet(close) {
+            val copyAll = rememberPlainTextCopier(R.string.turn_text_copied)
+            Column(Modifier.fillMaxWidth().height((LocalConfiguration.current.screenHeightDp.dp * .8f - 16.dp).coerceAtLeast(1.dp))
+                .padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    IconButton(onClick = { copySource(msg.text) }) {
+                        Icon(painterResource(R.drawable.lucide_code), stringResource(R.string.turn_copy_markdown_source), Modifier.size(20.dp))
+                    }
+                    Text(stringResource(R.string.turn_select_copy), fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    TextButton(onClick = { copyAll(msg.text) }) { Text(stringResource(R.string.turn_copy_all)) }
+                }
+                Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = 8.dp)) {
+                    SelectionContainer { Text(msg.text, fontSize = 15.sp, lineHeight = 22.5.sp, letterSpacing = 0.sp) }
+                }
+                TextButton(onClick = close, modifier = Modifier.align(Alignment.End)) { Text(stringResource(android.R.string.ok)) }
+            }
         }
         TurnSheet.Fork, TurnSheet.Edit -> {
             val fork = sheet == TurnSheet.Fork

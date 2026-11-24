@@ -1,21 +1,23 @@
 package io.hydrion.hub.ui.messages
 
+import android.content.ClipData
 import androidx.activity.compose.setContent
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.ClipboardManager
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalTextToolbar
-import androidx.compose.ui.platform.TextToolbar
-import androidx.compose.ui.platform.TextToolbarStatus
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -33,7 +35,6 @@ import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Message
 import io.hydrion.hub.model.Role
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,6 +43,7 @@ import org.junit.runner.RunWith
 class MessageSourceCopyTest {
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
 
+    @OptIn(ExperimentalTestApi::class)
     @Test fun sourceCopyWritesOnlyRawMarkdownAndKeepsTheBodySelectable() {
         val source = "# Heading\n\n```kotlin\n    val n = 1  \n```\n"
         val message = Message(id = "reply", role = Role.Assistant, text = source,
@@ -54,12 +56,11 @@ class MessageSourceCopyTest {
             override fun setText(annotatedString: AnnotatedString) { writes += annotatedString }
             override fun getText(): AnnotatedString? = writes.lastOrNull()
         }
-        val toolbar = SelectionToolbar()
         screen.activityRule.scenario.onActivity { activity ->
             val vm = ViewModelProvider(activity)[HubViewModel::class.java]
             activity.setContent {
                 MaterialTheme {
-                    CompositionLocalProvider(LocalClipboardManager provides clipboard, LocalTextToolbar provides toolbar) {
+                    CompositionLocalProvider(LocalClipboardManager provides clipboard) {
                         sheet.value?.let { ChatTurnOverlay(message, conversation, vm, false, it) { next -> sheet.value = next } }
                     }
                 }
@@ -70,7 +71,7 @@ class MessageSourceCopyTest {
         val copySource = screen.activity.getString(R.string.turn_copy_markdown_source)
         val ok = screen.activity.getString(android.R.string.ok)
         screen.onNode(hasText(selectText) and hasClickAction()).performScrollTo().performClick()
-        screen.onNode(hasText(copySource) and hasClickAction()).performClick()
+        screen.onNodeWithContentDescription(copySource).performClick()
         screen.runOnIdle {
             assertEquals(listOf(AnnotatedString(source)), writes)
             assertEquals(TurnSheet.SelectText, sheet.value)
@@ -80,31 +81,19 @@ class MessageSourceCopyTest {
         val layouts = mutableListOf<TextLayoutResult>()
         body.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         val word = layouts.single().getBoundingBox(source.indexOf("Heading") + 2).center
+        val systemClipboard = screen.activity.getSystemService(android.content.ClipboardManager::class.java)
+        screen.runOnIdle { systemClipboard.setPrimaryClip(ClipData.newPlainText("fixture", "")) }
         body.performTouchInput { longClick(word) }
-        screen.runOnIdle { assertTrue("A word remains selectable after copying the source", toolbar.canCopy) }
+        body.performKeyInput { keyDown(Key.CtrlLeft); pressKey(Key.C); keyUp(Key.CtrlLeft) }
+        screen.runOnIdle {
+            // The sheet owns a new Android window with its own platform selection toolbar.
+            assertEquals("Heading", systemClipboard.primaryClip?.getItemAt(0)?.text?.toString())
+        }
         screen.onNode(hasText(ok) and hasClickAction()).performClick()
         body.assertDoesNotExist()
         screen.runOnIdle {
             assertEquals(null, sheet.value)
             assertEquals(listOf(AnnotatedString(source)), writes)
-        }
-    }
-
-    private class SelectionToolbar : TextToolbar {
-        override var status = TextToolbarStatus.Hidden
-            private set
-        var canCopy = false
-            private set
-
-        override fun showMenu(rect: Rect, onCopyRequested: (() -> Unit)?, onPasteRequested: (() -> Unit)?,
-            onCutRequested: (() -> Unit)?, onSelectAllRequested: (() -> Unit)?) {
-            canCopy = onCopyRequested != null
-            status = TextToolbarStatus.Shown
-        }
-
-        override fun hide() {
-            canCopy = false
-            status = TextToolbarStatus.Hidden
         }
     }
 }

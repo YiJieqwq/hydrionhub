@@ -5,12 +5,25 @@ import android.os.Looper
 import android.content.Context
 import android.content.ClipboardManager
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import java.nio.file.Files
 import android.util.Base64
 import android.view.inspector.WindowInspector
 import android.webkit.WebView
+import android.widget.Magnifier
 import androidx.core.view.allViews
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -29,6 +42,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-h915dp")
@@ -48,7 +63,7 @@ class ReplyBubbleInteractionTest {
         condition()
     }
 
-    private fun open(): HubViewModel {
+    private fun open(width: Dp? = null, fontScale: Float = 1f, extra: Conversation? = null): HubViewModel {
         val host = screen.activity
         val directory = Files.createTempDirectory(host.cacheDir.toPath(), "bubble-history-").toFile()
         val app = object : Application() {
@@ -57,7 +72,7 @@ class ReplyBubbleInteractionTest {
             override fun getFilesDir() = directory
         }
         recorded = recordedChat()
-        HistoryFile(app).save(SavedWorkspace(listOf(original, recorded)))
+        HistoryFile(app).save(SavedWorkspace(listOfNotNull(original, recorded, extra)))
         val vm = screen.runOnIdle {
             ViewModelProvider(host, ViewModelProvider.AndroidViewModelFactory(app))["bubble-fixture", HubViewModel::class.java]
         }
@@ -68,7 +83,11 @@ class ReplyBubbleInteractionTest {
             assertEquals(answer.text, vm.state.value.current.messages.last().text)
             activity.setContent {
                 MaterialTheme {
-                    ProvideMessageStyle { MessageList(vm, vm.state.collectAsState().value, "", null, 0) }
+                    CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
+                        Box(if (width == null) Modifier.fillMaxWidth() else Modifier.width(width)) {
+                            ProvideMessageStyle { MessageList(vm, vm.state.collectAsState().value, "", null, 0) }
+                        }
+                    }
                 }
             }
         }
@@ -81,6 +100,47 @@ class ReplyBubbleInteractionTest {
     private fun more() = screen.onNodeWithContentDescription(label(R.string.turn_more_reply)).performClick()
     private fun tap(id: Int) = screen.onNode(hasText(label(id)) and hasClickAction()).performScrollTo().performClick()
     private fun confirm(id: Int) = screen.onNode(hasText(label(id)) and hasClickAction()).performClick()
+
+    @Test fun assistantHeaderFooterAndMenuUseTheReferencePhoneGeometry() {
+        val vm = open()
+        screen.runOnIdle { vm.openConversation(recorded.id) }
+        fun action(id: Int) = screen.onNodeWithContentDescription(label(id)).getUnclippedBoundsInRoot()
+        val timeline = screen.onNodeWithTag("message-timeline").getUnclippedBoundsInRoot()
+        val avatar = screen.onNodeWithTag("turn-assistant-avatar").getUnclippedBoundsInRoot()
+        val byline = screen.onNodeWithText(recorded.messages.last().model, useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val body = screen.onNodeWithTag("message-assistant-body").getUnclippedBoundsInRoot()
+        val copy = action(R.string.turn_copy_reply)
+        val retry = action(R.string.turn_retry)
+        val token = screen.onNodeWithText(screen.activity.getString(R.string.turn_tokens, 30L)).getUnclippedBoundsInRoot()
+        assertEquals(32.dp, avatar.right - avatar.left)
+        assertEquals(timeline.left + 20.dp, avatar.left)
+        assertEquals(avatar.right + 8.dp, byline.left)
+        assertEquals(avatar.left, body.left)
+        assertEquals(28.dp, copy.right - copy.left)
+        assertEquals(34.dp, retry.left - copy.left)
+        assertEquals(copy.top, token.top)
+        assertEquals(timeline.right - 20.dp, token.right)
+        more()
+        val first = screen.onNode(hasText(label(R.string.turn_select_copy)) and hasClickAction()).getUnclippedBoundsInRoot()
+        val second = screen.onNode(hasText(label(R.string.turn_copy_markdown_source)) and hasClickAction()).getUnclippedBoundsInRoot()
+        assertEquals(12.dp, first.left)
+        assertEquals(44.dp, first.bottom - first.top)
+        assertTrue(second.top - first.bottom <= 1.dp)
+    }
+
+    @Test fun narrowLargeTextFooterWrapsAndKeepsRevisionsAndUsageInteractive() {
+        open(width = 224.dp, fontScale = 1.6f)
+        val copy = screen.onNodeWithContentDescription(label(R.string.turn_copy_reply)).getUnclippedBoundsInRoot()
+        val next = screen.onNodeWithContentDescription(label(R.string.turn_next))
+        val usage = screen.onNode(hasText(label(R.string.turn_usage)) and hasClickAction())
+        assertTrue(next.getUnclippedBoundsInRoot().top >= copy.bottom)
+        assertTrue(usage.getUnclippedBoundsInRoot().top >= next.getUnclippedBoundsInRoot().bottom)
+        assertTrue(usage.getUnclippedBoundsInRoot().right <= 224.dp - 20.dp)
+        next.performClick()
+        screen.onNodeWithText("Last revision").assertIsDisplayed()
+        usage.performScrollTo().performClick()
+        screen.onAllNodesWithText(label(R.string.turn_unrecorded)).assertCountEquals(8)
+    }
 
     @Test fun deletingMiddleVersionKeepsContextAndForkCopiesOnlyTheSurvivingVisibleRevision() {
         val vm = open()
@@ -178,6 +238,25 @@ class ReplyBubbleInteractionTest {
         }
     }
 
+    @Test
+    @OptIn(ExperimentalTestApi::class)
+    @Config(shadows = [HeadlessMagnifier::class])
+    fun selectCopyCopiesOnlyTheLongPressedWordAndCanThenCopyTheEntireReply() {
+        open()
+        more()
+        tap(R.string.turn_select_copy)
+        val body = screen.onNode(hasText(answer.text) and hasAnyAncestor(hasTestTag("turn-action-sheet")))
+        val layouts = mutableListOf<TextLayoutResult>()
+        body.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val word = layouts.single().getBoundingBox(answer.text.indexOf("revision") + 2).center
+        body.performTouchInput { longClick(word) }
+        body.performKeyInput { keyDown(Key.CtrlLeft); pressKey(Key.C); keyUp(Key.CtrlLeft) }
+        val clipboard = screen.activity.getSystemService(ClipboardManager::class.java)
+        screen.runOnIdle { assertEquals("revision", clipboard.primaryClip?.getItemAt(0)?.text?.toString()) }
+        confirm(R.string.turn_copy_all)
+        screen.runOnIdle { assertEquals(answer.text, clipboard.primaryClip!!.getItemAt(0).text.toString()) }
+    }
+
     @Test fun sourceCopyAndWebPreviewUseOnlyTheChosenReply() {
         val vm = open()
         val source = "# Fixture heading\n\n<b>literal markup</b> [sample](https://example.invalid)\n"
@@ -225,12 +304,45 @@ class ReplyBubbleInteractionTest {
         screen.onNodeWithText("0 ms").assertDoesNotExist()
     }
 
+    @Test fun expandingAThoughtAndTwoToolStepsPreservesTheirOrderAroundVisibleText() {
+        val reply = answer.copy(text = "🙂Done", thought = "Review both entries", tool = "Chosen offline option",
+            toolCalls = listOf(ReplyToolCall("catalog_lookup", ToolCallState.Requested, 0),
+                ReplyToolCall("file_search", ToolCallState.Completed, 2),
+                ReplyToolCall("archived_lookup", ToolCallState.Incomplete)))
+        val fixture = Conversation(title = "Ordered steps", messages = listOf(question, reply), modelRoutes = emptyMap())
+        val vm = open(extra = fixture)
+        screen.runOnIdle { vm.openConversation(fixture.id) }
+        screen.onNodeWithText("Chosen offline option").assertIsDisplayed()
+            .assert(!hasAnyAncestor(hasTestTag("message-thought") or hasTestTag("message-tool-chain")))
+        val thought = screen.onNodeWithText(label(R.string.turn_thinking))
+        thought.performClick()
+        screen.onNodeWithText(reply.thought).assertIsDisplayed()
+        val search = screen.onNodeWithText("file_search")
+        search.performClick()
+        val recordedOffset = screen.activity.getString(R.string.turn_tool_position, 1)
+        screen.onNodeWithText(recordedOffset).assertIsDisplayed()
+        val topToBottom = listOf(reply.thought, "catalog_lookup", "🙂", "file_search", recordedOffset, "Done",
+            label(R.string.turn_tool_position_unknown), "archived_lookup")
+            .map { screen.onNodeWithText(it).getUnclippedBoundsInRoot() }
+        topToBottom.zipWithNext().forEach { (previous, next) -> assertTrue(previous.bottom <= next.top) }
+        thought.performClick()
+        screen.onNodeWithText(reply.thought).assertDoesNotExist()
+        screen.onNodeWithText(recordedOffset).assertIsDisplayed()
+        screen.runOnIdle { assertEquals(fixture, vm.state.value.current) }
+    }
+
     @Test fun toolBeforeTextPersistsTwoDifferentLatenciesAndDisplaysInclusiveOutput() {
         val vm = open()
         screen.runOnIdle { vm.openConversation(recorded.id) }
         screen.onNodeWithText("catalog_lookup").assertIsDisplayed()
         screen.onNodeWithText(label(R.string.turn_tool_requested)).assertIsDisplayed()
-        screen.onNodeWithText("Answer").assertIsDisplayed()
+        val tool = screen.onNodeWithText("catalog_lookup")
+        val body = screen.onNodeWithText("Answer")
+        assertTrue(tool.getUnclippedBoundsInRoot().bottom <= body.getUnclippedBoundsInRoot().top)
+        tool.performClick()
+        screen.onNodeWithText(label(R.string.turn_tool_before_body)).assertIsDisplayed()
+        tool.performClick()
+        screen.onNodeWithText(label(R.string.turn_tool_before_body)).assertDoesNotExist()
         val chip = screen.activity.getString(R.string.turn_tokens, 30L)
         screen.onNodeWithText(chip).performClick()
         fun value(labelId: Int, text: String) {
@@ -274,4 +386,13 @@ class ReplyBubbleInteractionTest {
         session.send("Fixture model", emptyMap(), null, null, remoteModel = RemoteModel("fixture", "chat"))
         session.state.first { !it.isGenerating }.current
     }
+}
+
+// The host has no Android display surface for the floating selection lens. Compose still performs
+// word hit-testing and selection and writes the result to Android's ClipboardManager.
+@Implements(Magnifier::class)
+class HeadlessMagnifier {
+    @Implementation protected fun show(x: Float, y: Float) = Unit
+    @Implementation protected fun show(x: Float, y: Float, lensX: Float, lensY: Float) = Unit
+    @Implementation protected fun dismiss() = Unit
 }

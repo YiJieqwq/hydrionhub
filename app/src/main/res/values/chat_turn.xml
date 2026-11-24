@@ -83,7 +83,12 @@
     <string name="turn_web_preview">Preview in WebView</string>
     <string name="turn_web_unavailable">Android System WebView is unavailable.</string>
     <string name="turn_local_tool">Selected tool</string>
-    <string name="turn_tool_chain">Tool calls (%1$d)</string>
+    <string name="turn_expanded">Expanded</string>
+    <string name="turn_collapsed">Collapsed</string>
+    <string name="turn_thinking">Deep thinking</string>
+    <string name="turn_tool_position_unknown">Tool calls with no recorded position</string>
+    <string name="turn_tool_before_body">Received before the first reply text</string>
+    <string name="turn_tool_position">Reply characters received before this call: %1$d</string>
     <string name="turn_tool_requested">Requested</string>
     <string name="turn_tool_running">In progress</string>
     <string name="turn_tool_done">Completed</string>
@@ -98,5 +103,6 @@
     <string name="turn_translation_failed">Translation failed. Check the selected model and try again.</string>
     <string name="turn_translation_model_needed">Select an online chat model to translate this reply.</string>
     <string name="turn_delete_this_reply">Delete this reply</string>
+    <string name="turn_copy_all">Copy all</string>
     <string name="turn_text_copied">Text copied</string>
 </resources>

@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -93,10 +94,9 @@ private fun richText(value: String, query: String): AnnotatedString {
 private val listLine = Regex("""^(\s*)(•|[0-9]{1,6}[.)])\s+(.+)""")
 
 @Composable
-private fun Paragraph(value: String, query: String) {
+private fun Paragraph(value: String, query: String, style: TextStyle) {
     val lines = remember(value) { value.lines().map { it to listLine.matchEntire(it) } }
     val markerLength = lines.maxOfOrNull { it.second?.groupValues?.get(2)?.length ?: 0 } ?: 0
-    val style = MaterialTheme.typography.bodyLarge
     if (markerLength == 0) {
         Text(richText(value, query), style = style)
         return
@@ -118,13 +118,13 @@ private fun Paragraph(value: String, query: String) {
 }
 
 @Composable
-internal fun MarkdownBody(value: String, query: String, modifier: Modifier) {
+internal fun MarkdownBody(value: String, query: String, modifier: Modifier, body: TextStyle = MaterialTheme.typography.bodyLarge) {
     val parsed = remember(value) { markdownBlocks(value) }
     SelectionContainer {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             parsed.forEach { block ->
                 when (block) {
-                    is MarkdownBlock.Paragraph -> Paragraph(block.value, query)
+                    is MarkdownBlock.Paragraph -> Paragraph(block.value, query, body)
                     is MarkdownBlock.Heading -> Text(
                         richText(block.value, query),
                         style = if (block.level < 3) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
@@ -132,7 +132,7 @@ internal fun MarkdownBody(value: String, query: String, modifier: Modifier) {
                     )
                     is MarkdownBlock.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
                         Spacer(Modifier.width(3.dp).fillMaxHeight().background(LocalMessageStyle.current.renderPalette.assistant.border.messageColor()))
-                        Text(richText(block.value, query), Modifier.padding(start = 12.dp), color = LocalContentColor.current)
+                        Text(richText(block.value, query), Modifier.padding(start = 12.dp), color = LocalContentColor.current, style = body)
                     }
                     is MarkdownBlock.Code -> CodeBlock(block, query)
                     MarkdownBlock.Rule -> HorizontalDivider()
