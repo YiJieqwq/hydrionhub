@@ -10,6 +10,8 @@ import android.provider.CalendarContract
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.*
+import androidx.compose.ui.unit.Dp
+import androidx.core.view.drawToBitmap
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -27,6 +29,7 @@ import io.hydrion.hub.provider.deepSeekProvider
 import androidx.compose.ui.semantics.SemanticsProperties
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.math.roundToInt
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
@@ -190,6 +193,113 @@ class HostToolPanelTest {
         register(Intent.ACTION_VIEW) { addDataScheme("https"); addCategory(Intent.CATEGORY_BROWSABLE) }
     }
 
+    @Test
+    @Config(qualifiers = "en-rUS-w401dp-h872dp-night-376dpi")
+    fun chatToolboxKeepsHeaderAndControlRailsAlignedWhenScrolled() {
+        installCalendarAndBrowser()
+        val catalog = mcpFile(screen.activity.assistantFeatureDirectory(), vm.state.value.current.assistantId)
+        val server = runBlocking {
+            vm.environments.saveContainer(null, "Panel container", null)
+            vm.environments.createEnvironment(vm.environments.catalog().containers.single().id, "Panel environment")
+            val added = catalog.update { it.add(listOf(McpDefinition("Panel local", null))) }.servers.single()
+            catalog.update { it.trust(added.id, true) }.servers.single()
+        }
+        open()
+        tap("Environment")
+        screen.onNode(hasText("Panel environment") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+        awaitUi { vm.state.value.current.environmentId != null }
+        act("Environment").assertTextContains("Panel environment")
+        val group = screen.onNodeWithTag("chat-tools-group:environment")
+        group.assertTextEquals(label(R.string.panel_work))
+        act("Path").assertTextContains("/workspace")
+        act("Permissions").assertTextContains(label(R.string.panel_permission_ask_detail)).assertTextContains(label(R.string.panel_ask))
+
+        fun bounds(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true).getUnclippedBoundsInRoot()
+        fun near(expected: Float, actual: Dp) = assertEquals(expected, actual.value, .8f)
+        val settings = bounds("panel-action:Settings")
+        val files = bounds("panel-action:Files")
+        val terminal = bounds("panel-action:Terminal")
+        near(30f, files.left - settings.left)
+        near(30f, terminal.left - files.left)
+        near(0f, terminal.top - settings.top)
+        tap("Settings")
+        screen.onNodeWithText(label(R.string.settings_environments)).assertIsDisplayed()
+        screen.onNodeWithContentDescription(label(R.string.settings_back)).performClick()
+
+        group.performClick().assertTextContains("Panel environment")
+        val page = bounds("chat-tools-page")
+        val heading = bounds("chat-tools-heading")
+        val title = bounds("chat-tools-title")
+        near(0f, (title.left + title.right - page.left - page.right) / 2)
+        near(34f, heading.bottom - heading.top)
+        near(4f, page.top - heading.bottom)
+        val localTag = "chat-tools-group:local"
+        val localHeader = bounds(localTag)
+        near(32f, localHeader.bottom - localHeader.top)
+        near(14f, localHeader.top - group.getUnclippedBoundsInRoot().bottom)
+        screen.onNodeWithTag(localTag).performClick()
+        val toggle = screen.onNodeWithTag("panel-switch:Time")
+        toggle.assertIsOff().performClick().assertIsOn()
+        act("Time").assertIsEnabled()
+        screen.onNodeWithTag("panel-switch:AskUser").assertIsNotEnabled()
+        screen.onNodeWithTag(localTag).assertTextContains("1/5")
+        val timeText = screen.onNodeWithText(label(R.string.panel_time), useUnmergedTree = true).getUnclippedBoundsInRoot()
+        near(42f, timeText.left - page.left)
+        val hit = bounds("panel-switch:Time")
+        val track = bounds("panel-track:Time")
+        near(48f, hit.right - hit.left)
+        near(48f, hit.bottom - hit.top)
+        near(12f, page.right - track.right)
+        val count = screen.onNodeWithText("1/5", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        near(0f, count.right - track.right)
+        val create = bounds("panel-switch:Create")
+        val calendar = bounds("panel-switch:Calendar")
+        near(56f, calendar.top - create.top)
+        near(0f, calendar.right - hit.right)
+        toggle.performScrollTo()
+        val painted = paintedSwitchSize("Time")
+        val density = screen.density.density
+        assertEquals(44f * density, painted.first.toFloat(), 3f)
+        assertEquals(26f * density, painted.second.toFloat(), 3f)
+
+        val mcp = act(server.id)
+        mcp.performScrollTo().assertIsOff()
+        val tools = screen.onNodeWithText("1 tool", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val serverTrack = bounds("panel-track:" + server.id)
+        near(8f, serverTrack.left - tools.right)
+        near(0f, track.right - serverTrack.right)
+        mcp.performClick()
+        awaitUi { screen.onAllNodes(hasTestTag("panel-action:" + server.id) and isOn()).fetchSemanticsNodes().isNotEmpty() }
+        screen.onNodeWithTag("chat-tools-group:mcp").assertTextContains("1/1")
+        near(0f, bounds("chat-tools-title").top - title.top)
+        screen.onNodeWithTag("chat-tools-back").performClick()
+        assertEquals(Draft(text = "Panel draft"), vm.state.value.draft)
+        println("Tool panel: density=$density, fontScale=" + screen.density.fontScale +
+            ", viewport width=" + (page.right - page.left) + ", row pitch=" + (calendar.top - create.top) +
+            ", painted track=$painted px, header=" + (localHeader.bottom - localHeader.top) +
+            ", label inset=" + (timeText.left - page.left) + ", actions pitch=" + (files.left - settings.left))
+    }
+
+    // Measure the actual enabled track in the rendered window, including its rounded ends.
+    private fun paintedSwitchSize(id: String): Pair<Int, Int> {
+        val bounds = screen.onNodeWithTag("panel-track:" + id, useUnmergedTree = true).assertIsDisplayed()
+            .fetchSemanticsNode().boundsInWindow
+        return screen.runOnIdle {
+            val image = screen.activity.window.decorView.drawToBitmap()
+            val left = bounds.left.roundToInt()
+            val midY = bounds.center.y.roundToInt()
+            val fill = image.getPixel((bounds.left + bounds.width / 4).roundToInt(), midY)
+            assertNotEquals(image.getPixel(left - 3, midY), fill)
+            val pixels = android.graphics.Rect()
+            for (y in bounds.top.roundToInt() - 3 .. bounds.bottom.roundToInt() + 3) {
+                for (x in left - 3 .. bounds.right.roundToInt() + 3) {
+                    if (image.getPixel(x, y) == fill) pixels.union(x, y, x + 1, y + 1)
+                }
+            }
+            pixels.width() to pixels.height()
+        }
+    }
+
     @Test fun localToolsRequireAManualHandoffAndRespectDenial() {
         installCalendarAndBrowser()
         // Manual actions must remain reachable even when this provider cannot use chat tool modes.
@@ -203,11 +313,11 @@ class HostToolPanelTest {
         screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
         act("AskUser").assertIsNotEnabled()
         act("Time").assertIsNotEnabled()
-        screen.onNodeWithTag("chat-tools-group:local").assertTextContains("Manual 0/5")
+        screen.onNodeWithTag("chat-tools-group:local").assertTextContains("0/5")
         for (id in listOf("Time", "Create", "Calendar", "Browser")) enable(id)
         val assistant = screen.runOnIdle { decodeWorkspace(encodeWorkspace(model.backupSnapshot())).assistants.single() }
         assertEquals(ManualPanelTool.entries.toSet(), assistant.manualPanelTools)
-        screen.onNodeWithTag("chat-tools-group:local").assertTextContains("Manual 4/5")
+        screen.onNodeWithTag("chat-tools-group:local").assertTextContains("4/5")
         tap("Time")
         screen.onNodeWithTag("panel-current-time").assertIsDisplayed()
         dialogButton(android.R.string.ok)

@@ -1,27 +1,17 @@
 package io.hydrion.hub.ui.composer
 
+import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -56,7 +46,7 @@ internal fun <T> panelData(source: Any, revision: Int = 0, read: suspend () -> T
     }.value
 }
 
-private data class Entry(val page: HostToolPage, val icon: ImageVector, val detail: String? = null,
+private data class Entry(val page: HostToolPage, @DrawableRes val icon: Int, val detail: String? = null,
     val enabled: Boolean = true)
 
 @Composable
@@ -99,7 +89,7 @@ internal fun HostToolGroups(vm: HubViewModel, query: String, legacyMatches: Bool
         }
     }
     fun show(page: HostToolPage) { destination = page }
-    @Composable fun appRow(page: HostToolPage, icon: ImageVector, action: PanelAppAction, detail: Int): Entry {
+    @Composable fun appRow(page: HostToolPage, @DrawableRes icon: Int, action: PanelAppAction, detail: Int): Entry {
         val available = handlers?.getOrNull()?.get(action) == true
         val description = when {
             handlers == null -> R.string.panel_loading
@@ -110,49 +100,48 @@ internal fun HostToolGroups(vm: HubViewModel, query: String, legacyMatches: Bool
         return Entry(page, icon, gate ?: stringResource(description), gate == null && available)
     }
     val envRows = listOf(
-        Entry(HostToolPage.Environment, Icons.Outlined.Folder, selectedName, canUse && catalog != null),
-        Entry(HostToolPage.Settings, Icons.Outlined.Settings),
-        Entry(HostToolPage.Files, Icons.Outlined.FolderOpen, needsEnv ?: gate, env != null && gate == null),
-        Entry(HostToolPage.Terminal, Icons.Outlined.Terminal, needsEnv ?: stringResource(R.string.panel_terminal_detail), env != null),
-        Entry(HostToolPage.Path, Icons.Outlined.Folder, needsEnv ?: gate ?: env?.guestCwd, env != null && gate == null),
-        Entry(HostToolPage.Info, Icons.Outlined.Info, needsEnv ?: catalog?.getOrNull()?.containers?.find { it.id == env?.containerId }?.name, env != null),
-        Entry(HostToolPage.Permissions, Icons.Outlined.Security, stringResource(if (denied) R.string.panel_deny else R.string.panel_ask), canUse)
+        Entry(HostToolPage.Environment, R.drawable.lucide_folder_code, selectedName, canUse && catalog != null),
+        Entry(HostToolPage.Settings, R.drawable.lucide_settings2),
+        Entry(HostToolPage.Files, R.drawable.lucide_folder_open, needsEnv ?: gate, env != null && gate == null),
+        Entry(HostToolPage.Terminal, R.drawable.lucide_terminal, needsEnv ?: stringResource(R.string.panel_terminal_detail), env != null),
+        Entry(HostToolPage.Path, R.drawable.lucide_folder, needsEnv ?: gate ?: env?.guestCwd, env != null && gate == null),
+        Entry(HostToolPage.Info, R.drawable.lucide_hard_drive, needsEnv ?: catalog?.getOrNull()?.containers?.find { it.id == env?.containerId }?.name, env != null),
+        Entry(HostToolPage.Permissions, R.drawable.lucide_shield, stringResource(if (denied) R.string.panel_deny else R.string.panel_ask), canUse)
     )
     val localRows = listOf(
-        Entry(HostToolPage.Time, Icons.Outlined.AccessTime),
-        Entry(HostToolPage.AskUser, Icons.Outlined.QuestionAnswer, stringResource(R.string.panel_ask_unavailable), false),
-        appRow(HostToolPage.Create, Icons.Outlined.Event, PanelAppAction.CreateEvent, R.string.panel_calendar_create_detail),
-        appRow(HostToolPage.Calendar, Icons.Outlined.DateRange, PanelAppAction.ViewEvents, R.string.panel_calendar_view_detail),
-        appRow(HostToolPage.Browser, Icons.Outlined.Language, PanelAppAction.Browser, R.string.panel_browser_detail)
+        Entry(HostToolPage.Time, R.drawable.lucide_clock),
+        Entry(HostToolPage.AskUser, R.drawable.lucide_message_circle_question, stringResource(R.string.panel_ask_unavailable), false),
+        appRow(HostToolPage.Create, R.drawable.lucide_calendar_plus, PanelAppAction.CreateEvent, R.string.panel_calendar_create_detail),
+        appRow(HostToolPage.Calendar, R.drawable.lucide_calendar, PanelAppAction.ViewEvents, R.string.panel_calendar_view_detail),
+        appRow(HostToolPage.Browser, R.drawable.lucide_app_window, PanelAppAction.Browser, R.string.panel_browser_detail)
     )
     @Composable fun matches(title: String, entries: List<Entry>): List<Entry> {
         val labels = entries.associate { it.page to stringResource(it.page.label) }
         return matchingToolChoices(query, title, entries) { labels.getValue(it.page) + " " + it.detail.orEmpty() }
     }
-    @Composable fun row(entry: Entry, modifier: Modifier = Modifier) {
-        PanelActionRow(stringResource(entry.page.label), entry.icon, entry.detail, entry.enabled, entry.page.name, modifier) { show(entry.page) }
-    }
     val workTitle = stringResource(R.string.panel_work)
     val work = matches(workTitle, envRows)
-    PanelSection("environment", workTitle, selectedName, work.isNotEmpty(), true, query.isNotEmpty()) {
-        Column {
-            // On an unfiltered panel the name opens binding/settings, with the two host actions alongside.
-            // A search for an individual action also exposes its full label and availability reason.
-            val inline = query.isEmpty()
-            if (inline) {
-                val binding = envRows.first()
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    row(binding, Modifier.weight(1f))
-                    for (entry in envRows.filter { it.page == HostToolPage.Files || it.page == HostToolPage.Terminal }) {
-                        IconButton(onClick = { show(entry.page) }, enabled = entry.enabled,
-                            modifier = Modifier.testTag("panel-action:" + entry.page.name).keepToolEditorFocus()) {
-                            Icon(entry.icon, stringResource(entry.page.label), Modifier.size(20.dp))
-                        }
-                    }
-                }
-            }
+    val browsing = query.isEmpty()
+    PanelSection("environment", workTitle, selectedName, work.isNotEmpty(), true, !browsing, summaryOnCollapseOnly = true) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             for (entry in work) {
-                if (!inline || entry.page !in setOf(HostToolPage.Environment, HostToolPage.Settings, HostToolPage.Files, HostToolPage.Terminal)) row(entry)
+                val page = entry.page
+                val title = stringResource(page.label)
+                if (browsing && page == HostToolPage.Environment) {
+                    PanelToolRow(selectedName, entry.icon, enabled = entry.enabled, id = page.name,
+                        chevron = false, compactActions = true, controls = {
+                            for (action in envRows.filter { it.page == HostToolPage.Files || it.page == HostToolPage.Terminal ||
+                                (env != null && it.page == HostToolPage.Settings) }) {
+                                InlinePanelAction(stringResource(action.page.label), action.icon, action.enabled, action.page.name) { show(action.page) }
+                            }
+                        }) { show(page) }
+                } else if (!browsing || page !in setOf(HostToolPage.Settings, HostToolPage.Files, HostToolPage.Terminal)) {
+                    val explanation = if (page == HostToolPage.Permissions)
+                        stringResource(if (denied) R.string.panel_permission_deny_detail else R.string.panel_permission_ask_detail)
+                    else null
+                    PanelToolRow(title, entry.icon, explanation, entry.enabled, page.name,
+                        value = entry.detail) { show(page) }
+                }
             }
         }
     }
@@ -160,21 +149,20 @@ internal fun HostToolGroups(vm: HubViewModel, query: String, legacyMatches: Bool
     val local = matches(localTitle, localRows)
     val choices = state.assistants.find { it.id == chat.assistantId }?.manualPanelTools.orEmpty()
     val active = localRows.count { canUse && it.enabled && it.page.manualTool in choices }
-    PanelSection("local", localTitle, stringResource(R.string.panel_manual_only, active, localRows.size), local.isNotEmpty(), false, query.isNotEmpty()) {
-        Column {
+    PanelSection("local", localTitle, "$active/${localRows.size}", local.isNotEmpty(), false, !browsing,
+        summaryDescription = stringResource(R.string.panel_manual_only, active, localRows.size)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             for (entry in local) {
                 val tool = entry.page.manualTool
                 val available = entry.enabled && canUse && tool != null
                 val selected = available && tool in choices
                 val title = stringResource(entry.page.label)
-                val switchLabel = stringResource(R.string.panel_switch, title)
-                Row(Modifier.fillMaxWidth().padding(end = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    PanelActionRow(title, entry.icon, entry.detail, selected, entry.page.name, Modifier.weight(1f),
-                        highlight = selected, chevron = false) { show(entry.page) }
-                    Switch(selected, onCheckedChange = { on -> if (tool != null) vm.setManualPanelTool(chat.assistantId, tool, on) },
-                        enabled = available, modifier = Modifier.testTag("panel-switch:" + entry.page.name)
-                            .keepToolEditorFocus().semantics { contentDescription = switchLabel })
-                }
+                PanelToolRow(title, entry.icon, entry.detail.takeUnless { browsing && available }, selected, entry.page.name,
+                    available = available, highlight = selected, chevron = false, controls = {
+                        ManualPanelSwitch(selected, available, stringResource(R.string.panel_switch, title), entry.page.name) { on ->
+                            if (tool != null) vm.setManualPanelTool(chat.assistantId, tool, on)
+                        }
+                    }) { show(entry.page) }
             }
         }
     }
@@ -186,14 +174,15 @@ internal fun HostToolGroups(vm: HubViewModel, query: String, legacyMatches: Bool
     val mcpVisible = serverMatches.isNotEmpty() || showManage
     val serverCount = if (mcp?.isSuccess == true) "${servers.count { it.canTest }}/${servers.size}" else "—"
     PanelSection("mcp", mcpTitle, serverCount, mcpVisible, true, query.isNotEmpty()) {
-        Column {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (showManage && servers.isEmpty()) {
                 val status = when {
                     mcp == null -> R.string.panel_loading
                     mcp.isFailure -> R.string.feature_unavailable
                     else -> R.string.panel_no_servers
                 }
-                Text(stringResource(status), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(status), Modifier.padding(start = 42.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             for (server in serverMatches) {
                 val local = server.definition.endpoint == null
@@ -203,12 +192,13 @@ internal fun HostToolGroups(vm: HubViewModel, query: String, legacyMatches: Bool
                     !server.trusted -> R.string.panel_untrusted
                     else -> R.string.mcp_in_process
                 }
-                val description = if (local) {
+                val toolCount = if (local) {
                     val count = LocalMcpFixture.toolNames.size
-                    stringResource(detail) + " · " + pluralStringResource(R.plurals.panel_tool_count, count, count)
-                } else stringResource(detail)
-                PanelActionRow(server.definition.name, Icons.Outlined.Dns, description, canUse && !saving,
-                    server.id, checked = server.enabled.takeIf { selectable }) {
+                    pluralStringResource(R.plurals.panel_tool_count, count, count)
+                } else null
+                PanelToolRow(server.definition.name, R.drawable.lucide_server,
+                    stringResource(detail).takeUnless { browsing && selectable }, canUse && !saving, server.id,
+                    value = toolCount, checked = server.enabled.takeIf { selectable }) {
                     if (!selectable) show(HostToolPage.Mcp)
                     else if (!saving && vm.state.value.current.assistantId == chat.assistantId) {
                         saving = true
@@ -228,8 +218,8 @@ internal fun HostToolGroups(vm: HubViewModel, query: String, legacyMatches: Bool
                 }
             }
             if (saveError) Text(stringResource(R.string.runtime_error), color = MaterialTheme.colorScheme.error)
-            if (showManage) PanelActionRow(manageTitle, Icons.Outlined.Settings,
-                state.assistants.find { it.id == chat.assistantId }?.name, canUse, "Mcp") { show(HostToolPage.Mcp) }
+            if (showManage) PanelToolRow(manageTitle, R.drawable.lucide_settings2, enabled = canUse, id = "Mcp",
+                value = state.assistants.find { it.id == chat.assistantId }?.name) { show(HostToolPage.Mcp) }
         }
     }
     if (!legacyMatches && work.isEmpty() && local.isEmpty() && !mcpVisible) {
@@ -243,36 +233,5 @@ internal fun HostToolGroups(vm: HubViewModel, query: String, legacyMatches: Bool
                 if (page in listOf(HostToolPage.Mcp, HostToolPage.Settings, HostToolPage.Path, HostToolPage.Environment)) revision++
             }
         }
-    }
-}
-
-@Composable
-private fun Modifier.keepToolEditorFocus(): Modifier {
-    val input = LocalInputModeManager.current
-    return focusProperties { canFocus = input.inputMode != InputMode.Touch }
-}
-
-@Composable
-internal fun PanelActionRow(title: String, icon: ImageVector, detail: String?, enabled: Boolean, id: String,
-    modifier: Modifier = Modifier, checked: Boolean? = null, highlight: Boolean = checked == true, chevron: Boolean = true, onClick: () -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    val labelColor = when {
-        highlight -> colors.primary
-        enabled -> colors.onSurface
-        else -> colors.onSurfaceVariant
-    }
-    val action = if (checked == null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-        else Modifier.toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = { onClick() })
-    Row(modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
-        .testTag("panel-action:" + id).keepToolEditorFocus().then(action)
-        .heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Icon(icon, null, Modifier.size(20.dp), tint = if (highlight) colors.primary else colors.onSurfaceVariant)
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyMedium, color = labelColor)
-            if (!detail.isNullOrEmpty()) Text(detail, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-        }
-        if (checked != null) Switch(checked = checked, onCheckedChange = null, enabled = enabled)
-        else if (enabled && chevron) Icon(Icons.Outlined.ChevronRight, null, Modifier.size(16.dp), tint = colors.onSurfaceVariant)
     }
 }

@@ -23,7 +23,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.automirrored.outlined.ManageSearch
 import androidx.compose.material.icons.outlined.Palette
@@ -53,6 +52,7 @@ import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -63,6 +63,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -102,14 +103,16 @@ internal fun ChatToolsPage(
     val count = if (modelToolsEnabled) listOf(search, imageTool).count { it != Disabled } else 0
     val countLabel = stringResource(R.string.chat_tools_enabled_count, count)
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Box(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().testTag("chat-tools-heading").heightIn(min = 34.dp).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
             Text(stringResource(R.string.chat_tools_title), Modifier.padding(horizontal = 48.dp).testTag("chat-tools-title"),
-                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                style = MaterialTheme.typography.titleMedium, fontSize = 18.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
             Text(stringResource(R.string.panel_mode_count, count), Modifier.align(Alignment.CenterEnd).testTag("chat-tools-count")
                 .clearAndSetSemantics { contentDescription = countLabel },
                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Column(Modifier.fillMaxSize().testTag("chat-tools-page").verticalScroll(if (term.isEmpty()) browsing else filtered)) {
+        Spacer(Modifier.height(4.dp))
+        Column(Modifier.fillMaxSize().testTag("chat-tools-page").verticalScroll(if (term.isEmpty()) browsing else filtered),
+            verticalArrangement = Arrangement.spacedBy(14.dp)) {
             ChatToolGroups(search, imageTool, term, onSearch, onImageTool, vm, modelToolsEnabled)
         }
     }
@@ -134,7 +137,6 @@ private fun ChatToolGroups(
     HostToolGroups(vm, query, webMatches.isNotEmpty() || imageMatches.isNotEmpty())
     ToolGroup("web", webTitle, web, webMatches, search, initiallyOpen = true,
         filtering = query.isNotEmpty(), enabled = modelToolsEnabled, onSelect = onSearch)
-    if (webMatches.isNotEmpty() && imageMatches.isNotEmpty()) Spacer(Modifier.height(14.dp))
     ToolGroup("image", imageTitle, image, imageMatches, imageTool, initiallyOpen = false,
         filtering = query.isNotEmpty(), enabled = modelToolsEnabled, onSelect = onImageTool)
 }
@@ -204,7 +206,8 @@ private fun ToolGroup(
 
 @Composable
 internal fun PanelSection(id: String, title: String, summary: String, visible: Boolean, initiallyOpen: Boolean,
-    filtering: Boolean, content: @Composable () -> Unit) {
+    filtering: Boolean, summaryOnCollapseOnly: Boolean = false, summaryDescription: String? = null,
+    content: @Composable () -> Unit) {
     var expanded by rememberSaveable(id) { mutableStateOf(initiallyOpen) }
     if (!visible) return
     val colors = MaterialTheme.colorScheme
@@ -214,25 +217,29 @@ internal fun PanelSection(id: String, title: String, summary: String, visible: B
     val inputMode = LocalInputModeManager.current
     val keepEditorFocus = Modifier.focusProperties { canFocus = inputMode.inputMode != InputMode.Touch }
     val toggle = if (filtering) Modifier else keepEditorFocus.clickable(role = Role.Button, onClickLabel = toggleLabel) { expanded = !expanded }
-    Row(
-        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).testTag("chat-tools-group:$id").then(toggle)
-            .semantics { stateDescription = describeState }
-            .heightIn(min = 44.dp).padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-            Icon(if (showChoices) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, null,
-                Modifier.size(16.dp), tint = colors.onSurfaceVariant)
+    Column {
+        Row(
+            Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).testTag("chat-tools-group:$id").then(toggle)
+                .semantics { stateDescription = describeState }
+                .heightIn(min = 32.dp).padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                Icon(painterResource(if (showChoices) R.drawable.lucide_chevron_down else R.drawable.lucide_chevron_right),
+                    null, Modifier.size(14.dp), tint = colors.onSurfaceVariant)
+            }
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                fontSize = 13.sp, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant)
+            if (summary.isNotEmpty() && (!summaryOnCollapseOnly || !showChoices)) {
+                val description = if (summaryDescription == null) Modifier else Modifier.semantics { contentDescription = summaryDescription }
+                Text(summary, Modifier.widthIn(max = 160.dp).then(description),
+                    style = MaterialTheme.typography.bodySmall, fontSize = 13.sp, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End, color = colors.onSurfaceVariant)
+            }
         }
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        if (summary.isNotEmpty()) Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-            Text(summary, Modifier.widthIn(max = 160.dp),
-                style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.End, color = colors.onSurfaceVariant)
-        }
+        AnimatedVisibility(showChoices) { content() }
     }
-    AnimatedVisibility(showChoices) { content() }
 }
 
 @Composable

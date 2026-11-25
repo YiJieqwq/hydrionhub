@@ -1,6 +1,7 @@
 package io.hydrion.hub.ui.composer
 
 import android.content.ActivityNotFoundException
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
@@ -18,6 +20,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -219,6 +223,20 @@ private fun PanelApproval(title: String, detail: String, close: () -> Unit, allo
 }
 
 @Composable
+private fun DirectoryRow(name: String, icon: ImageVector, enabled: Boolean, id: String, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).testTag("panel-action:$id").keepToolEditorFocus()
+        .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        .heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Icon(icon, null, Modifier.size(20.dp), tint = colors.onSurfaceVariant)
+        Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+            color = if (enabled) colors.onSurface else colors.onSurfaceVariant)
+        if (enabled) Icon(Icons.Outlined.ChevronRight, null, Modifier.size(16.dp), tint = colors.onSurfaceVariant)
+    }
+}
+
+@Composable
 private fun WorkspaceDirectoryPage(vm: HubViewModel, env: ProotEnvironment, selecting: Boolean, permitted: () -> Boolean, close: () -> Unit) {
     var path by rememberSaveable(env.id) { mutableStateOf(env.guestCwd) }
     var busy by remember { mutableStateOf(false) }
@@ -232,8 +250,8 @@ private fun WorkspaceDirectoryPage(vm: HubViewModel, env: ProotEnvironment, sele
             Column(Modifier.padding(horizontal = 16.dp)) {
                 Text(path, Modifier.testTag("panel-directory-path"), style = MaterialTheme.typography.titleSmall)
                 if (selecting) Text(stringResource(R.string.panel_path_shared), style = MaterialTheme.typography.bodySmall)
-                if (path != "/workspace") PanelActionRow(stringResource(R.string.panel_parent_folder), Icons.Outlined.ArrowUpward,
-                    null, !busy, "Parent") { parent() }
+                if (path != "/workspace") DirectoryRow(stringResource(R.string.panel_parent_folder), Icons.Outlined.ArrowUpward,
+                    !busy, "Parent") { parent() }
                 if (error || entries?.isFailure == true) {
                     Text(stringResource(if (error) R.string.runtime_error else R.string.panel_directory_failed), color = MaterialTheme.colorScheme.error)
                     TextButton({ revision++; error = false }) { Text(stringResource(R.string.env_retry)) }
@@ -243,7 +261,7 @@ private fun WorkspaceDirectoryPage(vm: HubViewModel, env: ProotEnvironment, sele
                 if (entries?.isSuccess == true && items.isEmpty()) Text(stringResource(R.string.panel_empty_folder), Modifier.padding(vertical = 12.dp))
                 LazyColumn(Modifier.weight(1f)) {
                     items(items, key = { it.name }) { item ->
-                        if (item.directory) PanelActionRow(item.name, Icons.Outlined.Folder, null, !busy, "folder:" + item.name) {
+                        if (item.directory) DirectoryRow(item.name, Icons.Outlined.Folder, !busy, "folder:" + item.name) {
                             if (permitted()) path += "/" + item.name
                         } else Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
