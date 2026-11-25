@@ -1,7 +1,6 @@
 package io.hydrion.hub.runtime
 
 import android.content.Context
-import android.util.AtomicFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,14 +10,20 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.nio.file.Files
-import java.nio.file.LinkOption
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.util.UUID
 
 /** App-private configuration only. No external path, command, permission, or mount comes from the catalog. */
-internal class ProotEnvironmentStore(context: Context) {
+internal class ProotEnvironmentStore(context: Context, private val replaceFile: (Path, Path) -> Unit = { source, target ->
+    Files.move(source, target, ATOMIC_MOVE, REPLACE_EXISTING)
+}) {
     private val app = context.applicationContext
-    private val file = File(app.filesDir, "proot-environments-v1.json")
-    private val catalogFile = AtomicFile(file)
+    private val file = app.filesDir.toPath().resolve("proot-environments-v1.json")
+    private val staged = file.resolveSibling(file.fileName.toString() + ".new")
+    private val backup = file.resolveSibling(file.fileName.toString() + ".bak")
     private val changed = MutableStateFlow(0)
     val revision = changed.asStateFlow()
     private val files = ProotFiles(app.filesDir, app.applicationInfo.nativeLibraryDir?.let(::File))
@@ -97,19 +102,17 @@ internal class ProotEnvironmentStore(context: Context) {
     }
 
     private fun read(): ProotCatalog {
-        // Android versions of AtomicFile may consult or replace one of these files during recovery.
-        val backup = File(file.path + ".bak")
-        for (candidate in listOf(app.filesDir, file, backup, File(file.path + ".new"))) {
-            if (Files.isSymbolicLink(candidate.toPath())) throw IOException("运行环境目录不可经过符号链接。")
+        for (path in listOf(file.parent, file, backup, staged)) {
+            if (Files.isSymbolicLink(path)) throw IOException("运行环境目录不可经过符号链接。")
         }
-        val input = try {
-            catalogFile.openRead()
-        } catch (e: FileNotFoundException) {
-            if (!Files.notExists(file.toPath(), LinkOption.NOFOLLOW_LINKS) ||
-                !Files.notExists(backup.toPath(), LinkOption.NOFOLLOW_LINKS)) throw e
-            return ProotCatalog()
+        // Older Android AtomicFile writers kept the last committed catalog in .bak during a write.
+        // A leftover .new has never been committed, even on the first save.
+        if (!Files.notExists(backup, NOFOLLOW_LINKS)) {
+            if (!Files.isRegularFile(backup, NOFOLLOW_LINKS)) throw IOException("Invalid environment catalog backup")
+            replaceFile(backup, file)
         }
-        val json = input.bufferedReader(Charsets.UTF_8).use { JSONObject(it.readText()) }
+        if (Files.notExists(file, NOFOLLOW_LINKS)) return ProotCatalog()
+        val json = Files.newBufferedReader(file, Charsets.UTF_8).use { JSONObject(it.readText()) }
         return ProotCatalog.fromJson(json)
     }
 
@@ -123,15 +126,20 @@ internal class ProotEnvironmentStore(context: Context) {
 
     private fun write(next: ProotCatalog) {
         val encoded = next.toJson().toString().toByteArray(Charsets.UTF_8)
-        val output = catalogFile.startWrite()
+        if (Files.isRegularFile(staged, NOFOLLOW_LINKS)) Files.delete(staged)
+        Files.createFile(staged)
         try {
-            output.write(encoded)
-            catalogFile.finishWrite(output)
-            changed.value++
+            staged.toFile().outputStream().use { stream ->
+                stream.write(encoded)
+                stream.fd.sync()
+            }
+            // A failed replacement must reach the caller so workspace creation can roll back.
+            replaceFile(staged, file)
         } catch (failure: Throwable) {
-            catalogFile.failWrite(output)
+            try { Files.deleteIfExists(staged) } catch (cleanup: IOException) { failure.addSuppressed(cleanup) }
             throw failure
         }
+        changed.value++
     }
 
     private companion object {

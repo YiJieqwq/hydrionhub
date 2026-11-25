@@ -44,19 +44,25 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class HostToolPanelTest {
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
-    private val owner = object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() }
+    private lateinit var owner: ViewModelStoreOwner
+    private lateinit var app: Application
     private lateinit var vm: HubViewModel
     private lateinit var files: Path
 
     @Before fun start() {
         val host = screen.activity
         files = Files.createTempDirectory(host.cacheDir.toPath(), "panel-")
-        val app = object : Application() {
+        app = object : Application() {
             init { attachBaseContext(host.applicationContext) }
             override fun getApplicationContext(): Context = this
             override fun getFilesDir() = files.toFile()
             override fun getSharedPreferences(name: String, mode: Int) = baseContext.getSharedPreferences(files.fileName.toString() + name, mode)
         }
+        mountPanelHost()
+    }
+
+    private fun mountPanelHost() {
+        owner = object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() }
         screen.runOnIdle {
             val factory = object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -95,6 +101,14 @@ class HostToolPanelTest {
         screen.onNodeWithTag("chat-tools-page").assertIsDisplayed()
     }
 
+    private fun saveRuntimeName(name: String) {
+        val field = hasSetTextAction() and hasText(label(R.string.runtime_name))
+        screen.onNode(field).performTextReplacement(name)
+        screen.onNode(hasText(label(R.string.settings_save)) and hasClickAction()).performScrollTo().performClick()
+        awaitUi { screen.onAllNodes(field).fetchSemanticsNodes().isEmpty() }
+        waitForText(name)
+    }
+
     @Test fun emptyEnvironmentCanBeBoundThenBrowsedFromTheSamePanelWithConsent() {
         open()
         act("Terminal").assertIsNotEnabled()
@@ -109,18 +123,27 @@ class HostToolPanelTest {
         screen.onNodeWithText(label(R.string.env_none)).assertIsDisplayed()
         dialogButton(R.string.env_edit)
         screen.onNodeWithText(label(R.string.settings_environments)).assertIsDisplayed()
-        val store = vm.environments
-        // Seed only this Robolectric application's private directories, while the real settings page is open.
-        val env = runBlocking {
-            store.saveContainer(null, "Fixture container", null)
-            store.createEnvironment(store.catalog().containers.single().id, "Fixture environment")
-            store.catalog().environments.single()
-        }
-        val root = files.resolve("proot-v1/workspaces").resolve(env.workspaceId)
-        Files.write(Files.createDirectory(root.resolve("docs")).resolve("guide.txt"), "Synthetic fixture".toByteArray())
+        waitForText(label(R.string.container_add))
+        screen.onNode(hasText(label(R.string.container_add)) and hasClickAction()).performClick()
+        saveRuntimeName("Fixture container")
+        screen.onNodeWithContentDescription(label(R.string.env_add)).performClick()
+        saveRuntimeName("Fixture environment")
         screen.onNodeWithContentDescription(label(R.string.settings_back)).performClick()
         tap("Environment")
         waitForText("Fixture environment")
+        dialogButton(android.R.string.ok)
+
+        // Reopen the shipped panel with a new Activity, ViewModel and catalog reader on the same private files.
+        screen.activityRule.scenario.onActivity { owner.viewModelStore.clear() }
+        screen.activityRule.scenario.recreate()
+        mountPanelHost()
+        open()
+        tap("Environment")
+        waitForText("Fixture environment")
+        val store = vm.environments
+        val env = runBlocking { store.catalog().environments.single() }
+        val root = files.resolve("proot-v1/workspaces").resolve(env.workspaceId)
+        Files.write(Files.createDirectory(root.resolve("docs")).resolve("guide.txt"), "Synthetic fixture".toByteArray())
         screen.onNode(hasText("Fixture environment") and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
         awaitUi { vm.state.value.current.environmentId == env.id }
 
