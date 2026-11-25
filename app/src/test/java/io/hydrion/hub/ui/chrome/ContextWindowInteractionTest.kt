@@ -3,15 +3,21 @@ package io.hydrion.hub.ui.chrome
 import android.animation.ValueAnimator
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Looper
+import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.unit.roundToIntRect
 import androidx.core.view.drawToBitmap
 import androidx.lifecycle.ViewModelProvider
 import io.hydrion.hub.MainActivity
 import io.hydrion.hub.model.*
 import io.hydrion.hub.provider.ProviderStore
 import io.hydrion.hub.provider.deepSeekProvider
+import io.hydrion.hub.ui.ChatPanelMotionMillis
 import io.hydrion.hub.ui.messages.MessageStyleStore
 import io.hydrion.hub.ui.messages.MessageTone
 import org.junit.Assert.*
@@ -55,8 +61,12 @@ class ContextWindowFixture : Application() {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = ContextWindowFixture::class, qualifiers = "en-rUS-w407dp-h915dp")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
+@OptIn(ExperimentalTestApi::class)
 class ContextWindowInteractionTest {
-    @get:Rule val screen = createAndroidComposeRule<MainActivity>()
+    // Keep the test recomposer on the same duration scale as Android's animator.
+    @get:Rule val screen = createAndroidComposeRule<MainActivity>(effectContext = object : MotionDurationScale {
+        override val scaleFactor get() = ValueAnimator.getDurationScale()
+    })
     private fun tag(name: String) = screen.onNodeWithTag(name, useUnmergedTree = true)
     private fun part(type: ContextPart) = screen.onNodeWithTag("context-part-" + type.name)
     private fun chip() = tag("conversation-chip")
@@ -163,6 +173,69 @@ class ContextWindowInteractionTest {
         }
     }
 
+    @Test
+    @Config(qualifiers = "en-rUS-w407dp-h915dp-night")
+    fun titleGlyphsStayVisibleOnEveryReturnFrameByTapAndBack() {
+        openFixture("Reading")
+        val field = screen.onNodeWithContentDescription("消息输入框")
+        field.performClick()
+        val draft = field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text
+        assertTrue("Fixture needs a draft with an interior caret", draft.length > 4)
+        val caret = TextRange(4)
+        field.performTextInputSelection(caret)
+        val title = screen.onNode(hasText("Reading") and hasAnyAncestor(hasTestTag("conversation-chip")),
+            useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.roundToIntRect()
+        // The node locates the title. Sample the composited window so an overlay hiding its
+        // glyphs is visible to the assertion even when the text node is still present.
+        fun titlePixels() = screen.runOnIdle {
+            val bitmap = screen.activity.window.decorView.drawToBitmap()
+            try {
+                IntArray(title.width * title.height).also {
+                    bitmap.getPixels(it, 0, title.width, title.left, title.top, title.width, title.height)
+                }
+            } finally {
+                bitmap.recycle()
+            }
+        }
+        val reference = titlePixels()
+        val glyphs = reference.indices.filter { Color.luminance(reference[it]) > .8f }
+        assertTrue("No title ink in the closed reference: ${glyphs.size} pixels", glyphs.size >= 20)
+
+        val previousScale = ValueAnimator.getDurationScale()
+        val scale = .5f
+        val clock = screen.mainClock
+        val countsByRoute = mutableMapOf<String, List<Int>>()
+        try {
+            systemScale(scale)
+            clock.autoAdvance = false
+            for ((route, close) in mapOf("title tap" to ::tapChip, "system back" to ::back)) {
+                tapChip()
+                clock.advanceTimeByFrame()
+                screen.waitForIdle()
+                clock.advanceTimeBy(ChatPanelMotionMillis.toLong())
+                screen.onNodeWithText("250 / 1,000 (25%)").assertIsDisplayed()
+                close()
+                // Include the frames that dispatch the close and the first settled frames.
+                val finish = clock.currentTime + (ChatPanelMotionMillis * scale).toLong() + 64
+                val counts = mutableListOf<Int>()
+                while (clock.currentTime < finish) {
+                    clock.advanceTimeByFrame()
+                    val pixels = titlePixels()
+                    counts += glyphs.count { Color.luminance(pixels[it]) > .6f }
+                }
+                countsByRoute[route] = counts
+                tag("context-window").assertDoesNotExist()
+                field.assertIsFocused().assertTextContains(draft)
+                assertEquals(caret, field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            }
+        } finally {
+            clock.autoAdvance = true
+            systemScale(previousScale)
+        }
+        assertTrue("Visible title pixels per frame (reference ${glyphs.size}): $countsByRoute",
+            countsByRoute.values.all { frames -> frames.all { it >= glyphs.size * .95f } })
+    }
+
     @Test fun panelTravelsDownFromThePillAndReturnsThroughAnIntermediateFrame() {
         openFixture("Reading")
         val previousScale = ValueAnimator.getDurationScale()
@@ -178,7 +251,7 @@ class ContextWindowInteractionTest {
             systemScale(1f)
             val anchor = chip().fetchSemanticsNode().boundsInRoot
             val center = anchor.center.x.roundToInt()
-            val band = (center - 4)..(center + 4)
+            val band = (anchor.right.roundToInt() + 2)..(anchor.right.roundToInt() + 10)
             val before = frame()
             clock.autoAdvance = false
             tapChip()
@@ -188,8 +261,8 @@ class ContextWindowInteractionTest {
             clock.advanceTimeBy(450)
             val expanded = tag("context-window").fetchSemanticsNode().boundsInRoot.top.roundToInt()
             val surface = frame().getPixel(center, expanded + 2)
-            // Closing immediately removes the accessibility pane. Measure its painted shell
-            // across the center of the title pill, where the rounded corners cannot interfere.
+            // Closing removes the accessibility pane and leaves the pill unobstructed.
+            // Track the painted shell just outside the pill where it still crosses the header.
             fun shellTop(bitmap: Bitmap): Int? = (anchor.top.roundToInt()..expanded + 4).firstOrNull { y ->
                 band.count { x -> bitmap.getPixel(x, y) == surface } >= 7
             }

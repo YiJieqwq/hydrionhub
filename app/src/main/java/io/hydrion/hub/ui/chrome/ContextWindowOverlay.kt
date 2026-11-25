@@ -12,14 +12,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -111,7 +115,15 @@ internal fun ContextWindowOverlay(state: ContextWindowState, usage: ContextUsage
         val title = stringResource(R.string.context_window)
         val colors = timelineScheme(LocalMessageStyle.current.tone)
         val surface = if (colors.surface.luminance() < colors.onSurface.luminance()) Color(0xFF1E1E1E) else colors.surfaceContainerHigh
-        Box(Modifier.absoluteOffset { IntOffset(left.roundToInt(), top.roundToPx()) }
+        // On return the live title pill stays in front of the moving shell. Clip in viewport
+        // coordinates before the panel offset so even its last frame leaves the title visible.
+        val returnClip = if (state.open) Modifier else Modifier.drawWithCache {
+            val pill = Path().apply { addRoundRect(RoundRect(anchor, CornerRadius(anchor.size.minDimension / 2f))) }
+            onDrawWithContent {
+                clipPath(pill, ClipOp.Difference) { this@onDrawWithContent.drawContent() }
+            }
+        }
+        Box(returnClip.absoluteOffset { IntOffset(left.roundToInt(), top.roundToPx()) }
             .width(width).heightIn(max = height).onGloballyPositioned {
                 // Hit-test the settled panel, independent of the animated outline's clipping.
                 state.panel = Rect(viewport + Offset(left, with(density) { top.toPx() }), it.size.toSize())
