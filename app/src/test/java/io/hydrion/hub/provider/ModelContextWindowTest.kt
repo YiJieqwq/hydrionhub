@@ -32,4 +32,15 @@ class ModelContextWindowTest {
         assertEquals(deepSeekProvider.models, localModelChoices(empty, "").available)
         assertEquals(deepSeekProvider.models, addLocalModels(empty, deepSeekProvider.models.map { it.id }.toSet()))
     }
+
+    @Test fun knownWindowMetadataStaysInHistoryOnly() {
+        val catalog = demoCatalog()
+        val (original, provider) = requireNotNull(catalog.selectedEntry(Mode.Chat))
+        val custom = original.copy(profile = original.profile.copy(contextWindowTokens = 128_000))
+        val request = catalog.localRequest(custom, "Fixture", provider = provider)
+        assertEquals("128000", request.parameters[CONTEXT_WINDOW_PARAMETER])
+        assertEquals("true", request.parameters[CONFIGURED_WINDOW_PARAMETER])
+        assertFalse(request.body.has(CONTEXT_WINDOW_PARAMETER))
+        assertFalse(request.body.has(CONFIGURED_WINDOW_PARAMETER))
+    }
 }

@@ -1,6 +1,7 @@
 package io.hydrion.hub.ui.chrome
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
@@ -22,6 +23,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -73,7 +76,8 @@ private fun Modifier.headerEdge(colors: ColorScheme): Modifier {
 internal fun Header(
     mode: Mode, locked: Boolean, title: String, pinned: Boolean, contextUsage: ContextUsage, environmentName: String? = null,
     onMode: (Mode) -> Unit, onDrawer: () -> Unit, onNew: () -> Unit,
-    onRename: () -> Unit, onPin: () -> Unit, onFind: () -> Unit, onDelete: () -> Unit
+    onRename: () -> Unit, onPin: () -> Unit, onFind: () -> Unit, onDelete: () -> Unit,
+    contextWindow: ContextWindowState
 ) {
     BoxWithConstraints(
         Modifier.fillMaxWidth().testTag("floating-header")
@@ -88,10 +92,11 @@ internal fun Header(
                 DrawerButton(onDrawer)
                 Spacer(Modifier.width(8.dp))
                 Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                    ConversationChip(title, mode, environmentName, contextUsage, onRename)
+                    ConversationChip(title, mode, environmentName, contextUsage, contextWindow, onRename)
                 }
                 Spacer(Modifier.width(6.dp))
-                ConversationActions(pinned, compactActions, onNew, onPin, onFind, onDelete)
+                ConversationActions(pinned, compactActions, onNew, onPin, onFind, onDelete,
+                    onRename.takeIf { mode == Mode.Chat }, beforeMenu = { contextWindow.open = false })
             }
         } else {
             DrawerButton(onDrawer)
@@ -140,16 +145,19 @@ private fun ModePicker(mode: Mode, onMode: (Mode) -> Unit, modifier: Modifier = 
 
 @Composable
 private fun ConversationChip(
-    title: String, mode: Mode, environmentName: String?, usage: ContextUsage, onRename: () -> Unit
+    title: String, mode: Mode, environmentName: String?, usage: ContextUsage, window: ContextWindowState, onRename: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     val detailColor = Color(0xFFCDCDCD)
-    val rename = stringResource(R.string.header_rename_chat)
+    val chat = mode == Mode.Chat
+    val actionLabel = stringResource(if (!chat) R.string.header_rename_chat else if (window.open) R.string.context_close else R.string.context_open)
     val locked = stringResource(R.string.header_locked_mode)
     Column(
-        Modifier.widthIn(max = 290.dp).testTag("conversation-chip").headerEdge(colors).clip(CircleShape)
+        Modifier.widthIn(max = 290.dp).testTag("conversation-chip")
+            .then(if (chat) Modifier.onGloballyPositioned { window.anchor = it.boundsInRoot() } else Modifier)
+            .headerEdge(colors).clip(CircleShape)
             .background(colors.capsuleFill(colors.surfaceContainerHigh))
-            .clickable(role = Role.Button, onClickLabel = rename, onClick = onRename)
+            .clickable(role = Role.Button, onClickLabel = actionLabel) { if (chat) window.open = !window.open else onRename() }
             .semantics { stateDescription = locked }
             .heightIn(min = 44.dp).padding(start = 20.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.Center
@@ -170,9 +178,12 @@ private fun ConversationChip(
                 Text(mode.name, fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1, color = detailColor)
             }
             val ringColor = if (usage.high) Color(0xFFEF4444) else Color(0xFF3B82F6)
-            CircularProgressIndicator(
-                progress = { usage.fraction }, modifier = Modifier.size(11.dp).testTag("context-usage-ring")
-                    .semantics { stateDescription = "${usage.tokens ?: "—"} / ${usage.window} tokens" },
+            val reading = stringResource(R.string.context_used_of, usage.tokens?.toString() ?: stringResource(R.string.context_unmeasured),
+                usage.window?.toString() ?: stringResource(R.string.context_unknown_limit))
+            val ring = Modifier.size(11.dp).testTag("context-usage-ring").semantics { stateDescription = reading }
+            if (usage.share(usage.tokens) == null) Spacer(ring.border(1.6.dp, detailColor, CircleShape))
+            else CircularProgressIndicator(
+                progress = { usage.fraction }, modifier = ring,
                 strokeWidth = 1.6.dp,
                 color = ringColor, trackColor = Color.White, strokeCap = StrokeCap.Butt,
                 gapSize = 0.dp
@@ -184,7 +195,8 @@ private fun ConversationChip(
 
 @Composable
 private fun ConversationActions(
-    pinned: Boolean, compact: Boolean, onNew: () -> Unit, onPin: () -> Unit, onFind: () -> Unit, onDelete: () -> Unit
+    pinned: Boolean, compact: Boolean, onNew: () -> Unit, onPin: () -> Unit, onFind: () -> Unit, onDelete: () -> Unit,
+    onRename: (() -> Unit)?, beforeMenu: () -> Unit
 ) {
     var more by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
@@ -196,12 +208,14 @@ private fun ConversationActions(
             }
             Box {
                 val moreWidth = if (compact) 40.dp else ChatHeaderLayout.ActionSize
-                IconButton(onClick = { more = true }, modifier = Modifier.size(moreWidth, ChatHeaderLayout.ActionSize)) {
+                IconButton(onClick = { beforeMenu(); more = true }, modifier = Modifier.size(moreWidth, ChatHeaderLayout.ActionSize)) {
                     Icon(Icons.Outlined.MoreVert, "更多会话操作", Modifier.size(23.dp), tint = headerInk())
                 }
                 DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                     if (compact) DropdownMenuItem(text = { Text("新建会话") },
                         onClick = { more = false; onNew() })
+                    if (onRename != null) DropdownMenuItem(text = { Text(stringResource(R.string.header_rename_chat)) },
+                        onClick = { more = false; onRename() })
                     DropdownMenuItem(text = { Text(if (pinned) "取消置顶" else "置顶") },
                         onClick = { more = false; onPin() })
                     DropdownMenuItem(text = { Text("查找聊天内容") },

@@ -37,7 +37,7 @@ internal fun ModelCatalog.localRequest(
     val options = model.requestParameters(values, mode)
     val sample = RequestTemplate.sample(model, parameters = options, prompt = prompt)
     val body = if (imageTemplate == null) {
-        JSONObject(options - CONTEXT_WINDOW_PARAMETER).put("model", model.externalModelId).put("prompt", prompt)
+        JSONObject(options - CONTEXT_WINDOW_PARAMETER - CONFIGURED_WINDOW_PARAMETER).put("model", model.externalModelId).put("prompt", prompt)
     } else JSONObject(RequestTemplate.preview(imageTemplate, sample).getOrThrow())
     if (model.profile.type != null) {
         body.put("input_modalities", JSONArray(model.profile.input))

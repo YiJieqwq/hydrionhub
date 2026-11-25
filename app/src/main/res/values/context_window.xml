@@ -1,0 +1,23 @@
+<resources>
+    <string name="context_window">Context window</string>
+    <string name="context_open">Show context window</string>
+    <string name="context_close">Close context window</string>
+    <string name="context_estimated">Estimated · messages</string>
+    <string name="context_reported">Last reported usage</string>
+    <string name="context_unreported">Usage not reported</string>
+    <string name="context_unknown_limit">Limit unknown</string>
+    <string name="context_unmeasured">Not measured</string>
+    <string name="context_used_of">%1$s / %2$s</string>
+    <string name="context_used_share">%1$s (%2$s)</string>
+    <string name="context_messages">Messages</string>
+    <string name="context_tools">Built-in tools</string>
+    <string name="context_skills">Skills</string>
+    <string name="context_system">System prompt</string>
+    <string name="context_memory">Memory</string>
+    <string name="context_workspace">Workspace</string>
+    <string name="context_search">Search prompt</string>
+    <string name="context_unattributed">Unattributed usage</string>
+    <string name="context_free">Free space</string>
+    <string name="context_management">Context Management</string>
+    <string name="context_manage_limit">Assistant message limit</string>
+</resources>

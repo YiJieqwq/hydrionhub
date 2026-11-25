@@ -7,6 +7,7 @@ import io.hydrion.hub.model.RemoteModel
 import io.hydrion.hub.model.Role
 import io.hydrion.hub.model.TokenUsage
 import io.hydrion.hub.provider.CONTEXT_WINDOW_PARAMETER
+import io.hydrion.hub.provider.requestParameters
 import io.hydrion.hub.provider.deepSeekProvider
 import io.hydrion.hub.provider.demoCatalog
 import org.junit.Assert.*
@@ -158,5 +159,55 @@ class ContextUsageTest {
         val edited = flash.copy(profile = flash.profile.copy(externalId = "replacement-id"))
         val oldTurn = reply(71).copy(parameters = mapOf("model" to flash.profile.externalId))
         assertNull(contextUsage(Conversation(messages = listOf(oldTurn)), edited to deepSeekProvider).tokens)
+    }
+
+    @Test fun reportedTotalIsOneDisjointSegmentAndOverageIsOnlyClampedForDrawing() {
+        val counts = TokenUsage(inputTokens = 800, outputTokens = 450, cachedInputTokens = 270, reasoningTokens = 300)
+        val model = flash.copy(profile = flash.profile.copy(contextWindowTokens = 1000))
+        fun reading(usage: TokenUsage) = contextUsage(Conversation(messages = listOf(reply(null).copy(usage = usage))), model to deepSeekProvider)
+        val over = reading(counts)
+        assertEquals(1250L, over.count(ContextPart.Unattributed))
+        assertEquals(0L, over.count(ContextPart.Free))
+        assertEquals(1.25, over.share(over.tokens)!!, 0.0)
+        assertEquals(1f, over.fraction, 0f)
+        assertTrue(ContextPart.entries.filterNot { it == ContextPart.Free || it == ContextPart.Unattributed }.all { over.count(it) == null })
+        val partial = reading(TokenUsage(inputTokens = 800))
+        assertTrue(ContextPart.entries.all { partial.count(it) == null })
+        val zero = reading(TokenUsage(totalTokens = 0))
+        assertEquals(0L, zero.count(ContextPart.Unattributed))
+        assertEquals(1000L, zero.count(ContextPart.Free))
+    }
+
+    @Test fun unsupportedModelAndAmbiguousLegacySuggestionHaveNoUpperLimit() {
+        val model = flash.copy(id = "opaque", profile = flash.profile.copy(externalId = "opaque"))
+        val entry = model to deepSeekProvider
+        val message = reply(30).copy(remoteModel = remote.copy(modelId = model.id),
+            parameters = mapOf(CONTEXT_WINDOW_PARAMETER to "128000"))
+        val single = Conversation(messages = listOf(message))
+        for (selected in listOf(entry, null)) {
+            val unknown = contextUsage(single, selected)
+            assertEquals(30L, unknown.tokens)
+            assertNull(unknown.window)
+            assertNull(unknown.share(unknown.tokens))
+            assertNull(unknown.count(ContextPart.Free))
+        }
+        assertFalse(CONTEXT_WINDOW_PARAMETER in model.requestParameters(emptyMap()))
+        fun restored(parameters: Map<String, String>) = contextUsage(single.copy(messages = listOf(message.copy(parameters = parameters))), null)
+        assertEquals(64_000, restored(mapOf(CONTEXT_WINDOW_PARAMETER to "64000")).window)
+        val configured = model.copy(profile = model.profile.copy(contextWindowTokens = 128000))
+        assertEquals(128_000, restored(configured.requestParameters(emptyMap())).window)
+    }
+
+    @Test fun localEstimateUsesOnlyVisibleContextAfterAnchorAndAssistantLimit() {
+        val local = demoCatalog().providers.single { it.id == "demo-chat" }
+        val model = local.models.first()
+        val messages = (1..6).map { Message(id = "m" + it, role = Role.User, text = "Message " + it) }
+        val history = Conversation(messages = messages, contextStart = "m3")
+        val reading = contextUsage(history, model to local, messageLimit = 2)
+        assertTrue(reading.estimated)
+        assertEquals(520L, reading.count(ContextPart.Messages))
+        assertNull(reading.count(ContextPart.Unattributed))
+        assertNull(reading.count(ContextPart.Free))
+        assertEquals(1040L, contextUsage(history, model to local).tokens)
     }
 }

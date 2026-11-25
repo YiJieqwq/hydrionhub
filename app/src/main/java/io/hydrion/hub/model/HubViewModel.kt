@@ -62,6 +62,7 @@ class HubViewModel internal constructor(app: Application, stream: ChatStream) : 
     internal val translations = ReplyTranslations(viewModelScope, session, chatGeneration)
     internal val questions get() = session.questions
     val state = session.state
+    internal fun contextMessages(chat: Conversation) = session.contextMessages(chat)
     internal fun addAssistant(name: String) = loaded && session.addAssistant(name)
     internal fun renameAssistant(id: String, name: String) = loaded && session.renameAssistant(id, name)
     internal fun updateAssistant(id: String, name: String, avatar: String, prompt: String, route: RemoteModel?, contextLimit: Int? = null): Boolean {

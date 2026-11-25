@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
@@ -36,7 +37,8 @@ class HeaderDrawerTest {
                 HydrionTheme {
                     Header(
                         mode = Mode.Chat, locked = locked.value, title = "示例会话", pinned = false,
-                        contextUsage = ContextUsage(500, 5000, estimated = true), onMode = {}, onDrawer = { opens++ },
+                        contextUsage = ContextUsage(500, 5000, estimated = true), contextWindow = remember { ContextWindowState() },
+                        onMode = {}, onDrawer = { opens++ },
                         onNew = {}, onRename = {}, onPin = {}, onFind = {}, onDelete = {}
                     )
                 }

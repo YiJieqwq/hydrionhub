@@ -47,7 +47,7 @@ internal enum class AssistantTab(val label: Int) {
 }
 
 @Composable
-internal fun AssistantDetail(vm: HubViewModel, id: String, close: () -> Unit) {
+internal fun AssistantDetail(vm: HubViewModel, id: String, openAtContextLimit: Boolean = false, close: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val load by vm.workspaceLoad.collectAsStateWithLifecycle()
     val owner = state.assistants.find { it.id == id }
@@ -59,7 +59,7 @@ internal fun AssistantDetail(vm: HubViewModel, id: String, close: () -> Unit) {
     key(id) {
         AssistantEditor(owner, catalog, save = { draft ->
             vm.updateAssistant(id, draft.name, draft.avatarText, draft.systemPrompt, draft.chatModel, draft.contextLimit)
-        }, close = close) { tab ->
+        }, close = close, openAtContextLimit = openAtContextLimit) { tab ->
             when (tab) {
                 AssistantTab.Memory -> MemorySettings(vm, close, id)
                 AssistantTab.Skills -> SkillSettings(vm, close, id)
@@ -73,7 +73,7 @@ internal fun AssistantDetail(vm: HubViewModel, id: String, close: () -> Unit) {
 @Composable
 internal fun AssistantEditor(
     owner: LocalAssistant, catalog: ModelCatalog, save: (LocalAssistant) -> Boolean, close: () -> Unit,
-    toolPage: @Composable (AssistantTab) -> Unit,
+    openAtContextLimit: Boolean = false, toolPage: @Composable (AssistantTab) -> Unit,
 ) {
     var name by rememberSaveable { mutableStateOf(owner.name) }
     var avatar by rememberSaveable { mutableStateOf(owner.avatarText) }
@@ -134,7 +134,9 @@ internal fun AssistantEditor(
                 if (failed) Text(stringResource(R.string.assistant_save_failed), color = colors.error, modifier = Modifier.padding(horizontal = 16.dp))
                 HorizontalPager(pager, Modifier.fillMaxWidth().weight(1f), verticalAlignment = Alignment.Top) { i ->
                     when (AssistantTab.entries[i]) {
-                        AssistantTab.Basic -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                        AssistantTab.Basic -> Column(Modifier.fillMaxSize()
+                            .verticalScroll(rememberScrollState(initial = if (openAtContextLimit) Int.MAX_VALUE else 0))
+                            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                             verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             DetailCard {
                                 Row(verticalAlignment = Alignment.CenterVertically) {

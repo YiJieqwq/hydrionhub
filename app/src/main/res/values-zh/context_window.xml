@@ -1,0 +1,23 @@
+<resources>
+    <string name="context_window">上下文窗口</string>
+    <string name="context_open">展开上下文窗口</string>
+    <string name="context_close">收起上下文窗口</string>
+    <string name="context_estimated">估算 · 消息</string>
+    <string name="context_reported">最近一次用量回报</string>
+    <string name="context_unreported">用量未上报</string>
+    <string name="context_unknown_limit">上限未知</string>
+    <string name="context_unmeasured">未统计</string>
+    <string name="context_used_of">%1$s / %2$s</string>
+    <string name="context_used_share">%1$s（%2$s）</string>
+    <string name="context_messages">消息</string>
+    <string name="context_tools">内置工具</string>
+    <string name="context_skills">技能</string>
+    <string name="context_system">系统提示词</string>
+    <string name="context_memory">记忆</string>
+    <string name="context_workspace">工作区</string>
+    <string name="context_search">搜索提示词</string>
+    <string name="context_unattributed">未分类用量</string>
+    <string name="context_free">剩余空间</string>
+    <string name="context_management">上下文管理</string>
+    <string name="context_manage_limit">助手的上下文消息数限制</string>
+</resources>

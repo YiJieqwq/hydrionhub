@@ -6,6 +6,8 @@ import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -227,17 +229,21 @@ class ConversationSessionTest {
         val session = ConversationSession(this, FakeGenerationRepository { steps.receive() }, {})
         session.setDraft("说明")
         session.send("chat", emptyMap(), null, null)
+        val starting = session.contextMessages(session.state.value.current)
         session.setDraft("下条消息")
         session.send("chat", emptyMap(), null, null)
         assertEquals(2, session.state.value.current.messages.size)
         steps.send(Unit)
         yield()
         assertEquals(Generation.Generating, session.state.value.current.messages.last().status)
+        assertNotSame(starting, session.state.value.current.messages)
+        assertSame(starting, session.contextMessages(session.state.value.current))
         session.stop()
         repeat(10) { steps.send(Unit) }
         yield()
         assertFalse(session.state.value.isGenerating)
         assertEquals(Generation.Stopped, session.state.value.current.messages.last().status)
+        assertSame(session.state.value.current.messages, session.contextMessages(session.state.value.current))
         assertEquals("下条消息", session.state.value.draft.text)
     }
 

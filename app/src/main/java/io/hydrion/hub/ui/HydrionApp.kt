@@ -47,6 +47,9 @@ import io.hydrion.hub.provider.chatSpeedControls
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.provider.ProviderSettings
 import io.hydrion.hub.ui.chrome.Header
+import io.hydrion.hub.ui.chrome.ContextWindowOverlay
+import io.hydrion.hub.ui.chrome.ContextWindowState
+import io.hydrion.hub.ui.chrome.contextWindowInput
 import io.hydrion.hub.ui.chrome.conversationEnvironmentName
 import io.hydrion.hub.ui.chrome.contextUsage
 import io.hydrion.hub.ui.composer.HubComposer
@@ -107,6 +110,7 @@ private fun Workspace(vm: HubViewModel) {
     val drawerScope = rememberCoroutineScope()
     val catalog by providers.catalog.collectAsStateWithLifecycle()
     val current = state.current
+    val contextWindow = remember(current.id, current.mode) { ContextWindowState() }
     val selection = remember(catalog, current.mode) { catalog.selection(current.mode) }
     val chatPicker = remember(current.id, current.mode) { ChatModelPickerState() }
     val toolsPage = if (current.mode == Mode.Chat) rememberToolsPageState(current.id) else null
@@ -139,6 +143,7 @@ private fun Workspace(vm: HubViewModel) {
         }
     } ?: Modifier
     var assistantEditor by rememberSaveable { mutableStateOf<String?>(null) }
+    var editContextLimit by rememberSaveable { mutableStateOf(false) }
     var settings by rememberSaveable { mutableStateOf(false) }
     var configure by rememberSaveable { mutableStateOf(false) }
     var find by key(current.id) { rememberSaveable { mutableStateOf(ConversationFind()) } }
@@ -185,6 +190,9 @@ private fun Workspace(vm: HubViewModel) {
         vm.newConversation()
     }
     val drawerOpening = drawer.isOpen || (current.mode == Mode.Chat && drawer.targetValue == DrawerValue.Open)
+    val contextCovered = drawerOpening || settings || toolsActive || chatPicker.page != null || editVisit != null ||
+        assistantEditor != null || renameId != null || deleteId != null || configure
+    LaunchedEffect(contextWindow, contextCovered) { if (contextCovered) contextWindow.open = false }
     BackHandler(enabled = !settings && (drawerOpening || find.open)) {
         if (drawerOpening) closeDrawer() else find = ConversationFind()
     }
@@ -222,6 +230,11 @@ private fun Workspace(vm: HubViewModel) {
         ) {
             val composerCatalog = catalog
             val selectedEntry = remember(composerCatalog, current.mode) { composerCatalog.selectedEntry(current.mode) }
+            val assistant = state.assistants.find { it.id == current.assistantId }
+            val contextMessages = vm.contextMessages(current)
+            val reading = remember(contextMessages, current.mode, current.contextStart, current.modelRoutes, selectedEntry, assistant?.contextLimit) {
+                contextUsage(current, selectedEntry, assistant?.contextLimit, contextMessages)
+            }
             // Legacy IMEs can remove the entire inset between composition and layout.
             // Place the host using the same inset frame that determines the composer shape.
             val imeInsets = WindowInsets.ime
@@ -232,7 +245,7 @@ private fun Workspace(vm: HubViewModel) {
             Box(
                 Modifier.fillMaxSize().then(workspaceInput)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                    .windowInsetsPadding(hostImeInsets),
+                    .windowInsetsPadding(hostImeInsets).contextWindowInput(contextWindow),
                 contentAlignment = Alignment.TopCenter
             ) {
                 val covered = toolsActive || modelBrowse.active
@@ -264,7 +277,8 @@ private fun Workspace(vm: HubViewModel) {
                                     modelEditorBridge = composerBridge,
                                     chatTools = toolsPage,
                                     modelBrowseProgress = { modelBrowse.progress },
-                                    allowImeReturn = !blockEditorFocus && !drawerOpening && !configure && !find.open && renameId == null && deleteId == null,
+                                    allowImeReturn = !blockEditorFocus && !drawerOpening && !configure && !find.open &&
+                                        renameId == null && deleteId == null && assistantEditor == null,
                                     onConfigure = { focus.clearFocus(); configure = true },
                                     onSend = { fromDictation ->
                                         // Dictation has already written the final transcript to the live draft.
@@ -290,7 +304,7 @@ private fun Workspace(vm: HubViewModel) {
                                 }.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
                                     Header(
                                         mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
-                                        contextUsage = contextUsage(current, selectedEntry),
+                                        contextUsage = reading, contextWindow = contextWindow,
                                         environmentName = if (state.modeLocked && current.mode == Mode.Chat && current.environmentId != null)
                                             key(vm.environments.revision.collectAsStateWithLifecycle().value) {
                                                 conversationEnvironmentName(current, vm.environments::getEnvironment)
@@ -327,6 +341,15 @@ private fun Workspace(vm: HubViewModel) {
                                 modifier = Modifier.fillMaxSize().padding(bars)
                             )
                         }
+                    }
+                    if (current.mode == Mode.Chat && state.modeLocked && !contextCovered) {
+                        ContextWindowOverlay(contextWindow, reading,
+                            onManage = if (assistant != null && load == WorkspaceLoad.Ready) ({
+                                contextWindow.open = false
+                                editContextLimit = true
+                                assistantEditor = assistant.id
+                            }) else null,
+                            modifier = Modifier.fillMaxSize().padding(bottom = timelineDock))
                     }
                     if (toolsPage != null && toolsPage.hasOpened) {
                         key(toolsPage) {
@@ -393,7 +416,10 @@ private fun Workspace(vm: HubViewModel) {
     if (configure) ConfigureSheet(providers, current.mode) { configure = false }
     fun titleFor(id: String) = if (id == current.id) current.title else state.history.firstOrNull { it.id == id }?.title.orEmpty()
     assistantEditor?.let { id ->
-        io.hydrion.hub.ui.settings.AssistantDetail(vm, id) { assistantEditor = null }
+        io.hydrion.hub.ui.settings.AssistantDetail(vm, id, openAtContextLimit = editContextLimit) {
+            assistantEditor = null
+            editContextLimit = false
+        }
     }
     renameId?.let { id ->
         var value by rememberSaveable(id) { mutableStateOf(titleFor(id)) }

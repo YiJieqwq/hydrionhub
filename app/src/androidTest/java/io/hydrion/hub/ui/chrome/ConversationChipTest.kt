@@ -45,7 +45,7 @@ class ConversationChipTest {
                         Box(Modifier.width(330.dp)) {
                             val current = chat.value
                             Header(mode = Mode.Chat, locked = true, title = current.title, pinned = false,
-                                contextUsage = ContextUsage(123400, 150000),
+                                contextUsage = ContextUsage(123400, 150000), contextWindow = remember { ContextWindowState() },
                                 environmentName = conversationEnvironmentName(current) { env.takeIf { e -> e.id == it } },
                                 onMode = {}, onDrawer = {}, onNew = {}, onRename = {}, onPin = {}, onFind = {}, onDelete = {})
                         }

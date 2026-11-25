@@ -53,7 +53,7 @@ private val lightTimeline = lightColorScheme(
 )
 
 @Composable
-private fun timelineScheme(tone: MessageTone, darkScheme: ColorScheme = MaterialTheme.colorScheme) =
+internal fun timelineScheme(tone: MessageTone, darkScheme: ColorScheme = MaterialTheme.colorScheme) =
     if (tone == MessageTone.Light) lightTimeline else darkScheme
 
 @Composable

@@ -42,7 +42,12 @@ internal class ConversationSession(
     private val drafts = mutableMapOf<String, Draft>()
     // Present only while a dictated send is active and its cleared draft is still untouched.
     private val dictatedDrafts = mutableMapOf<String, Draft>()
-    private val jobs = mutableMapOf<String, Job>()
+    private class GenerationAttempt(val job: Job, val startingMessages: List<Message>)
+    private val attempts = mutableMapOf<String, GenerationAttempt>()
+    // Partial stream events replace the active row. Context statistics use terminal rows and the
+    // visible message count, so all those events can share the same immutable list.
+    fun contextMessages(chat: Conversation): List<Message> =
+        attempts[chat.id]?.startingMessages?.takeIf { it.size == chat.messages.size } ?: chat.messages
     private val observations = mutableMapOf<String, ReplyObservation>()
     // Each assistant has at most one unsent conversation. Sent drafts remain keyed by thread ID.
     private val parked = mutableMapOf<String, Conversation>()
@@ -365,7 +370,7 @@ internal class ConversationSession(
         if (removable.isEmpty()) return
         removable.forEach { id ->
             observations.remove(id)
-            jobs.remove(id)?.cancel()
+            attempts.remove(id)?.job?.cancel()
             dictatedDrafts.remove(id)
             drafts.remove(id)
         }
@@ -459,12 +464,12 @@ internal class ConversationSession(
                     repository.chatWithQuestions(response, retry, history, profile.systemPrompt, AskUserTurn(id, response.id, questions))
                 } else repository.generate(mode, response, retry, history, profile?.systemPrompt.orEmpty())
                 events.collect { message ->
-                    if (jobs[id] === generation) replaceReply(id, response.id, message, fromStream = true)
+                    if (attempts[id]?.job === generation) replaceReply(id, response.id, message, fromStream = true)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                if (jobs[id] !== generation) return@launch
+                if (attempts[id]?.job !== generation) return@launch
                 val partial = conversation(id)?.messages?.find { it.id == response.id } ?: return@launch
                 val detail = if (failure is AskUserFailure) describeAskFailure(failure) else failure.localizedMessage?.takeIf { it.isNotBlank() } ?: "生成中断，请重新生成。"
                 replaceReply(id, response.id, partial.endUnanswered(Generation.Error).copy(error = detail))
@@ -473,7 +478,7 @@ internal class ConversationSession(
         // An observer of Sending can stop or retry synchronously, before transport startup.
         if (mode == Mode.Chat && response.remoteModel != null && response.imageInvocation == null)
             observations[id] = ReplyObservation(monotonicMs)
-        jobs[id] = job
+        attempts[id] = GenerationAttempt(job, chat.messages)
         if (openBranch) choose(chat, listOf(chat) + screen.history) else touch(chat)
         save()
         job.start()
@@ -490,7 +495,7 @@ internal class ConversationSession(
             update(updated)
         } else {
             // Release this attempt before observers can start another one for the same reply.
-            jobs.remove(conversationId)
+            attempts.remove(conversationId)
             val restoredDraft = dictatedDrafts.remove(conversationId)?.takeIf { reply.status == Generation.Error }
             if (restoredDraft != null) drafts[conversationId] = restoredDraft
             touch(updated, restoredDraft)
@@ -503,7 +508,7 @@ internal class ConversationSession(
     fun stop() {
         val item = screen.current
         val response = item.messages.find { it.status.isActive } ?: return
-        jobs.remove(item.id)?.cancel()
+        attempts.remove(item.id)?.job?.cancel()
         replaceReply(item.id, response.id, response.endUnanswered(Generation.Stopped))
     }
 
@@ -630,7 +635,7 @@ internal class ConversationSession(
         if (removed.isEmpty() || (item.mode == Mode.Chat && removed.any { it.id == item.contextStart })) return
         if (removed.any { it.status.isActive }) {
             observations.remove(item.id)
-            jobs.remove(item.id)?.cancel()
+            attempts.remove(item.id)?.job?.cancel()
             dictatedDrafts.remove(item.id)
         }
         touch(item.copy(messages = item.messages.filterNot { it.id == id || it.replyTo == id }, versions = item.versions - removed.map { it.id }.toSet()))

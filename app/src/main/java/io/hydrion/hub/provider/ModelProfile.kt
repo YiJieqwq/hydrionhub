@@ -74,7 +74,10 @@ internal fun ProviderModel.configureCapabilities(): List<Capability> {
 /** Include only request options that are safe to snapshot in local conversation history. */
 internal fun ProviderModel.requestParameters(selected: Map<String, String>, mode: Mode? = profile.type?.mode): Map<String, String> = buildMap {
     putAll(selected)
-    if (mode == Mode.Chat) put(CONTEXT_WINDOW_PARAMETER, contextWindowTokens.toString())
+    if (mode == Mode.Chat) knownContextWindowTokens?.let {
+        put(CONTEXT_WINDOW_PARAMETER, it.toString())
+        if (profile.contextWindowTokens != null) put(CONFIGURED_WINDOW_PARAMETER, "true")
+    }
     if (profile.externalId.isNotBlank()) put("model", externalModelId)
     if (profile.type == ModelType.Chat) {
         put("reasoning_enabled", ("reasoning" in profile.abilities && selected["effort"] != "Off").toString())
