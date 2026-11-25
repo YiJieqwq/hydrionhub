@@ -112,6 +112,7 @@ internal fun MessageCard(
 
 internal enum class ChatSurface { UserBubble, ThoughtAndTools, Translation }
 
+private val chatTintedShape = RoundedCornerShape(16.dp)
 private val darkThoughtToolFill = defaultMessagePalette(MessageTone.Dark).assistant.background.messageColor()
 
 private fun uneditedUserFill(scheme: ColorScheme, dark: Boolean): Color {
@@ -132,6 +133,17 @@ internal fun MessageStyle.userCardInEditor(): MessageCardStyle {
     return user.copy(background = String.format(Locale.ROOT, "#%06X", fill.toArgb() and 0xFFFFFF))
 }
 
+/** The floating panel lives outside MessageCanvas. Give a light card the same backing and text scheme as the timeline. */
+@Composable
+internal fun ToolPanelCard(modifier: Modifier, content: @Composable () -> Unit) {
+    val tone = LocalMessageStyle.current.tone
+    val scheme = timelineScheme(tone)
+    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
+        val backing = if (tone == MessageTone.Light) modifier.clip(chatTintedShape).background(scheme.background) else modifier
+        ChatTintedSurface(ChatSurface.ThoughtAndTools, backing, content)
+    }
+}
+
 @Composable
 internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content: @Composable () -> Unit) {
     val style = LocalMessageStyle.current
@@ -141,7 +153,7 @@ internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content:
     val fixedDarkCard = thoughtOrTools && dark
     val palette = if (user) style.renderPalette.user else style.renderPalette.assistant
     val defaults = defaultMessagePalette(style.tone)
-    val shape = RoundedCornerShape(16.dp)
+    val shape = chatTintedShape
     val useMaterial = if (user) !style.usesAutomaticUserTint else style.material != CardMaterial.Solid || palette != defaults.assistant
     if (useMaterial && !fixedDarkCard) {
         MessageCard(palette, modifier, shape, outlined = !thoughtOrTools, content = content)

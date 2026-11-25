@@ -11,6 +11,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.*
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.core.view.drawToBitmap
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModel
@@ -24,6 +26,8 @@ import io.hydrion.hub.localtools.McpDefinition
 import io.hydrion.hub.localtools.mcpFile
 import io.hydrion.hub.model.*
 import io.hydrion.hub.ui.HydrionApp
+import io.hydrion.hub.ui.messages.MessageStyleStore
+import io.hydrion.hub.ui.messages.MessageTone
 import io.hydrion.hub.ui.settings.assistantFeatureDirectory
 import io.hydrion.hub.provider.*
 import androidx.compose.ui.semantics.SemanticsActions
@@ -300,6 +304,70 @@ class HostToolPanelTest {
             }
             pixels.width() to pixels.height()
         }
+    }
+
+    @Test fun fourWholeSectionsUseTheThoughtCardWhileTheEnvironmentStaysOnGlass() {
+        open()
+        screen.onNodeWithTag("chat-tools-card:environment", true).assertDoesNotExist()
+        screen.onNodeWithTag("chat-tools-group:environment").assertIsDisplayed()
+        fun checkCard(id: String, light: Boolean = false) {
+            val tag = "chat-tools-card:$id"
+            val header = screen.onNodeWithTag("chat-tools-group:$id", true).performScrollTo()
+            header.assert(hasAnyAncestor(hasTestTag(tag)))
+            val bounds = header.fetchSemanticsNode().boundsInWindow
+            val surface = screen.onNodeWithTag(tag, true).getUnclippedBoundsInRoot()
+            val row = header.getUnclippedBoundsInRoot()
+            assertEquals(row.left, surface.left)
+            assertTrue(surface.bottom >= row.bottom)
+            val x = bounds.left.roundToInt()
+            val y = bounds.center.y.roundToInt()
+            screen.runOnIdle {
+                val image = screen.activity.window.decorView.drawToBitmap()
+                val fill = image.getPixel(x + 2, y)
+                if (light) assertTrue(android.graphics.Color.luminance(fill) > .6f)
+                else assertEquals(android.graphics.Color.rgb(36, 38, 40), fill)
+                assertEquals(fill, image.getPixel(x + 6, y))
+                assertNotEquals(fill, image.getPixel(x + 1, bounds.top.roundToInt() + 1))
+            }
+        }
+        for (id in listOf("local", "mcp", "web", "image")) checkCard(id)
+        screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
+        screen.onNodeWithTag("panel-switch:Time", true).assert(hasAnyAncestor(hasTestTag("chat-tools-card:local")))
+        enable("Time")
+        screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
+        screen.onNodeWithTag("panel-switch:Time").assertDoesNotExist()
+        checkCard("local")
+        screen.onNodeWithTag("tools-search-field").performTextReplacement(label(R.string.chat_tools_custom_image))
+        screen.onNodeWithTag("chat-tools-option:image:" + CUSTOM_IMAGE_TOOL, true).assert(hasAnyAncestor(hasTestTag("chat-tools-card:image")))
+        for (absent in listOf("web", "mcp", "local")) screen.onNodeWithTag("chat-tools-card:$absent", true).assertDoesNotExist()
+        val only = screen.onNodeWithTag("chat-tools-card:image", true).getUnclippedBoundsInRoot()
+        assertEquals(screen.onNodeWithTag("chat-tools-page", true).getUnclippedBoundsInRoot().top, only.top)
+        val styles = MessageStyleStore.shared(screen.activity)
+        val original = styles.style.value
+        try {
+            screen.runOnIdle { styles.update { it.copy(tone = MessageTone.Light) } }
+            checkCard("image", light = true)
+            screen.onNodeWithTag("tools-search-field").performTextReplacement("")
+            for (id in listOf("web", "mcp", "local")) checkCard(id, light = true)
+            screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
+            fun textInk(text: String): Int {
+                val layouts = mutableListOf<TextLayoutResult>()
+                screen.onNodeWithText(text, useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+                return layouts.single().layoutInput.style.color.toArgb()
+            }
+            val selectedInk = textInk(label(R.string.panel_time))
+            screen.onNodeWithTag("panel-switch:Time").performScrollTo().assertIsOn().performClick().assertIsOff()
+            val plainInk = textInk(label(R.string.panel_time))
+            val secondaryInk = textInk(label(R.string.panel_local))
+            assertNotEquals("Enabled control keeps its accent", selectedInk, plainInk)
+            val rowLuminance = android.graphics.Color.luminance(plainInk)
+            val secondaryLuminance = android.graphics.Color.luminance(secondaryInk)
+            assertTrue("Light row=$rowLuminance, secondary=$secondaryLuminance", rowLuminance < secondaryLuminance && secondaryLuminance < .25f)
+        } finally {
+            screen.runOnIdle { styles.update { original } }
+        }
+        screen.onNodeWithTag("chat-tools-back").performClick()
+        assertEquals("Panel draft", vm.state.value.draft.text)
     }
 
     @Test fun askCardsKeepDraftAndDeliverOnceOnlyToTheirOriginalTurn() {

@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -68,6 +69,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.messages.ToolPanelCard
 import io.hydrion.hub.model.CUSTOM_IMAGE_TOOL
 import io.hydrion.hub.model.Draft
 import io.hydrion.hub.model.HubViewModel
@@ -177,11 +179,11 @@ private fun ToolGroup(
     id: String, title: String, choices: List<ToolChoice>, matches: List<ToolChoice>, selected: String,
     initiallyOpen: Boolean, filtering: Boolean, enabled: Boolean, onSelect: (String) -> Unit,
 ) {
-    val colors = MaterialTheme.colorScheme
     val inputMode = LocalInputModeManager.current
     val keepEditorFocus = Modifier.focusProperties { canFocus = inputMode.inputMode != InputMode.Touch }
     val detail = if (enabled) choices.find { it.value == selected }?.label ?: selected else stringResource(R.string.panel_model_unavailable)
     PanelSection(id, title, detail, matches.isNotEmpty(), initiallyOpen, filtering) {
+        val colors = MaterialTheme.colorScheme
         Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             matches.forEach { choice ->
                 val checked = selected == choice.value
@@ -210,14 +212,14 @@ internal fun PanelSection(id: String, title: String, summary: String, visible: B
     content: @Composable () -> Unit) {
     var expanded by rememberSaveable(id) { mutableStateOf(initiallyOpen) }
     if (!visible) return
-    val colors = MaterialTheme.colorScheme
     val showChoices = filtering || expanded
     val describeState = stringResource(if (showChoices) R.string.chat_tools_expanded else R.string.chat_tools_collapsed)
     val toggleLabel = stringResource(if (expanded) R.string.chat_tools_collapse else R.string.chat_tools_expand)
     val inputMode = LocalInputModeManager.current
     val keepEditorFocus = Modifier.focusProperties { canFocus = inputMode.inputMode != InputMode.Touch }
     val toggle = if (filtering) Modifier else keepEditorFocus.clickable(role = Role.Button, onClickLabel = toggleLabel) { expanded = !expanded }
-    Column {
+    SectionBody(id) {
+        val colors = MaterialTheme.colorScheme
         Row(
             Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).testTag("chat-tools-group:$id").then(toggle)
                 .semantics { stateDescription = describeState }
@@ -239,6 +241,16 @@ internal fun PanelSection(id: String, title: String, summary: String, visible: B
             }
         }
         AnimatedVisibility(showChoices) { content() }
+    }
+}
+
+@Composable
+private fun SectionBody(id: String, content: @Composable ColumnScope.() -> Unit) {
+    when (id) {
+        "web", "image", "local", "mcp" -> ToolPanelCard(Modifier.fillMaxWidth().testTag("chat-tools-card:$id")) {
+            Column(Modifier.fillMaxWidth(), content = content)
+        }
+        else -> Column(content = content)
     }
 }
 
