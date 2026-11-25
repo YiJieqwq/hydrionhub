@@ -56,7 +56,7 @@ internal class ConversationSession(
         }
         saved.drafts.forEach { (id, draft) -> drafts.putIfAbsent(id, draft) }
         val untouched = liveIds.isEmpty() && restoredUnsentId == null && !screen.modeLocked && screen.draft == Draft() &&
-            screen.current.mode == Mode.Chat && screen.current.environmentId == null
+            screen.current.mode == Mode.Chat && !screen.current.hasToolPanelSettings
         mutable.value = screen.copy(history = (screen.history + restored).sortedByDescending { it.updatedAt },
             assistants = saved.assistants)
         restoreLocations(saved)
@@ -85,7 +85,7 @@ internal class ConversationSession(
         val emptyThreads = parked.toMutableMap()
         if (!screen.modeLocked) emptyThreads[owner] = screen.current
         val pending = emptyThreads.values.filter { item ->
-            item.environmentId != null || (hasSeveral || includeUnsent || item.id == restoredUnsentId) &&
+            item.hasToolPanelSettings || (hasSeveral || includeUnsent || item.id == restoredUnsentId) &&
                 (item.id in drafts || item.id == restoredUnsentId || (hasSeveral && item.mode != Mode.Chat))
         }
         pending.forEach { savedDrafts[it.id] = drafts[it.id] ?: Draft() }
@@ -121,7 +121,7 @@ internal class ConversationSession(
         val source = assistant(id) ?: return false
         if (!LocalAssistant.validName(name.trim())) return false
         // The new ID has separate chats, notes and tool grants.
-        mutable.value = screen.copy(assistants = screen.assistants + source.copy(id = newId(), name = name.trim()))
+        mutable.value = screen.copy(assistants = screen.assistants + source.copy(id = newId(), name = name.trim(), manualPanelTools = emptySet()))
         save()
         return true
     }
@@ -139,6 +139,16 @@ internal class ConversationSession(
             save()
         }
         return true
+    }
+
+    fun setManualPanelTool(assistantId: String, tool: ManualPanelTool, enabled: Boolean) {
+        if (assistantId != owner) return
+        val assistant = assistant(assistantId) ?: return
+        val choices = assistant.manualPanelTools
+        if ((tool in choices) == enabled) return
+        val updated = assistant.copy(manualPanelTools = if (enabled) choices + tool else choices - tool)
+        mutable.value = screen.copy(assistants = screen.assistants.map { if (it.id == assistantId) updated else it })
+        save()
     }
 
     fun renameAssistant(id: String, name: String): Boolean {
@@ -162,7 +172,7 @@ internal class ConversationSession(
         if (screen.history.any { it.assistantId == id }) return false
         val pending = if (id == owner) screen.current else parked[id]
         return pending == null || (pending.id !in drafts && pending.id != restoredUnsentId &&
-            pending.mode == Mode.Chat && pending.environmentId == null && (pending.modelRoutes.isNullOrEmpty() || pending.modelRoutes == newRoutes()))
+            pending.mode == Mode.Chat && !pending.hasToolPanelSettings && (pending.modelRoutes.isNullOrEmpty() || pending.modelRoutes == newRoutes()))
     }
 
     fun removeEmptyAssistant(id: String) {
@@ -170,7 +180,7 @@ internal class ConversationSession(
         // Going from two assistants to one must not drop the remaining assistant's saved unsent draft.
         if (screen.assistants.size == 2) {
             val remaining = if (owner != id && !screen.modeLocked) screen.current else parked[LocalAssistant.Default.id]
-            if (remaining != null && (remaining.id in drafts || remaining.mode != Mode.Chat || remaining.environmentId != null)) {
+            if (remaining != null && (remaining.id in drafts || remaining.mode != Mode.Chat || remaining.hasToolPanelSettings)) {
                 restoredUnsentId = remaining.id
             }
         }
@@ -252,7 +262,7 @@ internal class ConversationSession(
         val item = screen.history.firstOrNull { !it.archived && it.id == id } ?: return
         if (id == screen.current.id) return
         val keepPending = !screen.modeLocked && (screen.draft != Draft() || screen.current.mode != Mode.Chat ||
-            screen.current.environmentId != null || screen.current.id == restoredUnsentId)
+            screen.current.hasToolPanelSettings || screen.current.id == restoredUnsentId)
         // Visiting history parks a single assistant's pending work just as switching assistants does.
         if (keepPending && !hasSeveral) restoredUnsentId = screen.current.id
         if (screen.modeLocked || keepPending || item.assistantId != owner) rememberCurrent()
@@ -265,6 +275,14 @@ internal class ConversationSession(
             update(screen.current.copy(mode = mode))
             if (hasSeveral) save()
         }
+    }
+
+    fun setPanelActionsDenied(conversationId: String, denied: Boolean) {
+        val chat = screen.current
+        if (chat.id != conversationId || chat.mode != Mode.Chat || chat.panelActionsDenied == denied) return
+        if (!screen.modeLocked) restoredUnsentId = chat.id
+        update(chat.copy(panelActionsDenied = denied))
+        save()
     }
 
     fun bindEnvironment(conversationId: String, environmentId: String?) {

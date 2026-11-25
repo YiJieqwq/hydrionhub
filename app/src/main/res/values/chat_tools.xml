@@ -9,7 +9,7 @@
     <string name="chat_tools_custom_search">Custom search</string>
     <string name="chat_tools_custom_image">Custom image generation</string>
     <string name="chat_tools_disabled">Disabled</string>
-    <string name="chat_tools_enabled_count">%1$d of 2 tools enabled</string>
+    <string name="chat_tools_enabled_count">%1$d of 2 search and image modes enabled</string>
     <string name="chat_tools_expand">Expand</string>
     <string name="chat_tools_collapse">Collapse</string>
     <string name="chat_tools_expanded">Expanded</string>

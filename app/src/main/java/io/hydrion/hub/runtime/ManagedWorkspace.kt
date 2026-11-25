@@ -3,6 +3,8 @@ package io.hydrion.hub.runtime
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.LinkOption
 
 /** Create one fresh app-private workspace, and publish its catalog record only after creation. */
@@ -29,3 +31,19 @@ internal fun createManagedWorkspace(filesDir: File, workspace: ProotWorkspace, p
         throw error
     }
 }
+
+internal data class WorkspaceEntry(val name: String, val directory: Boolean, val bytes: Long)
+
+/** List metadata only. Linked and special files never become navigation targets. */
+internal fun readWorkspaceDirectory(path: Path): List<WorkspaceEntry> =
+    Files.newDirectoryStream(path).use { entries ->
+        entries.mapNotNull { child ->
+            val name = child.fileName.toString()
+            if (!isGuestPath("/workspace/$name")) return@mapNotNull null
+            val attributes = try {
+                Files.readAttributes(child, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            } catch (_: java.nio.file.NoSuchFileException) { return@mapNotNull null }
+            if (!attributes.isDirectory && !attributes.isRegularFile) return@mapNotNull null
+            WorkspaceEntry(name, attributes.isDirectory, attributes.size())
+        }.sortedWith(compareByDescending<WorkspaceEntry> { it.directory }.thenBy { it.name })
+    }

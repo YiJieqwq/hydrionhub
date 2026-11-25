@@ -3,6 +3,8 @@ package io.hydrion.hub.runtime
 import android.content.Context
 import android.util.AtomicFile
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
@@ -17,6 +19,8 @@ internal class ProotEnvironmentStore(context: Context) {
     private val app = context.applicationContext
     private val file = File(app.filesDir, "proot-environments-v1.json")
     private val catalogFile = AtomicFile(file)
+    private val changed = MutableStateFlow(0)
+    val revision = changed.asStateFlow()
     private val files = ProotFiles(app.filesDir, app.applicationInfo.nativeLibraryDir?.let(::File))
 
     suspend fun catalog(): ProotCatalog = withContext(Dispatchers.IO) { synchronized(lock) { read() } }
@@ -53,6 +57,18 @@ internal class ProotEnvironmentStore(context: Context) {
     }
 
     suspend fun registerEnvironment(environment: ProotEnvironment) = update { it.withEnvironment(environment) }
+
+    suspend fun directory(environmentId: String, guestPath: String): List<WorkspaceEntry> = withContext(Dispatchers.IO) {
+        val env = synchronized(lock) { read().environments.single { it.id == environmentId } }
+        readWorkspaceDirectory(files.workspaceDirectory(ProotWorkspace(env.workspaceId), guestPath))
+    }
+
+    suspend fun setWorkingDirectory(environmentId: String, previous: String, guestPath: String) = update { catalog ->
+        val env = catalog.environments.single { it.id == environmentId }
+        require(env.guestCwd == previous)
+        files.workspaceDirectory(ProotWorkspace(env.workspaceId), guestPath)
+        catalog.copy(environments = catalog.environments.map { if (it.id == env.id) it.copy(guestCwd = guestPath) else it })
+    }
 
     suspend fun prepare(environmentId: String): ProotPreparation = withContext(Dispatchers.IO) {
         val snapshot = synchronized(lock) { read() }
@@ -111,6 +127,7 @@ internal class ProotEnvironmentStore(context: Context) {
         try {
             output.write(encoded)
             catalogFile.finishWrite(output)
+            changed.value++
         } catch (failure: Throwable) {
             catalogFile.failWrite(output)
             throw failure

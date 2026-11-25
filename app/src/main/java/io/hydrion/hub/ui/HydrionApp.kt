@@ -265,7 +265,6 @@ private fun Workspace(vm: HubViewModel) {
                                     chatTools = toolsPage,
                                     modelBrowseProgress = { modelBrowse.progress },
                                     allowImeReturn = !blockEditorFocus && !drawerOpening && !configure && !find.open && renameId == null && deleteId == null,
-                                    toolsAvailable = selectedEntry?.second?.chatProtocol() == null,
                                     onConfigure = { focus.clearFocus(); configure = true },
                                     onSend = { fromDictation ->
                                         // Dictation has already written the final transcript to the live draft.
@@ -292,8 +291,10 @@ private fun Workspace(vm: HubViewModel) {
                                     Header(
                                         mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
                                         contextUsage = contextUsage(current, selectedEntry),
-                                        environmentName = if (state.modeLocked && current.mode == Mode.Chat)
-                                            conversationEnvironmentName(current, vm.environments::getEnvironment) else null,
+                                        environmentName = if (state.modeLocked && current.mode == Mode.Chat && current.environmentId != null)
+                                            key(vm.environments.revision.collectAsStateWithLifecycle().value) {
+                                                conversationEnvironmentName(current, vm.environments::getEnvironment)
+                                            } else null,
                                         onMode = vm::setMode, onNew = ::newChat,
                                         onDrawer = { focus.clearFocus(); drawerScope.launch { drawer.open() } },
                                         onRename = { renameId = current.id }, onPin = { vm.togglePin(current.id) },
@@ -330,7 +331,7 @@ private fun Workspace(vm: HubViewModel) {
                     if (toolsPage != null && toolsPage.hasOpened) {
                         key(toolsPage) {
                             ToolsPageOverlay(toolsPage, state.draft.search, state.draft.imageTool, panelDock,
-                                excessDockPx, vm::setSearch, vm::setImageTool)
+                                excessDockPx, vm::setSearch, vm::setImageTool, vm, selectedEntry?.second?.chatProtocol() == null)
                         }
                     }
                     modelBrowse.page?.let {

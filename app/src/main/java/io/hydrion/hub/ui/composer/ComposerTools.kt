@@ -54,8 +54,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -71,6 +69,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.hydrion.hub.R
 import io.hydrion.hub.model.CUSTOM_IMAGE_TOOL
 import io.hydrion.hub.model.Draft
+import io.hydrion.hub.model.HubViewModel
 import kotlinx.coroutines.delay
 
 // Some keyboards never acknowledge a hide request. Keep the tools reachable in that case.
@@ -94,23 +93,33 @@ private data class ToolChoice(val value: String, val label: String, val icon: ()
 @Composable
 internal fun ChatToolsPage(
     search: String, imageTool: String, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
-    modifier: Modifier = Modifier,
+    vm: HubViewModel, modelToolsEnabled: Boolean, modifier: Modifier = Modifier,
 ) {
     val browsing = rememberScrollState()
     val filtered = rememberScrollState()
     val term = query.trim()
     if (term.isNotEmpty()) LaunchedEffect(term) { filtered.scrollTo(0) }
-    Column(modifier.fillMaxSize().testTag("chat-tools-page")
-        .verticalScroll(if (term.isEmpty()) browsing else filtered).padding(horizontal = 16.dp, vertical = 12.dp)) {
-        ChatToolGroups(search, imageTool, term, onSearch, onImageTool)
+    val count = if (modelToolsEnabled) listOf(search, imageTool).count { it != Disabled } else 0
+    val countLabel = stringResource(R.string.chat_tools_enabled_count, count)
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Box(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+            Text(stringResource(R.string.chat_tools_title), Modifier.padding(horizontal = 48.dp).testTag("chat-tools-title"),
+                style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+            Text(stringResource(R.string.panel_mode_count, count), Modifier.align(Alignment.CenterEnd).testTag("chat-tools-count")
+                .clearAndSetSemantics { contentDescription = countLabel },
+                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Column(Modifier.fillMaxSize().testTag("chat-tools-page").verticalScroll(if (term.isEmpty()) browsing else filtered)) {
+            ChatToolGroups(search, imageTool, term, onSearch, onImageTool, vm, modelToolsEnabled)
+        }
     }
 }
 
 @Composable
 private fun ChatToolGroups(
-    search: String, imageTool: String, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
+    search: String, imageTool: String, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit, vm: HubViewModel,
+    modelToolsEnabled: Boolean,
 ) {
-    val colors = MaterialTheme.colorScheme
     val disabled = ToolChoice(Disabled, stringResource(R.string.chat_tools_disabled)) { Icons.Outlined.Block }
     val web = listOf(
         ToolChoice("模型内置搜索", stringResource(R.string.chat_tools_builtin_search)) { Icons.Outlined.Language },
@@ -122,26 +131,12 @@ private fun ChatToolGroups(
     val imageTitle = stringResource(R.string.chat_tools_image)
     val webMatches = matchingToolChoices(query, webTitle, web) { it.label }
     val imageMatches = matchingToolChoices(query, imageTitle, image) { it.label }
-    val count = listOf(search, imageTool).count { it != Disabled }
-    val countLabel = stringResource(R.string.chat_tools_enabled_count, count)
-    Box(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-        Text(stringResource(R.string.chat_tools_title), Modifier.padding(horizontal = 42.dp).testTag("chat-tools-title"),
-            style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
-        Text("$count / 2", Modifier.align(Alignment.CenterEnd).testTag("chat-tools-count")
-            .clearAndSetSemantics { contentDescription = countLabel },
-            style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
-    }
-    Spacer(Modifier.height(4.dp))
+    HostToolGroups(vm, query, webMatches.isNotEmpty() || imageMatches.isNotEmpty())
     ToolGroup("web", webTitle, web, webMatches, search, initiallyOpen = true,
-        filtering = query.isNotEmpty(), onSelect = onSearch)
+        filtering = query.isNotEmpty(), enabled = modelToolsEnabled, onSelect = onSearch)
     if (webMatches.isNotEmpty() && imageMatches.isNotEmpty()) Spacer(Modifier.height(14.dp))
     ToolGroup("image", imageTitle, image, imageMatches, imageTool, initiallyOpen = false,
-        filtering = query.isNotEmpty(), onSelect = onImageTool)
-    if (webMatches.isEmpty() && imageMatches.isEmpty()) {
-        Text(stringResource(R.string.chat_tools_empty), Modifier.fillMaxWidth().testTag("chat-tools-empty")
-            .semantics { liveRegion = LiveRegionMode.Polite }.padding(8.dp),
-            style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
-    }
+        filtering = query.isNotEmpty(), enabled = modelToolsEnabled, onSelect = onImageTool)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -178,10 +173,40 @@ internal fun ImageComposerTools(
 @Composable
 private fun ToolGroup(
     id: String, title: String, choices: List<ToolChoice>, matches: List<ToolChoice>, selected: String,
-    initiallyOpen: Boolean, filtering: Boolean, onSelect: (String) -> Unit,
+    initiallyOpen: Boolean, filtering: Boolean, enabled: Boolean, onSelect: (String) -> Unit,
 ) {
+    val colors = MaterialTheme.colorScheme
+    val inputMode = LocalInputModeManager.current
+    val keepEditorFocus = Modifier.focusProperties { canFocus = inputMode.inputMode != InputMode.Touch }
+    val detail = if (enabled) choices.find { it.value == selected }?.label ?: selected else stringResource(R.string.panel_model_unavailable)
+    PanelSection(id, title, detail, matches.isNotEmpty(), initiallyOpen, filtering) {
+        Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            matches.forEach { choice ->
+                val checked = selected == choice.value
+                Row(
+                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).then(keepEditorFocus)
+                        .testTag("chat-tools-option:$id:${choice.value}")
+                        .selectable(selected = checked, enabled = enabled, role = Role.RadioButton, onClick = { onSelect(choice.value) })
+                        .heightIn(min = 48.dp).padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(choice.icon(), null, Modifier.size(20.dp),
+                        tint = if (choice.value == Disabled) colors.onSurface.copy(alpha = .38f) else colors.onSurfaceVariant)
+                    Text(choice.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    RadioButton(selected = checked, onClick = null, enabled = enabled,
+                        colors = RadioButtonDefaults.colors(selectedColor = colors.onSurface, unselectedColor = colors.outline))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun PanelSection(id: String, title: String, summary: String, visible: Boolean, initiallyOpen: Boolean,
+    filtering: Boolean, content: @Composable () -> Unit) {
     var expanded by rememberSaveable(id) { mutableStateOf(initiallyOpen) }
-    if (matches.isEmpty()) return
+    if (!visible) return
     val colors = MaterialTheme.colorScheme
     val showChoices = filtering || expanded
     val describeState = stringResource(if (showChoices) R.string.chat_tools_expanded else R.string.chat_tools_collapsed)
@@ -201,33 +226,13 @@ private fun ToolGroup(
                 Modifier.size(16.dp), tint = colors.onSurfaceVariant)
         }
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-            Text(choices.find { it.value == selected }?.label ?: selected, Modifier.widthIn(max = 160.dp),
+        if (summary.isNotEmpty()) Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            Text(summary, Modifier.widthIn(max = 160.dp),
                 style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.End, color = colors.onSurfaceVariant)
         }
     }
-    AnimatedVisibility(showChoices) {
-        Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            matches.forEach { choice ->
-                val checked = selected == choice.value
-                Row(
-                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).then(keepEditorFocus)
-                        .testTag("chat-tools-option:$id:${choice.value}")
-                        .selectable(selected = checked, role = Role.RadioButton, onClick = { onSelect(choice.value) })
-                        .heightIn(min = 48.dp).padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Icon(choice.icon(), null, Modifier.size(20.dp),
-                        tint = if (choice.value == Disabled) colors.onSurface.copy(alpha = .38f) else colors.onSurfaceVariant)
-                    Text(choice.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    RadioButton(selected = checked, onClick = null,
-                        colors = RadioButtonDefaults.colors(selectedColor = colors.onSurface, unselectedColor = colors.outline))
-                }
-            }
-        }
-    }
+    AnimatedVisibility(showChoices) { content() }
 }
 
 @Composable

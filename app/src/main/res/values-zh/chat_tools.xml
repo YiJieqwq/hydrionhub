@@ -9,7 +9,7 @@
     <string name="chat_tools_custom_search">自定义搜索</string>
     <string name="chat_tools_custom_image">自定义图片生成</string>
     <string name="chat_tools_disabled">禁用</string>
-    <string name="chat_tools_enabled_count">已启用 %1$d 个工具，共 2 个</string>
+    <string name="chat_tools_enabled_count">搜索与图片模式已启用 %1$d 项，共 2 项</string>
     <string name="chat_tools_expand">展开</string>
     <string name="chat_tools_collapse">收起</string>
     <string name="chat_tools_expanded">已展开</string>

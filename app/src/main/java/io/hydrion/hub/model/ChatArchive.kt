@@ -72,13 +72,13 @@ private fun SavedWorkspace.transform(application: Boolean, attachment: (Attachme
         },
     )
     fun conversation(c: Conversation) = Conversation(id = c.id, title = c.title, mode = c.mode,
-        pinned = c.pinned, archived = c.archived, updatedAt = c.updatedAt, messages = c.messages.map(::message), assistantId = c.assistantId,
+        pinned = c.pinned, archived = c.archived, panelActionsDenied = c.panelActionsDenied, updatedAt = c.updatedAt, messages = c.messages.map(::message), assistantId = c.assistantId,
         contextStart = c.contextStart, versions = c.versions.mapValues { (_, group) -> group.copy(others = group.others.map(::message)) },
         modelRoutes = c.modelRoutes?.mapValues { (_, r) -> RemoteModel(r.providerId, r.modelId) })
     return SavedWorkspace(history.map(::conversation), drafts.mapValues { (_, d) ->
         Draft(d.text, d.attachments.map(::portableAttachment), d.search, d.imageTool)
     }, unsent?.let(::conversation), assistants.map {
-        if (application) LocalAssistant(it.id, it.name, it.sidebarGroup, it.systemPrompt, route(it.chatModel), it.avatarText, it.contextLimit)
+        if (application) LocalAssistant(it.id, it.name, it.sidebarGroup, it.systemPrompt, route(it.chatModel), it.avatarText, it.contextLimit, it.manualPanelTools)
         else LocalAssistant(it.id, it.name, it.sidebarGroup)
     }, selectedAssistant,
         otherUnsent.map(::conversation), lastThreads.toMap())

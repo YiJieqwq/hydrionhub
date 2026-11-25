@@ -1,5 +1,7 @@
 package io.hydrion.hub.ui
 
+import androidx.lifecycle.viewmodel.compose.viewModel
+import io.hydrion.hub.model.HubViewModel
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
@@ -132,6 +134,7 @@ internal fun Modifier.clipSlidingPageContent(excessDockPx: () -> Int) = drawWith
 internal fun ToolsPageOverlay(
     state: ToolsPageState, search: String, imageTool: String, panelDock: Dp, excessDockPx: () -> Int,
     onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
+    vm: HubViewModel = viewModel(), modelToolsEnabled: Boolean = true,
 ) {
     val active = state.active
     val travel = { state.progress }
@@ -142,7 +145,7 @@ internal fun ToolsPageOverlay(
                 .padding(bottom = panelDock).clipSlidingPageContent(excessDockPx)
         } else Modifier
         RetainedToolOptions(active, surface) {
-            ChatToolsPage(search, imageTool, state.query.text, onSearch, onImageTool)
+            ChatToolsPage(search, imageTool, state.query.text, onSearch, onImageTool, vm, modelToolsEnabled)
         }
     }
 }

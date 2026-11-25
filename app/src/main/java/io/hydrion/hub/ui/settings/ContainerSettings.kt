@@ -226,11 +226,13 @@ private fun checkLabel(check: ProotCheck): Int = when (check) {
     ProotCheck.Outcome.LaunchFailed -> R.string.env_probe_error
     ProotCheck.Outcome.TimedOut -> R.string.env_timed_out
     ProotCheck.Outcome.CleanupIncomplete -> R.string.env_cleanup_incomplete
-    is ProotCheck.Unavailable -> when (check.reason) {
-        ProotPreparation.Reason.RuntimeNotPackaged -> R.string.env_missing_tools
-        ProotPreparation.Reason.IncompleteRootfs, ProotPreparation.Reason.MissingGuestExecutable -> R.string.env_rootfs_invalid
-        ProotPreparation.Reason.UntrustedRootfs -> R.string.env_untrusted
-        ProotPreparation.Reason.MissingWorkspace, ProotPreparation.Reason.MissingWorkingDirectory -> R.string.env_workspace_invalid
-        ProotPreparation.Reason.UnknownEnvironment, ProotPreparation.Reason.UnsafeOrUnreadablePath -> R.string.env_unsafe
-    }
+    is ProotCheck.Unavailable -> runtimeUnavailableLabel(check.reason)
+}
+
+internal fun runtimeUnavailableLabel(reason: ProotPreparation.Reason): Int = when (reason) {
+    ProotPreparation.Reason.RuntimeNotPackaged -> R.string.env_missing_tools
+    ProotPreparation.Reason.IncompleteRootfs, ProotPreparation.Reason.MissingGuestExecutable -> R.string.env_rootfs_invalid
+    ProotPreparation.Reason.UntrustedRootfs -> R.string.env_untrusted
+    ProotPreparation.Reason.MissingWorkspace, ProotPreparation.Reason.MissingWorkingDirectory -> R.string.env_workspace_invalid
+    ProotPreparation.Reason.UnknownEnvironment, ProotPreparation.Reason.UnsafeOrUnreadablePath -> R.string.env_unsafe
 }

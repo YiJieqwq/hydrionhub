@@ -42,7 +42,11 @@ internal fun decodeWorkspace(json: JSONObject): SavedWorkspace {
         LocalAssistant(it.getString("id"), it.getString("name"), it.optional("sidebarGroup")?.takeIf(LocalAssistant::validName),
             it.optional("systemPrompt").orEmpty().takeIf(LocalAssistant::validPrompt).orEmpty(), it.readRoute("chatModel"),
             it.optional("avatarText").orEmpty().takeIf(LocalAssistant::validAvatar).orEmpty(),
-            it.optInt("contextLimit").takeIf { count -> count in LocalAssistant.ContextLimits })
+            it.optInt("contextLimit").takeIf { count -> count in LocalAssistant.ContextLimits },
+            it.optJSONArray("manualPanelTools")?.let { tools ->
+                val names = (0 until tools.length()).mapTo(mutableSetOf(), tools::optString)
+                ManualPanelTool.entries.filterTo(mutableSetOf()) { tool -> tool.name in names }
+            }.orEmpty())
     }.ifEmpty { listOf(LocalAssistant.Default) }
     val lastThreads = json.optJSONObject("lastThreads") ?: JSONObject()
     val defaults = Draft()
@@ -68,6 +72,7 @@ internal fun encodeWorkspace(saved: SavedWorkspace): JSONObject {
     return JSONObject().put("history", history).put("drafts", drafts).put("unsent", saved.unsent?.let(::writeConversation))
         .put("assistants", JSONArray(saved.assistants.map { JSONObject().put("id", it.id).put("name", it.name).put("sidebarGroup", it.sidebarGroup)
             .put("systemPrompt", it.systemPrompt.takeIf(String::isNotEmpty)).put("chatModel", it.chatModel?.toJson())
+            .put("manualPanelTools", it.manualPanelTools.takeIf { tools -> tools.isNotEmpty() }?.let { tools -> JSONArray(tools.map { tool -> tool.name }) })
             .put("avatarText", it.avatarText.takeIf(String::isNotEmpty)).put("contextLimit", it.contextLimit) }))
         .put("selectedAssistant", saved.selectedAssistant).put("lastThreads", JSONObject(saved.lastThreads))
         .put("otherUnsent", JSONArray(saved.otherUnsent.map(::writeConversation)))
@@ -79,6 +84,7 @@ private fun readConversation(item: JSONObject) = Conversation(
     updatedAt = item.getLong("updatedAt"), messages = item.optJSONArray("messages").objects().map(::readMessage),
     environmentId = item.optional("environmentId"), assistantId = item.optString("assistantId", LocalAssistant.Default.id),
     archived = item.opt("archived")?.let { value -> require(value is Boolean); value } ?: false,
+    panelActionsDenied = item.opt("panelActionsDenied")?.let { value -> require(value is Boolean); value } ?: false,
     contextStart = item.optional("contextStart"),
     versions = if (item.isNull("messageVersions")) emptyMap() else item.getJSONObject("messageVersions").let { groups ->
         groups.keys().asSequence().associateWith { id ->
@@ -93,7 +99,10 @@ private fun readConversation(item: JSONObject) = Conversation(
 private fun writeConversation(c: Conversation) = JSONObject().put("id", c.id).put("title", c.title)
     .put("mode", c.mode.name).put("pinned", c.pinned).put("updatedAt", c.updatedAt)
     .put("messages", JSONArray(c.messages.map(::writeMessage))).put("environmentId", c.environmentId).put("assistantId", c.assistantId)
-    .apply { if (c.archived) put("archived", true) }
+    .apply {
+        if (c.archived) put("archived", true)
+        if (c.panelActionsDenied) put("panelActionsDenied", true)
+    }
     .put("contextStart", c.contextStart)
     .put("messageVersions", c.versions.takeIf { it.isNotEmpty() }?.let { groups ->
         JSONObject().apply { groups.forEach { (id, group) ->

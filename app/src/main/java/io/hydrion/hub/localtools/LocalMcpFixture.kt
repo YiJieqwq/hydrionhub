@@ -7,6 +7,10 @@ private const val fixtureVersion = "2025-11-25"
 
 /** In-process JSON-RPC peer. It has one compiled-in, side-effect-free tool and no I/O. */
 internal class LocalMcpFixture {
+    companion object {
+        val toolNames = listOf("ping")
+    }
+
     private enum class Phase { New, Negotiated, Ready }
     private var phase = Phase.New
 
@@ -38,7 +42,7 @@ internal class LocalMcpFixture {
             "tools/list" -> {
                 if (phase != Phase.Ready) return error(-32600, "Not initialized")
                 val schema = JSONObject().put("type", "object").put("properties", JSONObject()).put("additionalProperties", false)
-                JSONObject().put("tools", JSONArray().put(JSONObject().put("name", "ping").put("inputSchema", schema)))
+                JSONObject().put("tools", JSONArray(toolNames.map { name -> JSONObject().put("name", name).put("inputSchema", schema) }))
             }
             "tools/call" -> {
                 if (phase != Phase.Ready) return error(-32600, "Not initialized")

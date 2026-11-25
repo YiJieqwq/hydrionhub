@@ -69,6 +69,9 @@ class HubViewModel internal constructor(app: Application, stream: ChatStream) : 
             })) return false
         return session.updateAssistant(id, name, avatar, prompt, route, contextLimit)
     }
+    internal fun setManualPanelTool(assistantId: String, tool: ManualPanelTool, enabled: Boolean) {
+        if (loaded) session.setManualPanelTool(assistantId, tool, enabled)
+    }
     internal fun selectAssistant(id: String) { if (loaded) session.selectAssistant(id) }
     private val mutableNotice = MutableStateFlow<String?>(null)
     val notice = mutableNotice.asStateFlow()
@@ -199,6 +202,10 @@ class HubViewModel internal constructor(app: Application, stream: ChatStream) : 
     }
     fun openConversation(id: String) = session.openConversation(id)
     fun setMode(mode: Mode) = session.setMode(mode)
+    internal fun setPanelActionsDenied(chatId: String, denied: Boolean) {
+        if (loaded) session.setPanelActionsDenied(chatId, denied)
+    }
+
     internal suspend fun bindEnvironment(conversationId: String, environmentId: String?) {
         if (environmentId != null) requireNotNull(environments.getEnvironment(environmentId)) { "环境已不存在。" }
         withContext(Dispatchers.Main.immediate) { session.bindEnvironment(conversationId, environmentId) }

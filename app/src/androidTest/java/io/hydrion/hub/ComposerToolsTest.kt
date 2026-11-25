@@ -343,12 +343,12 @@ class ComposerToolsTest {
                 action("count").assertIsDisplayed()
                 option("web", "模型内置搜索").assertIsSelected()
                 val custom = option("web", "自定义搜索")
-                custom.assertIsDisplayed().performClick().assertIsSelected()
+                custom.performScrollTo().assertIsDisplayed().performClick().assertIsSelected()
                 screen.runOnIdle { assertEquals("自定义搜索", vm.state.value.draft.search) }
-                action("group:image").performClick()
-                option("image", "禁用").performClick().assertIsSelected()
+                action("group:image").performScrollTo().performClick()
+                option("image", "禁用").performScrollTo().performClick().assertIsSelected()
                 screen.runOnIdle { assertEquals("禁用", vm.state.value.draft.imageTool) }
-                action("group:web").performClick()
+                action("group:web").performScrollTo().performClick()
                 custom.assertDoesNotExist()
                 action("back").performTouchInput { click(center) }
                 page.assertDoesNotExist()
@@ -359,7 +359,7 @@ class ComposerToolsTest {
                 assertSame("Reopening reuses the options layout", optionsLayout, page.fetchSemanticsNode().layoutInfo)
                 custom.assertIsSelected()
                 option("image", "禁用").assertDoesNotExist()
-                action("group:image").performClick()
+                action("group:image").performScrollTo().performClick()
                 option("image", "禁用").assertIsSelected()
                 screen.runOnUiThread { screen.activity.onBackPressedDispatcher.onBackPressed() }
                 page.assertDoesNotExist()
@@ -381,7 +381,7 @@ class ComposerToolsTest {
             screen.runOnIdle { vm.setDraft("first chat") }
             tools.performTouchInput { click(center) }
             val firstOptions = page.fetchSemanticsNode().layoutInfo
-            action("group:image").performClick()
+            action("group:image").performScrollTo().performClick()
             option("image", "禁用").assertExists()
             action("back").performTouchInput { click(center) }
             page.assertDoesNotExist()
@@ -673,7 +673,7 @@ class ComposerToolsTest {
                 page.assertIsDisplayed()
                 field.assertIsFocused()
                 assertQuery("")
-                option("web", "模型内置搜索").assertIsDisplayed()
+                option("web", "模型内置搜索").performScrollTo().assertIsDisplayed()
                 field.performTextInput("query to discard")
                 screen.onNodeWithTag("composer-editable-text", useUnmergedTree = true)
                     .performTouchInput { doubleClick(center) }

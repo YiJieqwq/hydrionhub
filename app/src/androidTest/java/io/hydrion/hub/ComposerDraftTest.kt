@@ -112,7 +112,7 @@ class ComposerDraftTest {
                 vm.providers.configure(Mode.Chat, deepSeekProvider.models.first().id, emptyMap())
                 vm.setDraft("draft")
             }
-            screen.onNodeWithContentDescription("打开工具箱").assertIsNotEnabled().assertToolInk(enabled = false)
+            screen.onNodeWithContentDescription("打开工具箱").assertIsEnabled().assertToolInk(enabled = true)
             screen.onNodeWithContentDescription("发送消息").performClick()
             screen.onNodeWithTag("composer-error").assertIsDisplayed()
             screen.onNodeWithText("API Key", substring = true).assertIsDisplayed()

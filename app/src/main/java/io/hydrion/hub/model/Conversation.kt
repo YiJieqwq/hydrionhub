@@ -82,10 +82,14 @@ data class Message(
     val reportedUsage: TokenUsage? get() = usage ?: totalTokens?.let { TokenUsage(totalTokens = it) }
 }
 
+/** Assistant preferences for manual panel actions. These never grant model or system access. */
+enum class ManualPanelTool { Time, CreateEvent, ViewCalendar, Browser }
+
 data class LocalAssistant(
     val id: String, val name: String, val sidebarGroup: String? = null,
     val systemPrompt: String = "", val chatModel: RemoteModel? = null, val avatarText: String = "",
     val contextLimit: Int? = null,
+    val manualPanelTools: Set<ManualPanelTool> = emptySet(),
 ) {
     companion object {
         val Default = LocalAssistant("default", "HydrionHub")
@@ -110,7 +114,10 @@ data class Conversation(
     val contextStart: String? = null,
     val versions: Map<String, MessageVersions> = emptyMap(),
     val archived: Boolean = false,
-)
+    val panelActionsDenied: Boolean = false,
+) {
+    internal val hasToolPanelSettings get() = environmentId != null || panelActionsDenied
+}
 
 data class HubState(
     val current: Conversation = Conversation(),

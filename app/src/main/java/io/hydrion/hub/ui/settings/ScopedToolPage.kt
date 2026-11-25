@@ -1,5 +1,6 @@
 package io.hydrion.hub.ui.settings
 
+import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowDropDown
@@ -21,6 +22,8 @@ import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+internal fun Context.assistantFeatureDirectory() = File(noBackupFilesDir, "assistant-features")
+
 @Composable
 internal fun ScopedToolPage(vm: HubViewModel, title: Int, onBack: () -> Unit, fixedOwner: String? = null, content: @Composable (File, String) -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -29,7 +32,7 @@ internal fun ScopedToolPage(vm: HubViewModel, title: Int, onBack: () -> Unit, fi
     var choosing by remember { mutableStateOf(false) }
     val owner = state.assistants.firstOrNull { it.id == selected } ?: state.assistants.firstOrNull { it.id == state.current.assistantId }
     val context = LocalContext.current
-    val root = remember(context) { File(context.noBackupFilesDir, "assistant-features") }
+    val root = remember(context) { context.assistantFeatureDirectory() }
     if (fixedOwner != null) {
         when {
             load == WorkspaceLoad.Reading -> LinearProgressIndicator(Modifier.fillMaxWidth())

@@ -62,6 +62,15 @@ internal class ProotFiles(private val filesDir: File, private val nativeLibraryD
         require(Files.isDirectory(path, noLinks)) { "请先预置应用专属工作区目录。" }
     }
 
+    /** Resolve a guest directory inside this environment's registered, app-private workspace. */
+    fun workspaceDirectory(workspace: ProotWorkspace, guestPath: String): Path {
+        require(isGuestPath(guestPath) && (guestPath == "/workspace" || guestPath.startsWith("/workspace/")))
+        val root = workspacePath(ownedRoot(filesDir), workspace)
+        val path = if (guestPath == "/workspace") root else below(root, *guestPath.removePrefix("/workspace/").split('/').toTypedArray())
+        require(Files.isDirectory(path, noLinks))
+        return path
+    }
+
     private fun imageExecutable(rootfs: Path, guestPath: String): Path? {
         // Guest absolute symlinks are rooted in the guest image, never the Android host.
         val remaining = ArrayDeque(guestPath.removePrefix("/").split('/'))

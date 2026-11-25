@@ -51,4 +51,20 @@ class ManagedWorkspaceTest {
         Files.createSymbolicLink(File(other, "proot-v1").toPath(), temp.root.toPath())
         assertThrows(IOException::class.java) { createManagedWorkspace(other, ProotWorkspace(id())) { fail() } }
     }
+
+    @Test fun panelListingIsReadOnlyAndScopedToTheRegisteredWorkspace() {
+        val workspace = ProotWorkspace(id())
+        createManagedWorkspace(temp.root, workspace) {}
+        val files = ProotFiles(temp.root, null)
+        val root = files.workspaceDirectory(workspace, "/workspace")
+        Files.createDirectory(root.resolve("docs"))
+        Files.write(root.resolve("notes.txt"), byteArrayOf(65, 66))
+        Files.createSymbolicLink(root.resolve("other"), temp.newFolder("sibling").toPath())
+        val entries = readWorkspaceDirectory(root)
+        assertEquals(listOf("docs", "notes.txt"), entries.map { it.name })
+        assertEquals(2L, entries.last().bytes)
+        assertTrue(entries.first().directory)
+        assertThrows(IOException::class.java) { files.workspaceDirectory(workspace, "/workspace/other") }
+        assertThrows(IllegalArgumentException::class.java) { files.workspaceDirectory(workspace, "/workspace/../sibling") }
+    }
 }
