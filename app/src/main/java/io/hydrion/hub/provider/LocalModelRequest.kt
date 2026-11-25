@@ -1,5 +1,6 @@
 package io.hydrion.hub.provider
 
+import io.hydrion.hub.model.AskWireRound
 import io.hydrion.hub.model.Mode
 import org.json.JSONObject
 import org.json.JSONArray
@@ -9,7 +10,8 @@ internal class LocalModelRequest(
     val headers: Map<String, String>,
     val body: JSONObject,
     val parameters: Map<String, String>,
-    val url: String = ""
+    val url: String = "",
+    val questions: AskWireRound? = null
 )
 
 internal const val IMAGE_MODEL_REQUIRED = "所选图像生成模型不可用。请前往「设置 → 图像生成模型」启用供应商，或重新选择模型。"

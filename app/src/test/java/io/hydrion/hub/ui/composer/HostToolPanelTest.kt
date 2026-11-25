@@ -25,7 +25,8 @@ import io.hydrion.hub.localtools.mcpFile
 import io.hydrion.hub.model.*
 import io.hydrion.hub.ui.HydrionApp
 import io.hydrion.hub.ui.settings.assistantFeatureDirectory
-import io.hydrion.hub.provider.deepSeekProvider
+import io.hydrion.hub.provider.*
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import java.nio.file.Files
 import java.nio.file.Path
@@ -51,6 +52,7 @@ class HostToolPanelTest {
     private lateinit var app: Application
     private lateinit var vm: HubViewModel
     private lateinit var files: Path
+    private var chatStream: ChatStream = { _, _, _ -> error("No model request expected") }
 
     @Before fun start() {
         val host = screen.activity
@@ -70,7 +72,7 @@ class HostToolPanelTest {
             val factory = object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    HubViewModel(app) { _, _, _ -> error("No model request expected") } as T
+                    HubViewModel(app) { protocol, request, reply -> chatStream(protocol, request, reply) } as T
             }
             vm = ViewModelProvider(owner, factory)[HubViewModel::class.java]
         }
@@ -300,6 +302,138 @@ class HostToolPanelTest {
         }
     }
 
+    @Test fun askCardsKeepDraftAndDeliverOnceOnlyToTheirOriginalTurn() {
+        val peer = QuestionPeer()
+        chatStream = { protocol, request, reply -> when (protocol) {
+            ChatProtocol.ResponsesHttp -> peer.transport.stream(request, reply)
+            ChatProtocol.ChatCompletionsHttp -> peer.transport.streamChatCompletions(request, reply)
+            else -> error("Unexpected transport")
+        } }
+        val model = ProviderModel("ask-model", "Fixture", profile = ModelProfile(abilities = setOf("tools")))
+        fun provider(id: String, protocol: ChatProtocol) = newProvider(Mode.Chat).copy(id = id, name = id,
+            protocol = protocol.label, baseUrl = "https://$id.invalid/v1", models = listOf(model))
+        val a = provider("questions-a", ChatProtocol.ResponsesHttp)
+        val b = provider("questions-b", ChatProtocol.ChatCompletionsHttp)
+        fun choose(p: Provider) = screen.runOnIdle { vm.providers.configure(Mode.Chat, RemoteModel(p.id, model.id), emptyMap()) }
+        screen.runOnIdle { for (p in listOf(a, b)) vm.providers.save(p, "fixture-only", null) }
+        choose(a)
+        fun localSwitch() = screen.onNodeWithTag("panel-switch:AskUser")
+        fun openFromComposer() {
+            // With no software IME the empty composer is folded. A real draft reveals its toolbar.
+            if (screen.onAllNodesWithContentDescription("打开工具箱").fetchSemanticsNodes().isEmpty())
+                screen.onNodeWithContentDescription("消息输入框").performTextReplacement("Unsent panel draft")
+            open()
+        }
+        fun localPanel() {
+            openFromComposer()
+            if (screen.onAllNodesWithTag("panel-switch:AskUser").fetchSemanticsNodes().isEmpty())
+                screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
+        }
+        fun back() = screen.onNodeWithTag("chat-tools-back").performClick()
+        fun send(text: String) {
+            screen.onNodeWithContentDescription("消息输入框").performTextReplacement(text)
+            screen.onNodeWithContentDescription("发送消息").assertIsEnabled().performClick()
+        }
+        fun newChat() {
+            screen.onNodeWithContentDescription("打开侧栏").performClick()
+            screen.onNodeWithTag("drawer-new-chat").performClick()
+        }
+        fun visit(title: String) {
+            screen.onNodeWithContentDescription("打开侧栏").performClick()
+            screen.onNode(hasText(title) and hasAnyAncestor(hasTestTag("drawer-conversation-list"))).performScrollTo().performClick()
+            awaitUi { vm.state.value.current.title == title }
+        }
+        fun form() = screen.onNodeWithTag("ask-form")
+        fun option(label: String) = screen.onNode(hasText(label) and hasClickAction() and hasAnyAncestor(hasTestTag("ask-form")))
+        fun submit() = screen.onNodeWithTag("ask-submit")
+        fun expectQuestion(prompt: String) { waitForText("Choose for $prompt"); form().assertExists(); submit().assertIsNotEnabled() }
+        fun checkExchange(prompt: String, host: String, choice: String, completions: Boolean) {
+            val requests = peer.sent.filter { it.prompt == prompt }
+            assertEquals(2, requests.size)
+            assertTrue(requests.all { it.host == host })
+            val tool = requests.first().body.getJSONArray("tools")
+            assertEquals(1, tool.length())
+            val definition = tool.getJSONObject(0)
+            assertEquals(ASK_USER, (if (completions) definition.getJSONObject("function") else definition).getString("name"))
+            val finished = requests.last()
+            assertEquals(choice, finished.answer!!.getJSONObject("answers").getJSONObject("pick").getString("value"))
+            val input = finished.body.getJSONArray(if (completions) "messages" else "input")
+            val original = input.getJSONObject(input.length() - 2)
+            val result = input.getJSONObject(input.length() - 1)
+            if (completions) {
+                assertEquals("shared-call", original.getJSONArray("tool_calls").getJSONObject(0).getString("id"))
+                assertEquals("tool", result.getString("role"))
+                assertEquals("shared-call", result.getString("tool_call_id"))
+            } else {
+                assertEquals("function_call", original.getString("type"))
+                assertEquals("function_call_output", result.getString("type"))
+                assertEquals("shared-call", original.getString("call_id"))
+                assertEquals("shared-call", result.getString("call_id"))
+            }
+        }
+
+        localPanel(); localSwitch().performScrollTo().assertIsOff().performClick().assertIsOn(); back()
+        send("Chat A"); expectQuestion("Chat A")
+        option("Blue").performClick().assertIsSelected()
+        val aId = vm.state.value.current.id
+        val replyId = vm.state.value.current.messages.last().id
+        newChat(); choose(b)
+        send("Chat B"); expectQuestion("Chat B")
+        assertEquals(listOf(0, 0), vm.questions.pending.value.keys.map { it.slot })
+        assertEquals(2, vm.questions.pending.value.keys.distinctBy { it.turn.chatId }.size)
+        option("Green").performClick()
+        visit("Chat A")
+        option("Blue").assertIsSelected()
+        val stale = submit().fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+        visit("Chat B")
+        screen.runOnIdle { stale() }
+        assertTrue(peer.sent.none { it.answer != null })
+        option("Green").assertIsSelected()
+        screen.onNodeWithTag("ask-cancel").performScrollTo().performClick()
+        awaitUi { vm.state.value.current.messages.last().status == Generation.Stopped }
+        assertEquals(ToolCallState.Incomplete, vm.state.value.current.messages.last().toolCalls.single().state)
+        assertEquals(1, peer.sent.count { it.prompt == "Chat B" })
+        assertEquals(1, vm.questions.pending.value.size)
+
+        visit("Chat A"); option("Blue").assertIsSelected(); submit().performScrollTo().performClick()
+        screen.runOnIdle { stale() }
+        waitForText("Finished Chat A")
+        val finishedA = vm.state.value.current
+        assertEquals(aId, finishedA.id)
+        assertEquals(listOf(Role.User, Role.Assistant), finishedA.messages.map { it.role })
+        assertEquals(replyId, finishedA.messages.last().id)
+        assertEquals(ToolCallState.Completed, finishedA.messages.last().toolCalls.single().state)
+        checkExchange("Chat A", "questions-a.invalid", "Blue", false)
+
+        visit("Chat B"); send("B stop"); expectQuestion("B stop")
+        option("Blue").performClick()
+        val late = submit().fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
+        screen.onNodeWithContentDescription("停止生成").performClick()
+        awaitUi { vm.state.value.current.messages.last().status == Generation.Stopped }
+        send("B again"); expectQuestion("B again")
+        screen.runOnIdle { late() }
+        submit().assertIsNotEnabled()
+        assertEquals(1, peer.sent.count { it.prompt == "B stop" })
+        assertEquals(1, peer.sent.count { it.prompt == "B again" })
+        option("Green").performClick(); submit().performScrollTo().performClick()
+        waitForText("Finished B again")
+        checkExchange("B again", "questions-b.invalid", "Green", true)
+
+        send("Revoke"); expectQuestion("Revoke"); option("Blue").performClick()
+        openFromComposer(); tap("Permissions"); dialogButton(R.string.panel_deny); back()
+        awaitUi { vm.state.value.current.messages.last().status == Generation.Error }
+        assertEquals(label(R.string.ask_disabled), vm.state.value.current.messages.last().error)
+        assertEquals(1, peer.sent.count { it.prompt == "Revoke" })
+        send("Denied"); awaitUi { vm.state.value.current.messages.last().status == Generation.Error }
+        assertFalse(peer.sent.single { it.prompt == "Denied" }.body.has("tools"))
+        openFromComposer(); tap("Permissions"); dialogButton(R.string.panel_ask); back()
+        localPanel(); localSwitch().performScrollTo().assertIsOn().performClick(); back()
+        send("Off"); awaitUi { vm.state.value.current.messages.last().status == Generation.Error }
+        assertFalse(peer.sent.single { it.prompt == "Off" }.body.has("tools"))
+        assertTrue(vm.questions.pending.value.isEmpty())
+        assertEquals(2, peer.sent.count { it.answer != null })
+    }
+
     @Test fun localToolsRequireAManualHandoffAndRespectDenial() {
         installCalendarAndBrowser()
         // Manual actions must remain reachable even when this provider cannot use chat tool modes.
@@ -316,7 +450,7 @@ class HostToolPanelTest {
         screen.onNodeWithTag("chat-tools-group:local").assertTextContains("0/5")
         for (id in listOf("Time", "Create", "Calendar", "Browser")) enable(id)
         val assistant = screen.runOnIdle { decodeWorkspace(encodeWorkspace(model.backupSnapshot())).assistants.single() }
-        assertEquals(ManualPanelTool.entries.toSet(), assistant.manualPanelTools)
+        assertEquals(ManualPanelTool.entries.toSet() - ManualPanelTool.AskUser, assistant.manualPanelTools)
         screen.onNodeWithTag("chat-tools-group:local").assertTextContains("4/5")
         tap("Time")
         screen.onNodeWithTag("panel-current-time").assertIsDisplayed()

@@ -1,5 +1,6 @@
 package io.hydrion.hub.model
 
+import io.hydrion.hub.R
 import java.io.BufferedReader
 import java.io.IOException
 import org.json.JSONException
@@ -9,6 +10,7 @@ internal suspend fun readChatCompletionsEvents(
     reader: BufferedReader,
     request: Message,
     privacy: ToolRecordText = ToolRecordText(),
+    questions: AskWireRound? = null,
     emit: suspend (Message) -> Unit
 ) {
     var message = request.copy(status = Generation.Generating, tool = null, usage = null, totalTokens = null)
@@ -26,6 +28,7 @@ internal suspend fun readChatCompletionsEvents(
         // A streamed name or argument can split a credential across frames. Publish it only at finish.
         callsByIndex[index] = current
     }
+    var conflictingTool = false
     var done = false
     for ((event, data) in reader.sseEvents()) {
         if (data.trim() == "[DONE]") {
@@ -60,12 +63,14 @@ internal suspend fun readChatCompletionsEvents(
                         val id = call.optionalText("id")
                         val index = if (call.has("index")) call.getInt("index") else indicesById[id] ?: j
                         if (index < 0) throw JSONException("tool_calls index")
-                        if (id != null) indicesById[id] = index
+                        if (id != null && indicesById.put(id, index)?.let { it != index } == true) conflictingTool = true
+                        if (!call.isNull("type") && call.opt("type") != "function" || finish != null) conflictingTool = true
                         recordCall(index, call.optJSONObject("function"))
                         pendingTool = "tool_calls"
                     }
                 }
                 delta?.optJSONObject("function_call")?.let {
+                    conflictingTool = true
                     recordCall(0, it)
                     pendingTool = "function_call"
                 }
@@ -95,7 +100,18 @@ internal suspend fun readChatCompletionsEvents(
         "stop" -> if (!done) throw IOException("Chat Completions 在收到 [DONE] 前中断。")
         "length" -> throw IOException("响应未完成（length）· 已达到输出长度上限。")
         "content_filter" -> throw IOException("响应未完成（content_filter）· 内容已被服务端过滤。")
-        "tool_calls", "function_call" -> throw IOException("响应未完成（$reason）· 此对话尚不支持执行模型请求的工具。")
+        "tool_calls", "function_call" -> {
+            if (ASK_USER !in names.values) throw IOException("响应未完成（$reason）· 此对话尚不支持执行模型请求的工具。")
+            val wire = questions ?: throw AskUserFailure(R.string.ask_disabled)
+            if (!done || finish != "tool_calls" || conflictingTool || names.values.any { it != ASK_USER } ||
+                indicesById.size != callsByIndex.size) throw AskUserFailure(R.string.ask_invalid)
+            val requested = callsByIndex.keys.map { slot ->
+                val id = indicesById.entries.singleOrNull { it.value == slot }?.key ?: throw AskUserFailure(R.string.ask_invalid)
+                if (names[slot] != ASK_USER) throw AskUserFailure(R.string.ask_invalid)
+                WireQuestion(id, slot, arguments[slot]?.completeArguments() ?: throw AskUserFailure(R.string.ask_invalid))
+            }
+            wire.completions(requested, message)
+        }
         "insufficient_system_resource" -> throw IOException("响应未完成（$reason）· 服务端资源不足。")
         "aborted" -> throw IOException("响应未完成（aborted）· 生成已被服务端中断。")
         else -> throw IOException("Chat Completions 返回未知结束原因（$reason）。")

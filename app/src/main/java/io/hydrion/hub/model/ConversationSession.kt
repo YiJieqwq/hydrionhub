@@ -25,7 +25,8 @@ internal class ConversationSession(
     private val showRoutes: (Map<Mode, RemoteModel>?, RemoteModel?) -> Unit = { _, _ -> },
     private val allowSearch: () -> Boolean = { true },
     private val monotonicMs: () -> Long = { System.nanoTime() / 1_000_000L },
-    private val onGenerationError: (conversationId: String, detail: String) -> Unit = { _, _ -> }
+    private val onGenerationError: (conversationId: String, detail: String) -> Unit = { _, _ -> },
+    private val describeAskFailure: (AskUserFailure) -> String = { it.message.orEmpty() }
 ) {
     private fun newChat(owner: String = LocalAssistant.Default.id) =
         Conversation(assistantId = owner, modelRoutes = newRoutes())
@@ -33,6 +34,11 @@ internal class ConversationSession(
     private val mutable = MutableStateFlow(HubState(current = Conversation(modelRoutes = newRoutes())))
     val state: StateFlow<HubState> = mutable.asStateFlow()
     private val screen get() = mutable.value
+    val questions = AskUserInbox({ screen.current.id }) { turn ->
+        val chat = conversation(turn.chatId)
+        chat != null && !chat.panelActionsDenied && chat.messages.any { it.id == turn.replyId && it.status.isActive } &&
+            assistant(chat.assistantId)?.manualPanelTools?.contains(ManualPanelTool.AskUser) == true
+    }
     private val drafts = mutableMapOf<String, Draft>()
     // Present only while a dictated send is active and its cleared draft is still untouched.
     private val dictatedDrafts = mutableMapOf<String, Draft>()
@@ -51,7 +57,7 @@ internal class ConversationSession(
         val liveIds = screen.history.mapTo(mutableSetOf()) { it.id }
         val restored = saved.history.filterNot { it.id in liveIds }.map { item ->
             item.copy(messages = item.messages.map { message ->
-                if (message.status.isActive) message.copy(status = Generation.Stopped) else message
+                if (message.status.isActive) message.endUnanswered(Generation.Stopped) else message
             })
         }
         saved.drafts.forEach { (id, draft) -> drafts.putIfAbsent(id, draft) }
@@ -148,6 +154,7 @@ internal class ConversationSession(
         if ((tool in choices) == enabled) return
         val updated = assistant.copy(manualPanelTools = if (enabled) choices + tool else choices - tool)
         mutable.value = screen.copy(assistants = screen.assistants.map { if (it.id == assistantId) updated else it })
+        if (tool == ManualPanelTool.AskUser && !enabled) questions.revokeUnavailable()
         save()
     }
 
@@ -282,6 +289,7 @@ internal class ConversationSession(
         if (chat.id != conversationId || chat.mode != Mode.Chat || chat.panelActionsDenied == denied) return
         if (!screen.modeLocked) restoredUnsentId = chat.id
         update(chat.copy(panelActionsDenied = denied))
+        if (denied) questions.revokeUnavailable()
         save()
     }
 
@@ -446,7 +454,11 @@ internal class ConversationSession(
         val job = scope.launch(start = CoroutineStart.LAZY) {
             val generation = coroutineContext[Job]
             try {
-                repository.generate(mode, response, retry, history, profile?.systemPrompt.orEmpty()).collect { message ->
+                val events = if (response.remoteModel != null && profile != null && !chat.panelActionsDenied &&
+                    ManualPanelTool.AskUser in profile.manualPanelTools) {
+                    repository.chatWithQuestions(response, retry, history, profile.systemPrompt, AskUserTurn(id, response.id, questions))
+                } else repository.generate(mode, response, retry, history, profile?.systemPrompt.orEmpty())
+                events.collect { message ->
                     if (jobs[id] === generation) replaceReply(id, response.id, message, fromStream = true)
                 }
             } catch (cancelled: CancellationException) {
@@ -454,8 +466,8 @@ internal class ConversationSession(
             } catch (failure: Exception) {
                 if (jobs[id] !== generation) return@launch
                 val partial = conversation(id)?.messages?.find { it.id == response.id } ?: return@launch
-                val detail = failure.localizedMessage?.takeIf { it.isNotBlank() } ?: "生成中断，请重新生成。"
-                replaceReply(id, response.id, partial.copy(status = Generation.Error, error = detail))
+                val detail = if (failure is AskUserFailure) describeAskFailure(failure) else failure.localizedMessage?.takeIf { it.isNotBlank() } ?: "生成中断，请重新生成。"
+                replaceReply(id, response.id, partial.endUnanswered(Generation.Error).copy(error = detail))
             }
         }
         // An observer of Sending can stop or retry synchronously, before transport startup.
@@ -492,7 +504,7 @@ internal class ConversationSession(
         val item = screen.current
         val response = item.messages.find { it.status.isActive } ?: return
         jobs.remove(item.id)?.cancel()
-        replaceReply(item.id, response.id, response.copy(status = Generation.Stopped))
+        replaceReply(item.id, response.id, response.endUnanswered(Generation.Stopped))
     }
 
     fun preparePrompt(id: String) {

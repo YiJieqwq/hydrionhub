@@ -11,6 +11,7 @@ import io.hydrion.hub.provider.chatProtocolIssue
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.provider.responsesHistory
 import io.hydrion.hub.provider.responsesRequest
+import io.hydrion.hub.provider.usesDeepSeekDialect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emitAll
@@ -27,7 +28,13 @@ internal class ChatGenerationRepository(
 ) : GenerationRepository {
     private val local = FakeGenerationRepository()
 
-    override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String): Flow<Message> {
+    override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String) =
+        generate(mode, request, retry, history, systemPrompt, null)
+
+    override fun chatWithQuestions(request: Message, retry: Boolean, history: List<Message>, systemPrompt: String, turn: AskUserTurn) =
+        generate(Mode.Chat, request, retry, history, systemPrompt, turn)
+
+    private fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String, turn: AskUserTurn?): Flow<Message> {
         val route = request.remoteModel ?: return local.generate(mode, request, retry, history)
         return flow {
             require(mode == Mode.Chat) { "请选择聊天模型。" }
@@ -47,7 +54,26 @@ internal class ChatGenerationRepository(
                         catalog.responsesRequest(provider, model, transcript, key, options, systemPrompt, request.continuesAssistant, sources::getValue)
                 }
             }
-            emitAll(stream(protocol, prepared, request))
+            if (turn != null && turn.inbox.permitted(turn) && model.canAskUser(provider)) {
+                val completions = protocol == ChatProtocol.ChatCompletionsHttp
+                val deepSeek = provider.usesDeepSeekDialect()
+                prepared.body.offerQuestions(completions, encryptedReasoning = !completions && !deepSeek && "reasoning" in model.profile.abilities)
+                if (deepSeek && completions && model.profile.reasoningReplay != "none") {
+                    val messages = prepared.body.getJSONArray("messages")
+                    val historyReplies = transcript.filter { it.role == Role.Assistant }
+                    val replies = historyReplies.iterator()
+                    for (i in 0 until messages.length()) {
+                        val entry = messages.getJSONObject(i)
+                        if (entry.optString("role") == "assistant" && replies.hasNext()) {
+                            val previous = replies.next()
+                            val replay = model.profile.reasoningReplay != "last" || previous == historyReplies.lastOrNull()
+                            if (replay && previous.remoteModel == route && previous.thought.isNotEmpty())
+                                entry.put("reasoning_content", previous.thought)
+                        }
+                    }
+                }
+                emitAll(questionRounds(protocol, prepared, request, turn, model.profile.budget, stream))
+            } else emitAll(stream(protocol, prepared, request))
         }
     }
 }

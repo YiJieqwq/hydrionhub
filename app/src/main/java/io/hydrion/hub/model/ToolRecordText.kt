@@ -101,5 +101,6 @@ internal class ToolArgumentFragments {
         val current = buffer ?: return
         if (fragment.length > ToolRecordText.limit - current.length) buffer = null else current.append(fragment)
     }
+    fun completeArguments(): String? = buffer?.toString()
     fun finish(privacy: ToolRecordText): String? = buffer?.let { privacy.arguments(it.toString()) }
 }

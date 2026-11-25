@@ -13,7 +13,7 @@
     <string name="panel_local">本地工具</string>
     <string name="panel_time">获取时间</string>
     <string name="panel_ask_user">询问用户</string>
-    <string name="panel_ask_unavailable">当前版本尚未接入模型提问与回答回传。</string>
+    <string name="panel_ask_unavailable">需使用已启用工具的 Responses HTTP 或 Chat Completions 模型，并留有继续回复的请求额度。</string>
     <string name="panel_create">创建日程</string>
     <string name="panel_calendar">查询日程</string>
     <string name="panel_browser">浏览器</string>
@@ -21,11 +21,11 @@
     <string name="panel_mcp_manage">管理服务器</string>
     <string name="panel_no_servers">暂无已配置服务器</string>
     <string name="panel_untrusted">请先在管理页确认信任。</string>
-    <string name="panel_manual_only">手动 %1$d/%2$d</string>
+    <string name="panel_manual_only">本地工具已启用 %1$d 项，共 %2$d 项</string>
     <string name="panel_ask">每次询问</string>
     <string name="panel_deny">拒绝</string>
     <string name="panel_denied">当前会话已拒绝</string>
-    <string name="panel_permission_note">适用于从本会话浏览工作区文件、选择工作路径及打开其他应用。MCP 服务器单独管理信任。</string>
+    <string name="panel_permission_note">适用于浏览文件、选择工作路径、打开其他应用，以及模型向你提问。MCP 服务器单独管理信任。</string>
     <string name="panel_calendar_create_detail">在系统日历中编辑并保存</string>
     <string name="panel_calendar_view_detail">在系统日历中查看今天的日程</string>
     <string name="panel_browser_detail">打开你输入的 HTTPS 地址</string>
@@ -53,4 +53,16 @@
         <item quantity="one">%1$d 个工具</item>
         <item quantity="other">%1$d 个工具</item>
     </plurals>
+    <string name="ask_switch">允许模型向我提问</string>
+    <string name="ask_panel_help">模型可以在回复中向你提问。你提交后，答案才会交给模型。</string>
+    <string name="ask_invalid">问题不完整，或无法与原工具调用匹配。</string>
+    <string name="ask_disabled">当前会话或助手已停用询问用户。</string>
+    <string name="ask_budget">剩余请求额度不足以继续回复。</string>
+    <string name="ask_waiting">等待你回答</string>
+    <string name="ask_other">其他</string>
+    <string name="ask_input">填写回答</string>
+    <string name="ask_skip">跳过本题</string>
+    <string name="ask_skipped">已跳过</string>
+    <string name="ask_submit">提交回答</string>
+    <string name="ask_cancel">取消本轮</string>
 </resources>

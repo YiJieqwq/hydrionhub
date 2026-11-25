@@ -29,7 +29,7 @@ internal class ResponsesTransport(
         prepared: LocalModelRequest,
         request: Message,
         protocol: String,
-        parse: suspend (BufferedReader, Message, ToolRecordText, suspend (Message) -> Unit) -> Unit
+        parse: suspend (BufferedReader, Message, ToolRecordText, AskWireRound?, suspend (Message) -> Unit) -> Unit
     ): Flow<Message> = callbackFlow {
         val connection = try {
             openConnection(URL(prepared.url))
@@ -62,7 +62,7 @@ internal class ResponsesTransport(
                     throw IOException("服务端未返回 $protocol 事件流（text/event-stream）。")
                 }
                 connection.inputStream.bufferedReader(Charsets.UTF_8).use { input ->
-                    parse(input, request, ToolRecordText(prepared.headers)) { send(it) }
+                    parse(input, request, ToolRecordText(prepared.headers), prepared.questions) { send(it) }
                 }
                 close()
             } catch (cancelled: CancellationException) {
@@ -72,7 +72,7 @@ internal class ResponsesTransport(
                 ensureActive()
                 this@callbackFlow.ensureActive()
                 val detail = failure.message?.takeIf(String::isNotBlank) ?: "$protocol 连接中断。"
-                close(IOException(redactTransportError(detail, prepared.headers)))
+                close(if (failure is AskUserFailure) failure else IOException(redactTransportError(detail, prepared.headers)))
             }
         }
         // Cancellation has to close the socket from outside the coroutine blocked on read.

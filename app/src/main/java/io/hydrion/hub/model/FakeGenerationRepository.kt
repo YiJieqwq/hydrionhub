@@ -7,6 +7,9 @@ import kotlinx.coroutines.flow.flow
 internal interface GenerationRepository {
     /** Visible context through the question, or through the edited answer when continuing an assistant turn. */
     fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String = ""): Flow<Message>
+
+    fun chatWithQuestions(request: Message, retry: Boolean, history: List<Message>, systemPrompt: String, turn: AskUserTurn): Flow<Message> =
+        generate(Mode.Chat, request, retry, history, systemPrompt)
 }
 
 internal class FakeGenerationRepository(

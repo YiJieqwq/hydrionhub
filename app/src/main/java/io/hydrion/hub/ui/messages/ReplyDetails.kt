@@ -177,7 +177,8 @@ private fun UsageRow(@DrawableRes icon: Int, label: Int, value: String) {
 }
 
 @Composable
-internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean, toggleThought: () -> Unit) {
+internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean,
+    answerCard: @Composable (ReplyToolCall) -> Unit = {}, toggleThought: () -> Unit) {
     var selected by rememberSaveable(msg.id) { mutableStateOf<Int?>(null) }
     val calls = remember(msg.toolCalls) { msg.toolCalls.withIndex().toList() }
     val limit = if (msg.status.isActive) Int.MAX_VALUE else msg.text.length
@@ -194,7 +195,7 @@ internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean
         }
     }
     if (msg.thought.isNotBlank() || groups.containsKey(0)) {
-        ReplyToolChain(msg.thought, groups[0].orEmpty(), query, thoughtExpanded, toggleThought) { selected = it }
+        ReplyToolChain(msg.thought, groups[0].orEmpty(), query, thoughtExpanded, toggleThought, answerCard) { selected = it }
     }
     var cursor = 0
     for ((position, calls) in groups) {
@@ -202,7 +203,7 @@ internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean
         val offset = position.coerceIn(cursor, msg.text.length)
         val segment = msg.text.substring(cursor, offset)
         if (segment.isNotBlank()) AssistantBody(segment, query, Mode.Chat)
-        key(position) { ReplyToolChain("", calls, query, false, {}, openRecord = { selected = it }) }
+        key(position) { ReplyToolChain("", calls, query, false, {}, answerCard, openRecord = { selected = it }) }
         cursor = offset
     }
     val last = msg.text.substring(cursor)
@@ -211,7 +212,7 @@ internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(stringResource(R.string.turn_tool_position_unknown), fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            ReplyToolChain("", unplaced, query, false, {}, openRecord = { selected = it })
+            ReplyToolChain("", unplaced, query, false, {}, answerCard, openRecord = { selected = it })
         }
     }
     // A streaming update can move a step to a different text block while its sheet is open.
@@ -241,7 +242,7 @@ private fun toolStatus(state: ToolCallState): Int = when (state) {
 
 @Composable
 private fun ReplyToolChain(thought: String, calls: List<IndexedValue<ReplyToolCall>>, query: String,
-    thoughtExpanded: Boolean, toggleThought: () -> Unit, openRecord: (Int) -> Unit) {
+    thoughtExpanded: Boolean, toggleThought: () -> Unit, answerCard: @Composable (ReplyToolCall) -> Unit, openRecord: (Int) -> Unit) {
     val hasThought = thought.isNotBlank()
     val firstCall = if (hasThought) 1 else 0
     val size = firstCall + calls.size
@@ -255,9 +256,11 @@ private fun ReplyToolChain(thought: String, calls: List<IndexedValue<ReplyToolCa
             calls.forEachIndexed { i, step ->
                 key(step.recordKey) {
                     val call = step.value
-                    TimelineStep(toolIcon(call.name), call.name.ifBlank { stringResource(R.string.turn_unnamed_tool) },
-                        query, firstCall + i, size, status = stringResource(toolStatus(call.state)),
-                        detail = call.result, open = call.result != null, toggle = { openRecord(step.recordKey) })
+                    val asking = call.name == ASK_USER
+                    val label = if (asking) stringResource(R.string.panel_ask_user) else call.name.ifBlank { stringResource(R.string.turn_unnamed_tool) }
+                    TimelineStep(toolIcon(call.name), label, query, firstCall + i, size, status = stringResource(toolStatus(call.state)),
+                        detail = call.result.takeUnless { asking }, open = !asking && call.result != null, toggle = { openRecord(step.recordKey) })
+                    if (asking) answerCard(call)
                 }
             }
         }
@@ -265,6 +268,7 @@ private fun ReplyToolChain(thought: String, calls: List<IndexedValue<ReplyToolCa
 }
 
 private fun toolIcon(name: String) = when (name) {
+    ASK_USER -> R.drawable.lucide_message_circle_question
     "search_web" -> R.drawable.lucide_earth
     "web_search", "web_search_call", "web_search_preview", "chat_search", "builtin_search" -> R.drawable.lucide_search
     "file_search", "file_search_call" -> R.drawable.lucide_file_search

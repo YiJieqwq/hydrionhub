@@ -1,5 +1,6 @@
 package io.hydrion.hub.model
 
+import io.hydrion.hub.R
 import java.io.BufferedReader
 import java.io.IOException
 import org.json.JSONArray
@@ -10,9 +11,10 @@ internal suspend fun readResponsesEvents(
     reader: BufferedReader,
     request: Message,
     privacy: ToolRecordText = ToolRecordText(),
+    questions: AskWireRound? = null,
     emit: suspend (Message) -> Unit
 ) {
-    val turn = ResponsesEventAccumulator(request, privacy)
+    val turn = ResponsesEventAccumulator(request, privacy, questions)
     emit(turn.message)
     for ((eventName, data) in reader.sseEvents()) {
         if (data.trim() == "[DONE]") break
@@ -30,7 +32,7 @@ internal data class ResponsesUpdate(val snapshot: Message? = null, val failure: 
 }
 
 /** Each collected turn owns its own reducer, regardless of the framing transport. */
-internal class ResponsesEventAccumulator(request: Message, privacy: ToolRecordText = ToolRecordText()) {
+internal class ResponsesEventAccumulator(request: Message, privacy: ToolRecordText = ToolRecordText(), private val questions: AskWireRound? = null) {
     var message = request.copy(status = Generation.Generating, tool = null, totalTokens = null, usage = null)
         private set
     private val parts = ResponseParts(privacy)
@@ -56,6 +58,12 @@ internal class ResponsesEventAccumulator(request: Message, privacy: ToolRecordTe
                     val usage = response.optJSONObject("usage")?.tokenUsage()
                     message = parts.applyTo(message).copy(usage = usage, totalTokens = usage?.contextTokens)
                     if (failure == null) {
+                        val asks = message.toolCalls.filter { it.name == ASK_USER }
+                        if (asks.isNotEmpty()) {
+                            val wire = questions ?: throw AskUserFailure(R.string.ask_disabled)
+                            if (asks.any { it.state != ToolCallState.Requested || it.result != null }) throw AskUserFailure(R.string.ask_invalid)
+                            wire.responses(response.optJSONArray("output"), parts::slotFor, asks.size)
+                        }
                         return ResponsesUpdate(message.copy(status = Generation.Completed))
                     }
                     return ResponsesUpdate(message.takeIf { it != before }, IOException(failure))
@@ -129,6 +137,8 @@ private class ResponseParts(private val privacy: ToolRecordText) {
     // A function output is a separate item and can precede its call in a received snapshot.
     private val callsById = mutableMapOf<String, Int>()
     private val pendingResults = mutableMapOf<String, Pair<String?, ToolCallState>>()
+
+    fun slotFor(callId: String): Int? = callsById[callId]
 
     fun applyTo(message: Message) = message.copy(
         toolCalls = buildList {

@@ -184,7 +184,7 @@ internal fun HostToolDestination(page: HostToolPage, vm: HubViewModel, chat: Con
             }, confirmButton = { TextButton(::openApp) { Text(stringResource(R.string.panel_open_app)) } },
                 dismissButton = { TextButton(close) { Text(stringResource(android.R.string.cancel)) } })
         }
-        HostToolPage.AskUser -> Unit
+        HostToolPage.AskUser -> PanelDialog(title, close) { Text(stringResource(R.string.ask_panel_help)) }
     }
     if (!gateOpen && page in listOf(HostToolPage.Files, HostToolPage.Path, HostToolPage.Create, HostToolPage.Calendar, HostToolPage.Browser))
         LaunchedEffect(page) { close() }

@@ -353,7 +353,9 @@ internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: 
             }
         }
         if (mode == Mode.Chat) {
-            ReplyTimeline(msg, query, thoughtExpanded) { chosenExpansion = !thoughtExpanded }
+            ReplyTimeline(msg, query, thoughtExpanded, answerCard = { call -> AskUserCard(chat.id, msg.id, call, vm.questions) }) {
+                chosenExpansion = !thoughtExpanded
+            }
             ReplyTranslationBody(chat.id, msg, query, vm.translations)
         } else if (msg.text.isNotBlank()) AssistantBody(msg.text, query, mode)
         if (msg.imageKeys.isNotEmpty()) ImageResult(msg, query, vm, busy, showRegenerate = mode == Mode.Image)
@@ -363,6 +365,7 @@ internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: 
             ) {
                 CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.5.dp)
                 val label = when {
+                    msg.toolCalls.any { it.name == ASK_USER && it.state == ToolCallState.Running } -> stringResource(R.string.ask_waiting)
                     msg.status == Generation.Sending -> "正在发送…"
                     mode == Mode.Image -> "正在生成图片…"
                     else -> "正在生成…"

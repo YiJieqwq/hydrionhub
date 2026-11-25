@@ -57,8 +57,10 @@ class HubViewModel internal constructor(app: Application, stream: ChatStream) : 
     private val session = ConversationSession(viewModelScope, generation,
         persist = { snapshot -> if (loaded) writes.trySend(storageEpoch to snapshot) else changedDuringLoad = true },
         newRoutes = providers::newThreadRoutes, showRoutes = providers::showRoutes,
-        allowSearch = { webSearch.settings.value.localEnabled }, onGenerationError = ::reportError)
+        allowSearch = { webSearch.settings.value.localEnabled }, onGenerationError = ::reportError,
+        describeAskFailure = { app.getString(it.label) })
     internal val translations = ReplyTranslations(viewModelScope, session, chatGeneration)
+    internal val questions get() = session.questions
     val state = session.state
     internal fun addAssistant(name: String) = loaded && session.addAssistant(name)
     internal fun renameAssistant(id: String, name: String) = loaded && session.renameAssistant(id, name)

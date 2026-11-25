@@ -82,8 +82,8 @@ data class Message(
     val reportedUsage: TokenUsage? get() = usage ?: totalTokens?.let { TokenUsage(totalTokens = it) }
 }
 
-/** Assistant preferences for manual panel actions. These never grant model or system access. */
-enum class ManualPanelTool { Time, CreateEvent, ViewCalendar, Browser }
+/** Assistant-scoped panel choices. Only AskUser can be offered to a model, and its answer requires submission. */
+enum class ManualPanelTool { Time, CreateEvent, ViewCalendar, Browser, AskUser }
 
 data class LocalAssistant(
     val id: String, val name: String, val sidebarGroup: String? = null,

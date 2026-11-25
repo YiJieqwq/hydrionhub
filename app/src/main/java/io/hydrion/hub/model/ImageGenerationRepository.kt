@@ -17,6 +17,9 @@ internal class ImageGenerationRepository(
     private val saveBatch: suspend (List<ByteArray>) -> List<String>,
     private val discard: (List<String>) -> Unit
 ) : GenerationRepository {
+    override fun chatWithQuestions(request: Message, retry: Boolean, history: List<Message>, systemPrompt: String, turn: AskUserTurn) =
+        other.chatWithQuestions(request, retry, history, systemPrompt, turn)
+
     override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String): Flow<Message> {
         val image = request.imageInvocation
         if (image?.remoteModel == null) return other.generate(mode, request, retry, history, systemPrompt)

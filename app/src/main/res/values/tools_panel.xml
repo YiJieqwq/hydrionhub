@@ -13,7 +13,7 @@
     <string name="panel_local">Local tools</string>
     <string name="panel_time">Get current time</string>
     <string name="panel_ask_user">Ask the user</string>
-    <string name="panel_ask_unavailable">Model questions and replies are unavailable in this version.</string>
+    <string name="panel_ask_unavailable">Requires a tool-enabled Responses HTTP or Chat Completions model and a budget for a follow-up request.</string>
     <string name="panel_create">Create calendar event</string>
     <string name="panel_calendar">Look up calendar events</string>
     <string name="panel_browser">Browser</string>
@@ -21,11 +21,11 @@
     <string name="panel_mcp_manage">Manage servers</string>
     <string name="panel_no_servers">No configured servers</string>
     <string name="panel_untrusted">Trust this server in management first.</string>
-    <string name="panel_manual_only">Manual %1$d/%2$d</string>
+    <string name="panel_manual_only">%1$d of %2$d local tools enabled</string>
     <string name="panel_ask">Ask each time</string>
     <string name="panel_deny">Deny</string>
     <string name="panel_denied">Denied for this conversation</string>
-    <string name="panel_permission_note">Applies to browsing workspace files, choosing a working directory, and opening other apps from this conversation. MCP servers have separate trust controls.</string>
+    <string name="panel_permission_note">Applies to file access, the working directory, opening apps, and questions from the model. MCP servers have separate trust controls.</string>
     <string name="panel_calendar_create_detail">Review and save in your calendar app</string>
     <string name="panel_calendar_view_detail">View today in your calendar app</string>
     <string name="panel_browser_detail">Open an HTTPS address you enter</string>
@@ -53,4 +53,16 @@
         <item quantity="one">%1$d tool</item>
         <item quantity="other">%1$d tools</item>
     </plurals>
+    <string name="ask_switch">Allow the model to ask me questions</string>
+    <string name="ask_panel_help">The model can ask a question in its reply. Only an answer you submit is returned to it.</string>
+    <string name="ask_invalid">The question was incomplete or could not be matched to its tool call.</string>
+    <string name="ask_disabled">Questions are disabled for this chat or assistant.</string>
+    <string name="ask_budget">The request budget does not allow another reply.</string>
+    <string name="ask_waiting">Waiting for your answer</string>
+    <string name="ask_other">Other</string>
+    <string name="ask_input">Write an answer</string>
+    <string name="ask_skip">Skip this question</string>
+    <string name="ask_skipped">Skipped</string>
+    <string name="ask_submit">Submit answers</string>
+    <string name="ask_cancel">Cancel this turn</string>
 </resources>

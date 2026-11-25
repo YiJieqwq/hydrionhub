@@ -24,6 +24,8 @@ import io.hydrion.hub.localtools.mcpFile
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.ManualPanelTool
 import io.hydrion.hub.model.WorkspaceLoad
+import io.hydrion.hub.model.Mode
+import io.hydrion.hub.model.canAskUser
 import io.hydrion.hub.ui.settings.assistantFeatureDirectory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +35,7 @@ import kotlinx.coroutines.withContext
 internal enum class HostToolPage(@StringRes val label: Int, val manualTool: ManualPanelTool? = null) {
     Environment(R.string.panel_environment), Settings(R.string.env_edit), Files(R.string.panel_files),
     Terminal(R.string.panel_terminal), Path(R.string.panel_path), Info(R.string.panel_info), Permissions(R.string.panel_policy),
-    Time(R.string.panel_time, ManualPanelTool.Time), AskUser(R.string.panel_ask_user), Create(R.string.panel_create, ManualPanelTool.CreateEvent),
+    Time(R.string.panel_time, ManualPanelTool.Time), AskUser(R.string.panel_ask_user, ManualPanelTool.AskUser), Create(R.string.panel_create, ManualPanelTool.CreateEvent),
     Calendar(R.string.panel_calendar, ManualPanelTool.ViewCalendar), Browser(R.string.panel_browser, ManualPanelTool.Browser), Mcp(R.string.panel_mcp_manage)
 }
 
@@ -108,9 +110,12 @@ internal fun HostToolGroups(vm: HubViewModel, query: String, legacyMatches: Bool
         Entry(HostToolPage.Info, R.drawable.lucide_hard_drive, needsEnv ?: catalog?.getOrNull()?.containers?.find { it.id == env?.containerId }?.name, env != null),
         Entry(HostToolPage.Permissions, R.drawable.lucide_shield, stringResource(if (denied) R.string.panel_deny else R.string.panel_ask), canUse)
     )
+    val models by vm.providers.catalog.collectAsStateWithLifecycle()
+    val questionModel = models.selectedEntry(Mode.Chat)?.let { (model, provider) -> model.canAskUser(provider) } == true
     val localRows = listOf(
         Entry(HostToolPage.Time, R.drawable.lucide_clock),
-        Entry(HostToolPage.AskUser, R.drawable.lucide_message_circle_question, stringResource(R.string.panel_ask_unavailable), false),
+        Entry(HostToolPage.AskUser, R.drawable.lucide_message_circle_question,
+            gate ?: stringResource(if (questionModel) R.string.ask_panel_help else R.string.panel_ask_unavailable), questionModel && gate == null),
         appRow(HostToolPage.Create, R.drawable.lucide_calendar_plus, PanelAppAction.CreateEvent, R.string.panel_calendar_create_detail),
         appRow(HostToolPage.Calendar, R.drawable.lucide_calendar, PanelAppAction.ViewEvents, R.string.panel_calendar_view_detail),
         appRow(HostToolPage.Browser, R.drawable.lucide_app_window, PanelAppAction.Browser, R.string.panel_browser_detail)
@@ -159,7 +164,8 @@ internal fun HostToolGroups(vm: HubViewModel, query: String, legacyMatches: Bool
                 val title = stringResource(entry.page.label)
                 PanelToolRow(title, entry.icon, entry.detail.takeUnless { browsing && available }, selected, entry.page.name,
                     available = available, highlight = selected, chevron = false, controls = {
-                        ManualPanelSwitch(selected, available, stringResource(R.string.panel_switch, title), entry.page.name) { on ->
+                        val switchLabel = if (tool == ManualPanelTool.AskUser) stringResource(R.string.ask_switch) else stringResource(R.string.panel_switch, title)
+                        ManualPanelSwitch(selected, available, switchLabel, entry.page.name) { on ->
                             if (tool != null) vm.setManualPanelTool(chat.assistantId, tool, on)
                         }
                     }) { show(entry.page) }
