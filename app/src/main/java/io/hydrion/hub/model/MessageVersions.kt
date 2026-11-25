@@ -32,7 +32,23 @@ internal fun Conversation.canRetryChatMessage(message: Message): Boolean {
     if (index < 0) return false
     val start = contextStart?.let { anchor -> messages.indexOfFirst { it.id == anchor } } ?: 0
     if (start < 0 || index < start) return false
+    if (message.role == Role.Assistant && message.continuesAssistant) return index > start
     return message.role == Role.User || messages.subList(start, index).any { it.role == Role.User && it.id == message.replyTo }
+}
+
+internal fun HubState.nextBranchTitle(): String {
+    val base = current.title.replace(numberedBranches, "")
+    val taken = history.mapTo(hashSetOf(), Conversation::title)
+    return generateSequence(1) { it + 1 }.map { "$base ($it)" }.first { it !in taken }
+}
+
+private val numberedBranches = Regex("""(?: \([1-9]\d*\))+$""")
+
+internal fun Conversation.canContinueAfter(message: Message): Boolean {
+    val index = messages.indexOfFirst { it === message }
+    val start = contextStart?.let { anchor -> messages.indexOfFirst { it.id == anchor } } ?: 0
+    return mode == Mode.Chat && message.role == Role.Assistant && !message.status.isActive &&
+        message.imageKeys.isEmpty() && message.imageInvocation == null && start >= 0 && index >= start
 }
 
 internal fun Conversation.copyThrough(end: Int, name: String, time: Long, keepVersions: Boolean): Conversation {

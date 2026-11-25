@@ -161,7 +161,7 @@ class EditedMessageBranchTest {
             screen.onNodeWithText(label(R.string.turn_send_in_branch)).performScrollTo().assertIsEnabled().performClick()
             screen.waitUntil(15_000) { vm.state.value.current.id != source.id && !vm.state.value.isGenerating }
             val branch = screen.runOnIdle { vm.state.value.current }
-            assertEquals(host.getString(R.string.turn_fork_title, source.title), branch.title)
+            assertEquals(source.title + " (1)", branch.title)
             assertEquals(listOf(Role.User, Role.Assistant), branch.messages.map { it.role })
             assertEquals(edited, branch.messages.first().text)
             assertEquals(branch.messages.first().id, branch.messages.last().replyTo)

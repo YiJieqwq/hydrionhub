@@ -31,11 +31,12 @@ import io.hydrion.hub.provider.ModelCatalog
 import io.hydrion.hub.provider.Provider
 import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.provider.chatProtocol
+import io.hydrion.hub.ui.continueEditedReply
 import io.hydrion.hub.ui.sendEditedBranch
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 
-internal enum class TurnSheet { More, Edit, Retry, Fork, SelectText, WebPreview, Translate, Selection, Delete, DeleteOthers, DeleteAll }
+internal enum class TurnSheet { More, Edit, Retry, SelectText, WebPreview, Translate, Selection, Delete, DeleteOthers, DeleteAll }
 
 @Composable
 private fun TurnIcon(@DrawableRes icon: Int, label: Int, enabled: Boolean = true, action: () -> Unit) {
@@ -135,16 +136,60 @@ private val Pair<ProviderModel, Provider>.routeLabel: String
     get() = "${second.name} · ${first.name}"
 
 private fun Conversation.retryModelLabel(target: Message, catalog: ModelCatalog): String? {
-    val user = if (target.role == Role.User) target else messages.find { it.id == target.replyTo } ?: return null
-    val reply = messages.find { it.replyTo == user.id }
-    val image = reply?.imageInvocation ?: user.imageInvocation
-    val imageRetry = user.retriesImage(mode, reply)
+    val user = if (target.role == Role.User) target else messages.find { it.id == target.replyTo }
+    val reply = if (target.role == Role.Assistant) target else messages.find { it.replyTo == target.id }
+    val image = reply?.imageInvocation ?: user?.imageInvocation
+    val imageRetry = reply?.continuesAssistant != true && user?.retriesImage(mode, reply) == true
     if (imageRetry && image?.remoteModel == null) return catalog.selectedEntry(Mode.Image)?.routeLabel
-    val route = if (imageRetry) image?.remoteModel else reply?.remoteModel ?: user.remoteModel
-    if (route == null) return (reply?.model ?: user.model).takeIf(String::isNotBlank)
+    val route = when {
+        imageRetry -> image?.remoteModel
+        reply?.continuesAssistant == true -> reply.remoteModel
+        else -> reply?.remoteModel ?: user?.remoteModel
+    }
+    if (route == null) return (reply?.model ?: user?.model)?.takeIf(String::isNotBlank)
     val provider = catalog.providers.find { it.id == route.providerId }
     val model = provider?.models?.find { it.id == route.modelId }
     return "${provider?.name ?: route.providerId} · ${model?.name ?: route.modelId}"
+}
+
+@Composable
+private fun AssistantReplyEditor(msg: Message, chat: Conversation, vm: HubViewModel, busy: Boolean, close: () -> Unit) {
+    var text by rememberSaveable(chat.id, msg.id) { mutableStateOf(msg.text) }
+    var submitting by remember { mutableStateOf(false) }
+    var issue by remember(text) { mutableStateOf<String?>(null) }
+    val catalog by vm.providers.catalog.collectAsState()
+    val scope = rememberCoroutineScope()
+    val valid = !busy && !submitting && text.isNotBlank()
+    TurnActionSheet(close) {
+        Column(Modifier.fillMaxWidth().heightIn(max = (LocalConfiguration.current.screenHeightDp * .8f).dp)
+            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(enabled = valid && chat.canContinueAfter(msg), onClick = {
+                    val before = vm.state.value
+                    if (before.current != chat || submitting) return@TextButton
+                    val submittedText = text
+                    val selectedCatalog = catalog
+                    submitting = true
+                    scope.launch {
+                        try {
+                            val problem = continueEditedReply(vm, before, selectedCatalog, msg, submittedText)
+                            if (problem == null) close() else issue = problem
+                        } finally {
+                            submitting = false
+                        }
+                    }
+                }) { Text(stringResource(R.string.turn_save_continue)) }
+                Text(stringResource(R.string.turn_edit), Modifier.weight(1f), textAlign = TextAlign.Center,
+                    fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                TextButton(enabled = valid, onClick = {
+                    if (vm.state.value.current == chat && vm.editMessage(msg.id, text)) close()
+                }) { Text(stringResource(R.string.settings_save)) }
+            }
+            issue?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth(), enabled = !submitting, minLines = 4, maxLines = 16)
+        }
+    }
 }
 
 /** Owned by the timeline, not a lazy item that can be disposed when the edit keyboard resizes it. */
@@ -158,11 +203,13 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
     val fixed = chat.contextStart == msg.id
     val protected = fixed || (user && chat.contextStart != null && chat.messages.any { it.replyTo == msg.id && it.id == chat.contextStart })
     val copySource = rememberPlainTextCopier(R.string.turn_markdown_copied)
-    val fallbackTitle = stringResource(R.string.turn_fork_title, chat.title)
-    var input by rememberSaveable(chat.id, msg.id, sheet) {
-        mutableStateOf(if (sheet == TurnSheet.Fork) fallbackTitle else msg.text)
-    }
     val close = { show(null) }
+    val ordinal = group?.selected ?: 0
+    val openedOrdinal = rememberSaveable(chat.id, msg.id, sheet) { ordinal }
+    if ((sheet == TurnSheet.Edit || sheet == TurnSheet.Retry || sheet == TurnSheet.More) && openedOrdinal != ordinal) {
+        LaunchedEffect(Unit) { close() }
+        return
+    }
     when (sheet) {
         TurnSheet.More -> TurnActionSheet(close, containerColor = if (LocalMessageStyle.current.tone == MessageTone.Dark)
             MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.surface) {
@@ -192,7 +239,10 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
                         vm.setContextStart(if (fixed) null else msg.id); close()
                     }
                     SheetDivider()
-                    SheetAction(R.string.turn_fork, R.drawable.lucide_git_fork, !busy) { show(TurnSheet.Fork) }
+                    SheetAction(R.string.turn_fork, R.drawable.lucide_git_fork, !busy) {
+                        if (vm.state.value.current == chat) vm.forkMessage(msg.id)
+                        close()
+                    }
                 }
                 SheetGroup {
                     val deleteLabel = when {
@@ -239,24 +289,22 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
                 TextButton(onClick = close, modifier = Modifier.align(Alignment.End)) { Text(stringResource(android.R.string.ok)) }
             }
         }
-        TurnSheet.Fork, TurnSheet.Edit -> {
-            val fork = sheet == TurnSheet.Fork
+        TurnSheet.Edit -> if (!user) AssistantReplyEditor(msg, chat, vm, busy, close) else {
+            var input by rememberSaveable(chat.id, msg.id) { mutableStateOf(msg.text) }
             val before = vm.state.collectAsState().value
             val catalog = vm.providers.catalog.collectAsState().value
-            val canResend = user && !fork && retryAllowed
+            val canResend = retryAllowed
             val original = if (canResend) chat.messages.find { it.replyTo == msg.id } else null
             val retryUnavailable = canResend && chat.mode == Mode.Chat && catalog.retryChatRouteIssue(msg, original) != null
             val scope = key(chat.id, msg.id, sheet) { rememberCoroutineScope() }
             var preparing by remember(chat.id, msg.id, sheet) { mutableStateOf(false) }
             var issue by remember(chat.id, msg.id, sheet, input) { mutableStateOf<String?>(null) }
             val dismiss = { scope.coroutineContext.cancelChildren(); close() }
-            val valid = !busy && !preparing && (input.isNotBlank() || (!fork && user && msg.attachments.isNotEmpty()))
-            AlertDialog(onDismissRequest = dismiss, title = { Text(stringResource(if (fork) R.string.turn_fork else R.string.turn_edit)) },
+            val valid = !busy && !preparing && (input.isNotBlank() || msg.attachments.isNotEmpty())
+            AlertDialog(onDismissRequest = dismiss, title = { Text(stringResource(R.string.turn_edit)) },
                 text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (fork) Text(stringResource(R.string.turn_fork_hint))
-                    OutlinedTextField(value = input, onValueChange = { input = it }, enabled = !preparing, singleLine = fork,
-                        minLines = if (fork) 1 else 2, maxLines = if (fork) 1 else 8)
-                    if (!fork && user && chat.mode == Mode.Chat && chat.messages.lastOrNull()?.id != msg.id) {
+                    OutlinedTextField(value = input, onValueChange = { input = it }, enabled = !preparing, minLines = 2, maxLines = 8)
+                    if (chat.mode == Mode.Chat && chat.messages.lastOrNull()?.id != msg.id) {
                         val chatModel = catalog.selectedEntry(Mode.Chat)
                         val editedDraft = before.draft.copy(text = input, attachments = msg.attachments)
                         val usesImage = chatModel != null && chatModel.second.chatProtocol() == null &&
@@ -280,7 +328,7 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
                                 preparing = true
                                 scope.launch {
                                     try {
-                                        val error = sendEditedBranch(vm, before, catalog, msg.id, text, fallbackTitle)
+                                        val error = sendEditedBranch(vm, before, catalog, msg.id, text)
                                         if (error == null) close() else issue = error
                                     } finally {
                                         preparing = false
@@ -301,9 +349,8 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
                     }
                 } }, confirmButton = { Column(horizontalAlignment = Alignment.End) {
                     TextButton(enabled = valid, onClick = {
-                        if (fork) vm.forkMessage(msg.id, input.trim()) else vm.editMessage(msg.id, input)
-                        close()
-                    }) { Text(stringResource(if (fork) R.string.turn_fork else R.string.settings_save)) }
+                        if (vm.state.value.current == chat && vm.editMessage(msg.id, input)) close()
+                    }) { Text(stringResource(R.string.settings_save)) }
                     if (canResend) TextButton(enabled = valid && !retryUnavailable, onClick = {
                         val liveCatalog = vm.providers.catalog.value
                         if (vm.state.value.current == chat &&
@@ -342,7 +389,7 @@ internal fun ChatTurnOverlay(msg: Message, chat: Conversation, vm: HubViewModel,
             AlertDialog(onDismissRequest = close, text = { Text(message) }, confirmButton = {
                 TextButton(enabled = !busy, onClick = {
                     when (action) {
-                        TurnSheet.Retry -> vm.regenerate(msg.id)
+                        TurnSheet.Retry -> if (vm.state.value.current == chat && retryAllowed) vm.regenerate(msg.id)
                         TurnSheet.Delete -> vm.deleteChatVersion(msg.id)
                         TurnSheet.DeleteOthers -> vm.deleteChatVersion(msg.id, otherVersions = true, expectedGroup = group)
                         TurnSheet.DeleteAll -> vm.deleteChatMessage(msg.id)

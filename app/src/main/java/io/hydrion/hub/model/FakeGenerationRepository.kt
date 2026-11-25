@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 internal interface GenerationRepository {
-    /** The immutable transcript ends at the specific question being answered. */
+    /** Visible context through the question, or through the edited answer when continuing an assistant turn. */
     fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String = ""): Flow<Message>
 }
 

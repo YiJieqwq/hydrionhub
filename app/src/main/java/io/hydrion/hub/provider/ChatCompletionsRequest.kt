@@ -12,6 +12,7 @@ internal fun ModelCatalog.chatCompletionsRequest(
     apiKey: String,
     selected: Map<String, String> = parameters(model, provider),
     systemPrompt: String = "",
+    allowAssistantTail: Boolean = false,
     attachmentData: (Attachment) -> String = { it.uri.orEmpty() }
 ): LocalModelRequest {
     val protocol = ChatProtocol.ChatCompletionsHttp
@@ -45,6 +46,6 @@ internal fun ModelCatalog.chatCompletionsRequest(
     body.put("model", model.externalModelId).put("stream", true)
     val streamOptions = body.optJSONObject("stream_options") ?: JSONObject()
     body.put("stream_options", streamOptions.put("include_usage", true))
-    body.put("messages", chatTranscript(history.responsesHistory(), model, provider, protocol, attachmentData, systemPrompt))
+    body.put("messages", chatTranscript(history.responsesHistory(allowAssistantTail), model, provider, protocol, attachmentData, systemPrompt))
     return LocalModelRequest(model.name, headers, body, options, url)
 }

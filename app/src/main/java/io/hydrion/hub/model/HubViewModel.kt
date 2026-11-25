@@ -28,7 +28,9 @@ import kotlinx.coroutines.withContext
 
 internal enum class WorkspaceLoad { Reading, Ready, Unavailable }
 
-class HubViewModel(app: Application) : AndroidViewModel(app) {
+class HubViewModel internal constructor(app: Application, stream: ChatStream) : AndroidViewModel(app) {
+    constructor(app: Application) : this(app, ChatTransports::stream)
+
     private val historyFile = HistoryFile(app)
     private val writes = Channel<Pair<Long, SavedWorkspace>>(Channel.CONFLATED)
     private val historyLock = Mutex()
@@ -45,7 +47,7 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     internal val appRestores = AppRestoreStore.current(app)
     private val images = GeneratedImageStore(app)
     internal val backups by lazy { LocalChatBackup(getApplication(), images) }
-    private val chatGeneration = ChatGenerationRepository({ providers.catalog.value }, providers::sessionKey, app::responsesImageSources)
+    private val chatGeneration = ChatGenerationRepository({ providers.catalog.value }, providers::sessionKey, app::responsesImageSources, stream)
     private val generation = ImageGenerationRepository(
         chatGeneration,
         ::prepareImage, OpenAiImagesTransport()::generate, images::saveBatch, images::discard
@@ -237,7 +239,9 @@ class HubViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun stop() = session.stop()
     fun editMessage(id: String, text: String) = session.editMessage(id, text)
-    internal fun forkMessage(id: String, title: String) = session.forkMessage(id, title)
+    internal fun forkMessage(id: String) = session.forkMessage(id)
+    internal fun continueEditedReply(chatId: String, source: Message, text: String, model: String,
+        parameters: Map<String, String>, route: RemoteModel?) = session.continueEditedReply(chatId, source, text, model, parameters, route)
     internal fun forkEditedMessage(
         chatId: String, messageId: String, text: String, title: String,
         model: String, parameters: Map<String, String>, image: ImageInvocation?, remoteModel: RemoteModel?,

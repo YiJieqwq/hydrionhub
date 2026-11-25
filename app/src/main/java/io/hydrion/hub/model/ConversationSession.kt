@@ -420,10 +420,10 @@ internal class ConversationSession(
         val id = chat.id
         val mode = chat.mode
         val profile = assistant(chat.assistantId).takeIf { mode == Mode.Chat && response.imageInvocation == null }
-        // A restored conversation can have sibling replies to the same prompt.
-        val promptIndex = chat.messages.indexOfFirst { it.id == response.replyTo }
-        val throughPrompt = chat.messages.take(promptIndex + 1)
-        val context = chat.contextStart?.let { anchor -> throughPrompt.dropWhile { it.id != anchor } } ?: throughPrompt
+        // Ordinary retries replay the original prompt. A continuation also includes the visible edited answer.
+        val prefix = if (response.continuesAssistant) chat.messages.takeWhile { it.id != response.id }
+            else chat.messages.take(chat.messages.indexOfFirst { it.id == response.replyTo } + 1)
+        val context = chat.contextStart?.let { anchor -> prefix.dropWhile { it.id != anchor } } ?: prefix
         val history = profile?.contextLimit?.let(context::takeLast) ?: context
         val job = scope.launch(start = CoroutineStart.LAZY) {
             val generation = coroutineContext[Job]
@@ -483,7 +483,7 @@ internal class ConversationSession(
         changeDraft(screen.draft.copy(text = text, attachments = message.attachments))
     }
 
-    fun forkMessage(id: String, title: String): Boolean {
+    fun forkMessage(id: String, title: String = screen.nextBranchTitle()): Boolean {
         val source = screen.current
         val end = source.messages.indexOfFirst { it.id == id }
         if (source.mode != Mode.Chat || screen.isGenerating || end < 0 || title.isBlank()) return false
@@ -536,13 +536,29 @@ internal class ConversationSession(
         if (target.status.isActive || (item.mode == Mode.Chat && screen.isGenerating) ||
             (cleaned.isBlank() && (target.attachments.isEmpty() || (item.mode == Mode.Chat && target.role != Role.User)))) return false
         if (cleaned == target.text) return true
-        val edited = target.copy(text = cleaned)
-        if (item.mode == Mode.Chat) {
-            val version = if (target.role == Role.Assistant) edited.copy(thought = "", tool = null, totalTokens = null,
-                usage = null, timing = null, toolCalls = emptyList(), translation = null, status = Generation.Completed, error = null) else edited
-            touch(item.appendVersion(target, version))
-        } else touch(item.copy(messages = item.messages.map { if (it.id == id) edited else it }))
+        if (item.mode == Mode.Chat) touch(item.appendEdit(target, cleaned))
+        else touch(item.copy(messages = item.messages.map { if (it.id == id) it.copy(text = cleaned) else it }))
         save()
+        return true
+    }
+
+    private fun Conversation.appendEdit(source: Message, text: String): Conversation {
+        val edited = if (source.role == Role.User) source.copy(text = text) else source.copy(text = text,
+            thought = "", tool = null, totalTokens = null, usage = null, timing = null, toolCalls = emptyList(),
+            translation = null, status = Generation.Completed, error = null)
+        return appendVersion(source, edited)
+    }
+
+    fun continueEditedReply(chatId: String, source: Message, text: String, model: String,
+        parameters: Map<String, String>, route: RemoteModel?): Boolean {
+        val chat = screen.current
+        if (chat.id != chatId || screen.isGenerating || text.isBlank() || model.isBlank() || !chat.canContinueAfter(source)) return false
+        val edited = chat.appendEdit(source, text)
+        val reply = Message(role = Role.Assistant, status = Generation.Sending, prompt = text, model = model,
+            parameters = parameters.toMap(), remoteModel = route, replyTo = source.replyTo, continuesAssistant = true, createdAt = now())
+        val messages = edited.messages.toMutableList()
+        messages.add(messages.indexOfFirst { it.id == source.id } + 1, reply)
+        generate(edited.copy(messages = messages), reply)
         return true
     }
 
@@ -599,6 +615,14 @@ internal class ConversationSession(
         if (screen.isGenerating) return
         val target = item.messages.find { it.id == id } ?: return
         if (item.mode == Mode.Chat && !item.canRetryChatMessage(target)) return
+        if (target.continuesAssistant && item.mode == Mode.Chat && target.role == Role.Assistant) {
+            val previous = item.messages[item.messages.indexOf(target) - 1]
+            val response = Message(id = target.id, role = Role.Assistant, status = Generation.Sending, prompt = previous.text,
+                model = target.model, parameters = target.parameters, remoteModel = target.remoteModel,
+                replyTo = target.replyTo, continuesAssistant = true, createdAt = now())
+            generate(item.appendVersion(target, response), response, retry = true)
+            return
+        }
         val user = if (target.role == Role.User) target else item.messages.find { it.id == target.replyTo } ?: return
         val original = if (target.role == Role.Assistant) target else item.messages.find {
             it.role == Role.Assistant && it.replyTo == user.id

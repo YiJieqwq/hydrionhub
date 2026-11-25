@@ -22,7 +22,7 @@
     <string name="turn_retry_model">Retry model: %1$s</string>
     <string name="turn_save_send">Save and resend</string>
     <string name="turn_fork">Branch from here</string>
-    <string name="turn_fork_title">%1$s (branch)</string>
+    <string name="turn_save_continue">Save and send</string>
     <string name="turn_set_start">Start context here</string>
     <string name="turn_clear_start">Remove context start</string>
     <string name="turn_start">Context starts here</string>
@@ -45,7 +45,6 @@
         <item quantity="other">Keep the displayed version and permanently delete %1$d other versions?</item>
     </plurals>
     <string name="turn_prompt">Edit image prompt</string>
-    <string name="turn_fork_hint">The new conversation will include the displayed versions through this message. Your original conversation will stay in history.</string>
     <string name="turn_selection">Select messages</string>
     <string name="turn_select_all">Select all</string>
     <string name="turn_select_none">Deselect all</string>

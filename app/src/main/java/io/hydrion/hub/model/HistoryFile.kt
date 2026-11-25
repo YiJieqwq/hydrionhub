@@ -146,6 +146,7 @@ private fun writeMessage(m: Message): JSONObject = JSONObject().put("id", m.id).
             .put("slot", it.slot).put("arguments", it.arguments).put("result", it.result) })
     })
     .put("translation", m.translation?.let { JSONObject().put("language", it.language).put("text", it.text) })
+    .put("continuesAssistant", m.continuesAssistant.takeIf { it })
     .put("error", m.error).put("replyTo", m.replyTo).put("imageInvocation", m.imageInvocation?.let {
         JSONObject().put("model", it.model).put("parameters", JSONObject(it.parameters)).put("remoteModel", it.remoteModel?.toJson())
     })
@@ -160,6 +161,7 @@ private fun readMessage(j: JSONObject): Message {
         thought = j.optString("thought"), tool = j.optional("tool"), imageKeys = (0 until keys.length()).map { keys.getString(it) },
         remoteModel = j.readRoute("remoteModel"),
         totalTokens = j.count("totalTokens"), usage = j.optJSONObject("usage")?.readUsage(),
+        continuesAssistant = j.optBoolean("continuesAssistant", false),
         timing = j.optJSONObject("timing")?.let { ReplyTiming(it.count("firstTokenMs"), it.count("firstBodyMs"), it.count("elapsedMs")) },
         toolCalls = j.optJSONArray("toolCalls").objects().mapNotNull { call ->
             ToolCallState.entries.find { it.name == call.optString("state") }?.let { state ->

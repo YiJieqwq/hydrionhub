@@ -598,7 +598,6 @@ class ReplyBubbleInteractionTest {
         more()
         screen.onNodeWithText(label(R.string.turn_delete_all)).assertIsNotEnabled()
         tap(R.string.turn_fork)
-        confirm(R.string.turn_fork)
         screen.onNodeWithText("Last revision").assertIsDisplayed()
         screen.onNodeWithText("2/2").assertDoesNotExist()
         screen.runOnIdle {

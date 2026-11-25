@@ -8,7 +8,7 @@ import io.hydrion.hub.model.Role
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** The caller supplies the visible transcript through the user turn being answered, including on retry. */
+/** The caller supplies only the selected transcript through the generation anchor. */
 internal fun ModelCatalog.responsesRequest(
     provider: Provider,
     model: ProviderModel,
@@ -16,6 +16,7 @@ internal fun ModelCatalog.responsesRequest(
     apiKey: String,
     selected: Map<String, String> = parameters(model, provider),
     systemPrompt: String = "",
+    allowAssistantTail: Boolean = false,
     attachmentData: (Attachment) -> String = { it.uri.orEmpty() }
 ): LocalModelRequest {
     val protocol = requireNotNull(provider.chatProtocol()) { "请选择 Responses 协议。" }
@@ -34,14 +35,17 @@ internal fun ModelCatalog.responsesRequest(
         body.remove("stream")
         body.remove("background")
     } else body.put("stream", true)
-    body.put("input", chatTranscript(history.responsesHistory(), model, provider, protocol, attachmentData, systemPrompt))
+    body.put("input", chatTranscript(history.responsesHistory(allowAssistantTail), model, provider, protocol, attachmentData, systemPrompt))
     return LocalModelRequest(model.name, headers, body, options, url)
 }
 
 /** Drop failed exchanges and empty placeholders. A stopped reply's visible text stays in the transcript. */
-internal fun List<Message>.responsesHistory(): List<Message> {
+internal fun List<Message>.responsesHistory(allowAssistantTail: Boolean = false): List<Message> {
     val current = lastOrNull()
-    require(current?.role == Role.User) { "缺少本轮用户消息。" }
+    if (allowAssistantTail) {
+        require(current != null && (current.role == Role.User || (current.text.isNotBlank() &&
+            (current.status == Generation.Completed || current.status == Generation.Stopped)))) { "缺少可发送的对话上下文。" }
+    } else require(current?.role == Role.User) { "缺少本轮用户消息。" }
     val excluded = mutableSetOf<String>()
     forEachIndexed { index, message ->
         if (message.role == Role.Assistant) {
@@ -49,7 +53,7 @@ internal fun List<Message>.responsesHistory(): List<Message> {
             if (message.status == Generation.Error || empty) {
                 excluded.add(message.id)
                 val promptId = message.replyTo ?: getOrNull(index - 1)?.takeIf { it.role == Role.User }?.id
-                promptId?.let(excluded::add)
+                if (!message.continuesAssistant) promptId?.let(excluded::add)
             }
         }
     }

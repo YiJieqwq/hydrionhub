@@ -17,11 +17,13 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 
+internal typealias ChatStream = (ChatProtocol, LocalModelRequest, Message) -> Flow<Message>
+
 internal class ChatGenerationRepository(
     private val currentCatalog: () -> ModelCatalog,
     private val sessionKey: (Provider) -> String,
     private val attachmentSources: suspend (List<Attachment>, Provider) -> Map<Attachment, String>,
-    private val stream: (ChatProtocol, LocalModelRequest, Message) -> Flow<Message> = ChatTransports::stream
+    private val stream: ChatStream = ChatTransports::stream
 ) : GenerationRepository {
     private val local = FakeGenerationRepository()
 
@@ -33,16 +35,16 @@ internal class ChatGenerationRepository(
             val (model, provider, protocol) = catalog.chatDestination(route, request.parameters, retry)
             val key = sessionKey(provider)
             provider.chatKeyIssue(model, key)?.let { error(it) }
-            val transcript = history.responsesHistory()
+            val transcript = history.responsesHistory(request.continuesAssistant)
             val prepared = withContext(Dispatchers.IO) {
                 val attachments = transcript.filter { it.role == Role.User }.flatMap { it.attachments }
                 val sources = attachmentSources(attachments, provider)
                 val options = catalog.parameters(model, request.parameters)
                 when (protocol) {
                     ChatProtocol.ChatCompletionsHttp ->
-                        catalog.chatCompletionsRequest(provider, model, transcript, key, options, systemPrompt, sources::getValue)
+                        catalog.chatCompletionsRequest(provider, model, transcript, key, options, systemPrompt, request.continuesAssistant, sources::getValue)
                     ChatProtocol.ResponsesHttp, ChatProtocol.ResponsesWebSocket ->
-                        catalog.responsesRequest(provider, model, transcript, key, options, systemPrompt, sources::getValue)
+                        catalog.responsesRequest(provider, model, transcript, key, options, systemPrompt, request.continuesAssistant, sources::getValue)
                 }
             }
             emitAll(stream(protocol, prepared, request))
@@ -81,7 +83,7 @@ internal fun ModelCatalog.retryChatRouteIssue(user: Message, original: Message?)
 
 internal const val CHAT_PROTOCOL_PARAMETER = "chat_protocol"
 
-private object ChatTransports {
+internal object ChatTransports {
     private val http = ResponsesTransport()
     private val socket by lazy { ResponsesWebSocketTransport() }
 

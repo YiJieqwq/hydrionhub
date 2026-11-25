@@ -67,6 +67,16 @@ class ResponsesRequestTest {
         assertFalse(body.has("background"))
     }
 
+    @Test fun failedAssistantContinuationDoesNotHideTheUserWhoOwnsTheOriginalAnswer() {
+        val answer = Message(role = Role.Assistant, text = "Edited answer", replyTo = user.id)
+        val failed = answer.copy(id = "continuation", text = "Partial failed output", status = Generation.Error, continuesAssistant = true)
+        val next = user.copy(id = "follow-up", text = "Continue")
+        val turns = listOf(user, answer, failed, next)
+        assertEquals(listOf(user, answer, next), turns.responsesHistory())
+        assertTrue(runCatching { listOf(user, answer).responsesHistory() }.isFailure)
+        assertTrue(runCatching { turns.dropLast(1).responsesHistory(allowAssistantTail = true) }.isFailure)
+    }
+
     @Test fun openAiReplaysVisibleTurnsAndOnlyUsersImagesAcrossProviderChanges() {
         val photo = Attachment("photo", "photo.png", mimeType = "image/png")
         val first = user.copy(id = "first", text = "describe", attachments = listOf(photo))

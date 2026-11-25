@@ -16,8 +16,6 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.longClick
-import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
@@ -50,7 +48,7 @@ class ChatTurnActionsTest {
     fun removeTestConversation() {
         screen.activityRule.scenario.onActivity { activity ->
             val vm = ViewModelProvider(activity)[HubViewModel::class.java]
-            vm.state.value.history.filter { it.title == prompt || it.title == "$prompt-branch" }.forEach { vm.deleteConversation(it.id) }
+            vm.state.value.history.filter { it.title == prompt || it.title == "$prompt (1)" }.forEach { vm.deleteConversation(it.id) }
         }
     }
 
@@ -91,11 +89,9 @@ class ChatTurnActionsTest {
         val reply = original.messages[1]
         turnControl(1, assistantMenu and hasAnyAncestor(hasTestTag("message-turn-${reply.id}"))).performClick()
         screen.onNodeWithText(screen.activity.getString(R.string.turn_fork)).performScrollTo().performClick()
-        screen.onNode(hasSetTextAction() and hasText(screen.activity.getString(R.string.turn_fork_title, original.title)))
-            .performTextReplacement("$prompt-branch")
-        screen.onNode(hasText(screen.activity.getString(R.string.turn_fork)) and hasClickAction()).performClick()
         screen.waitUntil(5_000) { vm.state.value.current.id != original.id }
         val branch = vm.state.value.current
+        assertEquals("$prompt (1)", branch.title)
         assertEquals(original.messages.take(2).map { it.text }, branch.messages.map { it.text })
         assertNotEquals(reply.id, branch.messages.last().id)
         assertEquals(branch.messages.first().id, branch.messages.last().replyTo)
@@ -125,8 +121,7 @@ class ChatTurnActionsTest {
         screen.onNode(hasSetTextAction() and hasText(prompt)).performTextReplacement("discarded")
         screen.onNodeWithText(screen.activity.getString(R.string.settings_cancel)).performClick()
         turnControl(0, hasText(prompt))
-        turnControl(0, hasTestTag("message-user-bubble")).performTouchInput { longClick() }
-        screen.onNodeWithText(screen.activity.getString(R.string.turn_edit)).performScrollTo().performClick()
+        turnControl(0, hasContentDescription(screen.activity.getString(R.string.turn_edit))).performClick()
         screen.onNode(hasSetTextAction() and hasText(prompt)).performTextReplacement(edited)
         screen.onNodeWithText(screen.activity.getString(R.string.settings_save)).assertIsEnabled().performClick()
         turnControl(0, hasText(edited))

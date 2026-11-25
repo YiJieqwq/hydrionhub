@@ -76,6 +76,8 @@ data class Message(
     val timing: ReplyTiming? = null,
     val toolCalls: List<ReplyToolCall> = emptyList(),
     val translation: ReplyTranslation? = null,
+    // A separate reply following an edited assistant turn. replyTo still identifies its user prompt.
+    val continuesAssistant: Boolean = false,
 ) {
     val reportedUsage: TokenUsage? get() = usage ?: totalTokens?.let { TokenUsage(totalTokens = it) }
 }

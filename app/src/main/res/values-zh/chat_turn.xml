@@ -22,7 +22,7 @@
     <string name="turn_retry_model">重新生成模型：%1$s</string>
     <string name="turn_save_send">保存并重发</string>
     <string name="turn_fork">创建分支</string>
-    <string name="turn_fork_title">%1$s（分支）</string>
+    <string name="turn_save_continue">保存并发送</string>
     <string name="turn_set_start">从此处开始上下文</string>
     <string name="turn_clear_start">取消上下文起点</string>
     <string name="turn_start">上下文起点</string>
@@ -44,7 +44,6 @@
         <item quantity="other">保留当前版本并永久删除其他 %1$d 个版本？</item>
     </plurals>
     <string name="turn_prompt">修改图片提示词</string>
-    <string name="turn_fork_hint">新会话将包含截至这条消息的可见版本。原会话保留在历史记录中。</string>
     <string name="turn_selection">选择消息</string>
     <string name="turn_select_all">全选</string>
     <string name="turn_select_none">取消全选</string>

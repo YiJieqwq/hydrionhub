@@ -7,6 +7,8 @@ import io.hydrion.hub.model.Draft
 import io.hydrion.hub.model.HubState
 import io.hydrion.hub.model.ImageInvocation
 import io.hydrion.hub.model.HubViewModel
+import io.hydrion.hub.model.Message
+import io.hydrion.hub.model.nextBranchTitle
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.Role
 import io.hydrion.hub.model.RemoteModel
@@ -47,12 +49,22 @@ internal suspend fun sendDraft(
 }.let { issue -> vm.localizedSendIssue(catalog, issue) }
 
 internal suspend fun sendEditedBranch(
-    vm: HubViewModel, before: HubState, catalog: ModelCatalog, messageId: String, text: String, title: String,
+    vm: HubViewModel, before: HubState, catalog: ModelCatalog, messageId: String, text: String,
 ): String? = sendEditedBranch(vm.providers, before, catalog, vm.state, messageId, text,
     localSearchEnabled = { vm.webSearch.settings.value.localEnabled }, validateImage = vm::validateImage,
 ) { model, parameters, image, remoteModel ->
-    vm.forkEditedMessage(before.current.id, messageId, text, title, model, parameters, image, remoteModel)
+    vm.forkEditedMessage(before.current.id, messageId, text, vm.state.value.nextBranchTitle(), model, parameters, image, remoteModel)
 }.let { issue -> vm.localizedSendIssue(catalog, issue) }
+
+internal suspend fun continueEditedReply(vm: HubViewModel, before: HubState, catalog: ModelCatalog, source: Message, text: String): String? {
+    // Edited assistant prose is context. It must not activate prompt-based search or image routing.
+    val input = Draft(text = text, search = "禁用", imageTool = "禁用")
+    return sendPreparedDraft(vm.providers, Mode.Chat, input, catalog, { false }, vm::validateImage,
+        stillCurrent = { vm.state.value.current == before.current && !vm.state.value.isGenerating && vm.providers.catalog.value == catalog },
+    ) { model, parameters, _, route ->
+        vm.continueEditedReply(before.current.id, source, text, model, parameters, route)
+    }.let { vm.localizedSendIssue(catalog, it) }
+}
 
 private fun HubViewModel.localizedSendIssue(catalog: ModelCatalog, issue: String?): String? = when (issue) {
     CHAT_MODEL_REQUIRED -> {
