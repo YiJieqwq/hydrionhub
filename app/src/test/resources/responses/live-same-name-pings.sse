@@ -1,0 +1,15 @@
+data: {"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"type":"mcp_call","id":"mcp_A","server_label":"fixture","name":"ping","arguments":"{\"echo\":\"A\"}","status":"in_progress"}}
+
+data: {"type":"response.output_item.added","sequence_number":2,"output_index":1,"item":{"type":"mcp_call","id":"mcp_B","server_label":"fixture","name":"ping","arguments":"{\"echo\":\"B\"}","status":"in_progress"}}
+
+data: {"type":"response.mcp_call.completed","sequence_number":3,"item_id":"mcp_B","output_index":1}
+
+data: {"type":"response.output_item.done","sequence_number":4,"output_index":1,"item":{"type":"mcp_call","id":"mcp_B","server_label":"fixture","name":"ping","arguments":"{\"echo\":\"B\"}","status":"completed","output":"pong-B"}}
+
+data: {"type":"response.mcp_call.completed","sequence_number":5,"item_id":"mcp_A","output_index":0}
+
+data: {"type":"response.output_item.done","sequence_number":6,"output_index":0,"item":{"type":"mcp_call","id":"mcp_A","server_label":"fixture","name":"ping","arguments":"{\"echo\":\"A\"}","status":"completed","output":"pong-A"}}
+
+data: {"type":"response.completed","sequence_number":7,"response":{"status":"completed"}}
+
+: end of fixture

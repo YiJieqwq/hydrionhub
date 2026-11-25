@@ -40,6 +40,7 @@ import androidx.core.view.drawToBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import io.hydrion.hub.localtools.LocalMcpFixture
 import io.hydrion.hub.MainActivity
 import org.json.JSONObject
@@ -48,6 +49,7 @@ import io.hydrion.hub.model.*
 import io.hydrion.hub.ui.profile.LocalProfileStore
 import io.hydrion.hub.ui.theme.HydrionTheme
 import kotlin.math.roundToInt
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
@@ -1061,6 +1063,86 @@ class ReplyBubbleInteractionTest {
         assertEquals(15f, sheetSize("lookup"), .01f)
         assertEquals(12f, sheetSize("Arguments"), .01f)
         assertEquals(12f, sheetSize("A sample result."), .01f)
+    }
+
+    @Test fun livePingDetailsKeepASelectedWhileBReturnsFirst() = checkLivePingDetails(selectedIndex = 0)
+
+    @Test fun livePingDetailsUpdateBAndStayOnBAfterAReturns() = checkLivePingDetails(selectedIndex = 1)
+
+    private fun checkLivePingDetails(selectedIndex: Int) {
+        val nextFrame = Channel<Unit>()
+        val wire = requireNotNull(javaClass.getResource("/responses/live-same-name-pings.sse")).readText()
+        val repository = object : GenerationRepository {
+            override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String) = flow {
+                readResponsesEvents(wire.reader().buffered(), request) { message ->
+                    emit(message)
+                    // Let the UI observe each status and result separately, starting with both calls running.
+                    if (message.status.isActive && message.toolCalls.size == 2) nextFrame.receive()
+                }
+            }
+        }
+        val session = ConversationSession(screen.activity.lifecycleScope, repository, {})
+        screen.activityRule.scenario.onActivity { activity ->
+            val vm = ViewModelProvider(activity)[HubViewModel::class.java]
+            activity.setContent {
+                HydrionTheme { ProvideMessageStyle { MessageList(vm, session.state.collectAsState().value, "", null, 0) } }
+            }
+            session.setDraft("Ping A and B")
+            session.send("Fixture", emptyMap(), null, null, remoteModel = RemoteModel("fixture", "chat"))
+        }
+
+        val headers = screen.onAllNodes(hasClickAction() and hasText("ping"))
+        headers.assertCountEquals(2)[selectedIndex].performClick()
+        val sheet = screen.onNodeWithTag("turn-action-sheet")
+        val originalSheet = sheet.assertIsDisplayed().fetchSemanticsNode().id
+        val inSheet = hasAnyAncestor(hasTestTag("turn-action-sheet"))
+        fun field(value: String) = screen.onNode(inSheet and hasText(value), useUnmergedTree = true)
+        fun advance() = screen.runOnIdle { nextFrame.trySend(Unit).getOrThrow() }
+
+        val ids = listOf("A", "B")
+        val selected = ids[selectedIndex]
+        fun checkFrame(completed: Set<String>, returned: Set<String>) {
+            // Check the other response really reached the session before asserting the open sheet stayed put.
+            val calls = screen.runOnIdle { session.state.value.current.messages.last().toolCalls }
+            assertEquals(listOf(0, 1), calls.map { it.slot })
+            assertEquals(originalSheet, sheet.assertIsDisplayed().fetchSemanticsNode().id)
+            field("ping").assertIsDisplayed()
+            for ((i, id) in ids.withIndex()) {
+                assertEquals(if (id in completed) ToolCallState.Completed else ToolCallState.Running, calls[i].state)
+                assertEquals(if (id in returned) "pong-$id" else null, calls[i].result)
+                val arguments = field(JSONObject().put("echo", id).toString(2))
+                if (id == selected) arguments.assertIsDisplayed() else arguments.assertDoesNotExist()
+                val result = field("pong-$id")
+                if (id == selected && id in returned) result.assertIsDisplayed() else result.assertDoesNotExist()
+            }
+            val running = field(label(R.string.turn_tool_running))
+            val done = field(label(R.string.turn_tool_done))
+            if (selected in completed) {
+                done.assertIsDisplayed()
+                running.assertDoesNotExist()
+            } else {
+                running.assertIsDisplayed()
+                done.assertDoesNotExist()
+            }
+            val resultLabel = field(label(R.string.turn_tool_result))
+            if (selected in returned) resultLabel.assertIsDisplayed() else resultLabel.assertDoesNotExist()
+        }
+
+        val neither = emptySet<String>()
+        val onlyB = setOf("B")
+        val both = ids.toSet()
+        checkFrame(neither, neither)
+        advance()
+        checkFrame(onlyB, neither)
+        advance()
+        checkFrame(onlyB, onlyB)
+        advance()
+        checkFrame(both, onlyB)
+        advance()
+        checkFrame(both, both)
+        advance()
+        screen.runOnIdle { assertEquals(Generation.Completed, session.state.value.current.messages.last().status) }
+        checkFrame(both, both)
     }
 
     @Test fun reopenedReplyOpensTheMatchingResultForEachSameNamedCallWithOneTap() = runBlocking {
