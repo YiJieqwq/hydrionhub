@@ -49,6 +49,7 @@ import io.hydrion.hub.model.*
 import io.hydrion.hub.ui.profile.LocalProfileStore
 import io.hydrion.hub.ui.theme.HydrionTheme
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -121,6 +122,15 @@ class ReplyBubbleInteractionTest {
     }
 
     private fun label(id: Int) = screen.activity.getString(id)
+    private fun horizontalEdges(tag: String) = screen.onNodeWithTag(tag).getUnclippedBoundsInRoot().let { it.left to it.right }
+
+    private fun assertThoughtFillsReply() {
+        val body = horizontalEdges("message-assistant-body")
+        val timeline = horizontalEdges("message-timeline")
+        assertTrue("The reply keeps both page insets", timeline.first < body.first && body.second < timeline.second)
+        assertEquals("Thought card edges should match the reply body", body, horizontalEdges("message-thought"))
+    }
+
     private fun more() = screen.onNodeWithContentDescription(label(R.string.turn_more_reply)).performClick()
     private fun tap(id: Int) = screen.onNode(hasText(label(id)) and hasClickAction()).performScrollTo().performClick()
     private fun confirm(id: Int) = screen.onNode(hasText(label(id)) and hasClickAction()).performClick()
@@ -878,6 +888,7 @@ class ReplyBubbleInteractionTest {
         val position = label(R.string.turn_tool_before_body)
         val density = screen.density.density
         val original = card.fetchSemanticsNode().boundsInWindow
+        assertThoughtFillsReply()
         fun checkBody(headerText: String, bodyText: String, next: String?) {
             val headerBox = header(headerText).fetchSemanticsNode().boundsInWindow
             val body = rect(bodyText)
@@ -897,6 +908,7 @@ class ReplyBubbleInteractionTest {
             }
         }
         header(title).performClick()
+        assertThoughtFillsReply()
         checkBody(title, thought, first)
         assertEquals(12.5f, textLayout(thought).layoutInput.style.fontSize.value)
         checkBody(first, "Found a lamp.", last)
@@ -991,14 +1003,13 @@ class ReplyBubbleInteractionTest {
     }
 
     @Test @Config(qualifiers = "en-rUS-w407dp-h915dp-xxhdpi")
-    fun shortThinkingCardFitsItsContentAndReversesOrSnapsWithSystemMotion() {
+    fun standaloneThinkingCardFillsReplyWhileReversingOrSnappingWithSystemMotion() {
         val reply = answer.copy(thought = "Short thought.")
         open(initial = Conversation(messages = listOf(reply)))
         setStyle(MessageStyle())
         val card = screen.onNodeWithTag("message-thought")
         val header = screen.onNode(hasText(label(R.string.turn_thinking)) and hasClickAction())
         fun height() = card.getUnclippedBoundsInRoot().let { (it.bottom - it.top).value }
-        fun widthOf(node: SemanticsNodeInteraction) = node.getUnclippedBoundsInRoot().let { it.right - it.left }
         val clock = screen.mainClock
         fun toggle() {
             header.performSemanticsAction(SemanticsActions.OnClick)
@@ -1010,18 +1021,18 @@ class ReplyBubbleInteractionTest {
             org.robolectric.util.ReflectionHelpers.ClassParameter.from(Float::class.javaPrimitiveType, scale))
         val oldScale = android.animation.ValueAnimator.getDurationScale()
         val closed = height()
-        val width = widthOf(screen.onNodeWithTag("message-timeline"))
-        assertTrue(widthOf(card) < width * .8f)
+        assertThoughtFillsReply()
         clock.autoAdvance = false
         try {
             systemScale(1f)
             toggle()
             clock.advanceTimeBy(112)
             val during = height()
+            assertThoughtFillsReply()
             clock.advanceTimeBy(320)
             val expanded = height()
             assertTrue("closed=$closed during=$during expanded=$expanded", during > closed && during < expanded)
-            assertTrue("Expanded thought uses the message column", widthOf(card) > width * .8f)
+            assertThoughtFillsReply()
             toggle()
             clock.advanceTimeBy(96)
             assertTrue(height() in (closed + 1f)..(expanded - 1f))
@@ -1032,6 +1043,7 @@ class ReplyBubbleInteractionTest {
             toggle()
             clock.advanceTimeByFrame()
             assertEquals(closed, height(), .5f)
+            assertThoughtFillsReply()
             toggle()
             clock.advanceTimeByFrame()
             assertEquals(expanded, height(), .5f)
@@ -1068,6 +1080,49 @@ class ReplyBubbleInteractionTest {
 
     @Test fun livePingDetailsUpdateBAndStayOnBAfterAReturns() = checkLivePingDetails(selectedIndex = 1)
 
+    @Test fun streamingThoughtKeepsTheReplyEdgesWhenCollapsedAndAfterCompletion() {
+        val resumeStream = CompletableDeferred<Unit>()
+        val wire = requireNotNull(javaClass.getResource("/responses/deepseek-reasoning-text.sse")).readText()
+        val repository = object : GenerationRepository {
+            override fun generate(mode: Mode, request: Message, retry: Boolean, history: List<Message>, systemPrompt: String) = flow {
+                readResponsesEvents(wire.reader().buffered(), request) { message ->
+                    emit(message)
+                    if (message.status.isActive && message.thought.isNotBlank()) resumeStream.await()
+                }
+            }
+        }
+        val session = openStreamingReply(repository, "Check the date")
+        awaitHost { session.state.value.current.messages.last().thought.isNotBlank() }
+        val header = screen.onNode(hasText(label(R.string.turn_thinking)) and hasClickAction())
+        fun hasState(id: Int) = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, label(id))
+        header.assert(hasState(R.string.turn_expanded))
+        val expanded = horizontalEdges("message-thought")
+        header.performClick()
+        header.assert(hasState(R.string.turn_collapsed))
+        val collapsed = horizontalEdges("message-thought")
+        screen.runOnIdle { resumeStream.complete(Unit) }
+        awaitHost { !session.state.value.isGenerating }
+        screen.onNodeWithText("Monday.").assertIsDisplayed()
+        header.assert(hasState(R.string.turn_collapsed))
+        assertThoughtFillsReply()
+        val body = horizontalEdges("message-assistant-body")
+        assertEquals(body, expanded)
+        assertEquals(body, collapsed)
+    }
+
+    private fun openStreamingReply(repository: GenerationRepository, prompt: String): ConversationSession {
+        val session = ConversationSession(screen.activity.lifecycleScope, repository, {})
+        screen.activityRule.scenario.onActivity { activity ->
+            val vm = ViewModelProvider(activity)[HubViewModel::class.java]
+            activity.setContent {
+                HydrionTheme { ProvideMessageStyle { MessageList(vm, session.state.collectAsState().value, "", null, 0) } }
+            }
+            session.setDraft(prompt)
+            session.send("Fixture", emptyMap(), null, null, remoteModel = RemoteModel("fixture", "chat"))
+        }
+        return session
+    }
+
     private fun checkLivePingDetails(selectedIndex: Int) {
         val nextFrame = Channel<Unit>()
         val wire = requireNotNull(javaClass.getResource("/responses/live-same-name-pings.sse")).readText()
@@ -1080,15 +1135,7 @@ class ReplyBubbleInteractionTest {
                 }
             }
         }
-        val session = ConversationSession(screen.activity.lifecycleScope, repository, {})
-        screen.activityRule.scenario.onActivity { activity ->
-            val vm = ViewModelProvider(activity)[HubViewModel::class.java]
-            activity.setContent {
-                HydrionTheme { ProvideMessageStyle { MessageList(vm, session.state.collectAsState().value, "", null, 0) } }
-            }
-            session.setDraft("Ping A and B")
-            session.send("Fixture", emptyMap(), null, null, remoteModel = RemoteModel("fixture", "chat"))
-        }
+        val session = openStreamingReply(repository, "Ping A and B")
 
         val headers = screen.onAllNodes(hasClickAction() and hasText("ping"))
         headers.assertCountEquals(2)[selectedIndex].performClick()

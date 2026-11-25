@@ -194,8 +194,7 @@ internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean
         }
     }
     if (msg.thought.isNotBlank() || groups.containsKey(0)) {
-        ReplyToolChain(msg.thought, groups[0].orEmpty(), query, thoughtExpanded, toggleThought,
-            streamingThought = msg.status.isActive && msg.text.isBlank(), openRecord = { selected = it })
+        ReplyToolChain(msg.thought, groups[0].orEmpty(), query, thoughtExpanded, toggleThought) { selected = it }
     }
     var cursor = 0
     for ((position, calls) in groups) {
@@ -242,13 +241,12 @@ private fun toolStatus(state: ToolCallState): Int = when (state) {
 
 @Composable
 private fun ReplyToolChain(thought: String, calls: List<IndexedValue<ReplyToolCall>>, query: String,
-    thoughtExpanded: Boolean, toggleThought: () -> Unit, streamingThought: Boolean = false, openRecord: (Int) -> Unit) {
+    thoughtExpanded: Boolean, toggleThought: () -> Unit, openRecord: (Int) -> Unit) {
     val hasThought = thought.isNotBlank()
     val firstCall = if (hasThought) 1 else 0
     val size = firstCall + calls.size
-    val compact = hasThought && calls.isEmpty() && !streamingThought && !thoughtExpanded
-    val width = if (compact) Modifier.width(IntrinsicSize.Max) else Modifier.fillMaxWidth()
-    ChatTintedSurface(ChatSurface.ThoughtAndTools, width.testTag(if (hasThought) "message-thought" else "message-tool-chain")) {
+    ChatTintedSurface(ChatSurface.ThoughtAndTools,
+        Modifier.fillMaxWidth().testTag(if (hasThought) "message-thought" else "message-tool-chain")) {
         Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
             if (hasThought) {
                 TimelineStep(R.drawable.thinking_idea, stringResource(R.string.turn_thinking), query, 0, size,
