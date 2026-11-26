@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.em
 @Composable
 internal fun RichBlock(fragment: RichFragment, block: MarkdownBlock, images: Map<Int, RichImage>, query: String, style: TextStyle) {
     when (fragment) {
+        is RichFragment.Chart -> androidx.compose.runtime.key((block as MarkdownBlock.Code).value) { MessageChartCard(fragment.data) }
         is RichFragment.Diagram -> {
             val code = block as MarkdownBlock.Code
             val image = images[fragment.slot]

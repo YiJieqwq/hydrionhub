@@ -132,4 +132,11 @@
     <string name="turn_text_copied">Text copied</string>
     <string name="turn_tool_arguments">Arguments</string>
     <string name="turn_tool_result">Result</string>
+    <string name="turn_chart">Chart</string>
+    <string name="turn_chart_plot">View chart</string>
+    <string name="turn_chart_table">View table</string>
+    <string name="turn_chart_export">Export CSV</string>
+    <string name="turn_chart_export_saved">CSV saved</string>
+    <string name="turn_chart_export_failed">Could not save CSV</string>
+    <string name="turn_chart_series">Series</string>
 </resources>

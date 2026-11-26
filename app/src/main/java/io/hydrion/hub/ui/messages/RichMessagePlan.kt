@@ -8,6 +8,7 @@ internal class MathLine(val text: String, val spans: List<MathSpan>)
 internal sealed interface RichFragment {
     class Formula(val line: MathLine) : RichFragment
     class Diagram(val slot: Int) : RichFragment
+    class Chart(val data: MessageChart) : RichFragment
     class Table(val rows: List<List<MathLine>>) : RichFragment
 }
 
@@ -80,6 +81,8 @@ internal fun richMessagePlan(blocks: List<ReplyBlock>): RichMessagePlan? {
     val bodies = mutableMapOf<Int, Map<Int, RichFragment>>()
     var total = 0
     var diagrams = 0
+    var chartPointsLeft = 1024
+    var chartsLeft = 8
     fun add(kind: String, source: String): Int {
         if (items.size >= 48 || total + source.length > 48000 || (kind == "mermaid" &&
                 (diagrams >= 12 || source.length > 8192 || source.count { it == '\n' } >= 120))) return -1
@@ -90,12 +93,22 @@ internal fun richMessagePlan(blocks: List<ReplyBlock>): RichMessagePlan? {
     }
     blocks.forEachIndexed { index, body ->
         if (body !is ReplyBlock.Body || !('$' in body.text || "\\(" in body.text || "\\[" in body.text ||
-                "mermaid" in body.text.lowercase())) return@forEachIndexed
+                body.text.contains("mermaid", ignoreCase = true) || body.text.contains("chart", ignoreCase = true))) return@forEachIndexed
         val fragments = mutableMapOf<Int, RichFragment>()
         for ((n, block) in markdownBlocks(body.text).withIndex()) {
             if (block is MarkdownBlock.Code) {
                 if (block.closed && block.language.equals("mermaid", true) && block.value.isNotBlank()) {
                     fragments[n] = RichFragment.Diagram(add("mermaid", block.value))
+                } else if (block.closed && block.language.equals("chart", true) && chartsLeft > 0 && chartPointsLeft > 0) {
+                    val chart = messageChart(block.value)
+                    if (chart != null) {
+                        val points = chart.series.sumOf { it.points.size }
+                        if (points <= chartPointsLeft) {
+                            fragments[n] = RichFragment.Chart(chart)
+                            chartPointsLeft -= points
+                            chartsLeft--
+                        }
+                    }
                 }
                 continue
             }

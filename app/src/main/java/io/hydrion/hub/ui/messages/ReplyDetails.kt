@@ -213,7 +213,7 @@ internal fun ReplyTimeline(msg: Message, query: String, chatId: String? = null, 
         is ReplyBlock.Body -> {
             val fragments = plan?.bodies?.get(index)
             if (plan == null || graphics == null || fragments == null) AssistantBody(block.text, query, Mode.Chat)
-            else if (index == plan.bodies.keys.first()) BoxWithConstraints {
+            else if (plan.items.isNotEmpty() && index == plan.bodies.keys.first()) BoxWithConstraints {
                 AssistantBody(block.text, query, Mode.Chat, fragments, graphics.entries)
                 RichRenderHost(plan, (maxWidth.value / LocalDensity.current.fontScale).toInt(), graphics)
             } else AssistantBody(block.text, query, Mode.Chat, fragments, graphics.entries)

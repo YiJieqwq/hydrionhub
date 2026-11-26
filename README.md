@@ -22,6 +22,16 @@ OpenAI 的 Base URL 可填 `https://api.openai.com/v1`，DeepSeek 可填 `https:
 
 默认模型、当前选择和参数按供应商 ID 与模型 ID 一起保存。升级旧配置时，同名模型按旧选择器的顺序匹配一次。内置 DeepSeek 使用 Responses HTTP。若要用 DeepSeek 的 Chat Completions，可以另建聊天供应商，使用同一官方地址并在该供应商下填写 API Key。
 
+## 聊天正文图表
+
+需要数据图时，可以请助手返回标为 `chart` 的代码块。下面的例子会显示两个系列的散点图，点的位置取自各自的 X 和 Y。消息内可切换到数据表，也可将同一组数据导出为 CSV。
+
+~~~chart
+{"style":"scatter","title":"花园观测","x_axis":{"title":"小时"},"y_axis":{"title":"高度"},"series":[{"name":"薄荷","points":[{"x":1,"y":4},{"x":3,"y":7},{"x":10,"y":5}]},{"name":"紫苏","points":[{"x":2,"y":3},{"x":9,"y":6}]}]}
+~~~
+
+`line` 和 `bar` 支持数值坐标点，也支持 `x_axis.data` 中的共同类目或数值配合每个系列的等长 `values` 数组。每个系列可选 `#RRGGBB` 颜色。单图最多 8 个系列，每系列最多 256 个点。单条回复最多渲染 8 张图、合计 1,024 个点。回复结束后渲染，未闭合、无效或超限的图表保留源码供复制。
+
 ## 使用 OpenAI 图像生成
 
 在「设置 → 图像生成模型」新建供应商，协议填 `OpenAI Images`，Base URL 填 `https://api.openai.com/v1`。输入本次运行的 API Key，添加账号可用的 GPT 图像模型 ID，例如 `gpt-image-1.5`，并在 Image 的 Configure 中选择它。保留默认请求模板即可。若自定义模板，在线生成要求原样使用提示词和所选模型 ID。[OpenAI 图像生成接口](https://developers.openai.com/api/reference/resources/images/methods/generate/)

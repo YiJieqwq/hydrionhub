@@ -131,6 +131,100 @@ class ChatRevisionFlowTest {
         screen.onNodeWithContentDescription("发送消息").assertIsEnabled().performClick()
     }
 
+    @Test fun chartsPlotRealCoordinatesAndExportThroughTheChatActions() {
+        val scatter = """{"style":"scatter","title":"Garden samples","series":[{"name":"Mint","color":"#ef2367","points":[{"x":1,"y":2},{"x":3,"y":6},{"x":10,"y":4}]},{"name":"Basil","color":"#167cbd","points":[{"x":2,"y":1},{"x":9,"y":3}]}]}"""
+        val unknown = """{"style":"radar","series":[]}"""
+        val unfinished = """{"style":"line","title":"Unfinished"}"""
+        val rasterRequests = CopyOnWriteArrayList<RichRequest>()
+        open(ChatProtocol.ResponsesHttp, raster = { _, request, _ -> rasterRequests += request; emptyMap() }) { pending ->
+            val body = when (pending.prompt) {
+                "Trace the line" -> """{"style":"line","title":"Garden line","x_axis":{"data":["A","B","C"]},"series":[{"name":"Mint","color":"#ef2367","values":[2,4,3]}]}"""
+                "Compare the beds" -> """{"style":"bar","title":"Garden columns","x_axis":{"data":["A","B"]},"series":[{"name":"Mint","color":"#ef2367","values":[2,4]}]}"""
+                else -> scatter
+            }
+            val reply = if (pending.prompt == "Keep chart source") "~~~json\n$scatter\n~~~\n~~~chart\n$unknown\n~~~\n~~~chart\n$unfinished"
+                else "~~~chart\n$body\n~~~"
+            flowOf(pending.copy(text = reply, status = Generation.Completed))
+        }
+        fun plot(title: String) = screen.onNode(hasTestTag("message-chart-plot") and hasContentDescription(title))
+        // Each run of colored pixel columns is one point, column, or connected line.
+        fun colorRuns(title: String): List<Pair<IntRange, IntRange>> {
+            val bounds = plot(title).performScrollTo().fetchSemanticsNode().boundsInWindow
+            val image = screen.runOnIdle { screen.activity.window.decorView.drawToBitmap() }
+            val color = Color.rgb(239, 35, 103)
+            val runs = mutableListOf<Pair<IntRange, IntRange>>()
+            for (x in bounds.left.roundToInt().coerceAtLeast(0) until bounds.right.roundToInt().coerceAtMost(image.width)) {
+                val ys = (bounds.top.roundToInt().coerceAtLeast(0) until bounds.bottom.roundToInt().coerceAtMost(image.height))
+                    .filter { y -> image.getPixel(x, y) == color }
+                if (ys.isEmpty()) continue
+                val last = runs.lastOrNull()
+                if (last == null || last.first.last < x - 1) runs += (x..x) to (ys.first()..ys.last())
+                else runs[runs.lastIndex] = (last.first.first..x) to (minOf(last.second.first, ys.first())..maxOf(last.second.last, ys.last()))
+            }
+            return runs
+        }
+        send("Plot samples")
+        awaitHost { vm.state.value.current.messages.last().text.contains("Garden samples") }
+        screen.onNodeWithText("Mint").assertExists()
+        screen.onNodeWithText("Basil").assertExists()
+        val dots = colorRuns("Garden samples")
+        assertEquals("Scatter must draw three separate markers: $dots", 3, dots.size)
+        fun mid(range: IntRange) = (range.first + range.last) / 2.0
+        val xs = dots.map { mid(it.first) }
+        val ys = dots.map { mid(it.second) }
+        assertEquals(2.0 / 9, (xs[1] - xs[0]) / (xs[2] - xs[0]), .055)
+        assertTrue(ys[0] > ys[2] && ys[2] > ys[1])
+        assertEquals(.5, (ys[2] - ys[1]) / (ys[0] - ys[1]), .07)
+
+        screen.onNodeWithText("View table").performScrollTo().performClick()
+        val inTable = hasAnyAncestor(hasTestTag("message-chart-table"))
+        for (value in listOf("10", "9", "6")) screen.onNode(inTable and hasText(value)).assertExists()
+        screen.onNodeWithContentDescription("Export CSV").performScrollTo().performClick()
+        val shadow = shadowOf(screen.activity)
+        val intent = requireNotNull(shadow.nextStartedActivityForResult).intent
+        assertEquals(android.content.Intent.ACTION_CREATE_DOCUMENT, intent.action)
+        assertEquals("text/csv", intent.type)
+        val uri = android.net.Uri.parse("content://chart-fixture/observations.csv")
+        val output = java.io.ByteArrayOutputStream()
+        screen.runOnIdle {
+            shadowOf(screen.activity.contentResolver).registerOutputStream(uri, output)
+            shadow.receiveResult(intent, android.app.Activity.RESULT_OK, android.content.Intent().setData(uri))
+        }
+        awaitHost { output.size() > 0 && org.robolectric.shadows.ShadowToast.getTextOfLatestToast() == "CSV saved" }
+        assertEquals("series,\"x\",\"y\"\r\n\"Mint\",1,2\r\n\"Mint\",3,6\r\n\"Mint\",10,4\r\n" +
+            "\"Basil\",2,1\r\n\"Basil\",9,3\r\n", output.toString("UTF-8"))
+        screen.onNodeWithText("View chart").performScrollTo().performClick()
+        plot("Garden samples").assertExists()
+        assertEquals(1, requests.size)
+
+        send("Trace the line")
+        awaitHost { vm.state.value.current.messages.last().text.contains("Garden line") }
+        val line = colorRuns("Garden line")
+        // Antialiasing can leave a column or two without an exact, fully saturated stroke pixel.
+        val span = line.last().first.last - line.first().first.first + 1
+        assertTrue("Expected a connected stroke, measured $line", span > 30 &&
+            line.sumOf { it.first.count() } > span * .9 && line.zipWithNext().all { (a, b) -> b.first.first - a.first.last <= 4 })
+        send("Compare the beds")
+        awaitHost { vm.state.value.current.messages.last().text.contains("Garden columns") }
+        val bars = colorRuns("Garden columns")
+        assertEquals("Expected two columns, measured $bars", 2, bars.size)
+        assertTrue(bars.all { it.first.count() > 2 } && bars[1].second.count() > bars[0].second.count())
+        send("Keep chart source")
+        awaitHost { vm.state.value.current.messages.last().text.endsWith(unfinished) }
+        val id = vm.state.value.current.messages.last().id
+        val inReply = hasAnyAncestor(hasTestTag("message-turn-" + id))
+        screen.onAllNodes(inReply and hasTestTag("message-chart")).assertCountEquals(0)
+        for (source in listOf(scatter, unknown, unfinished)) screen.onNode(inReply and hasText(source)).assertExists()
+        val copy = screen.activity.getString(R.string.turn_copy_code)
+        val buttons = screen.onAllNodes(inReply and hasContentDescription(copy))
+        buttons.assertCountEquals(3)
+        buttons[2].performScrollTo().performClick()
+        assertEquals(unfinished, screen.activity.getSystemService(android.content.ClipboardManager::class.java)
+            .primaryClip?.getItemAt(0)?.text.toString())
+        assertTrue(rasterRequests.isEmpty())
+        assertEquals(4, requests.size)
+    }
+
     @Test fun richReplyRendersOnceAfterStreamingAndKeepsUnrenderableSourceCopyable() {
         val continueStream = CompletableDeferred<Unit>()
         val finish = CompletableDeferred<Unit>()
