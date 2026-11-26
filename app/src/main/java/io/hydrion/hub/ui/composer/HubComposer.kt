@@ -129,6 +129,7 @@ import io.hydrion.hub.provider.chatModelPickerPreImeBack
 import io.hydrion.hub.model.Attachment
 import io.hydrion.hub.model.HubState
 import io.hydrion.hub.model.HubViewModel
+import io.hydrion.hub.model.LocalAssistant
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.ui.searchLineHeightLines
 import io.hydrion.hub.ui.pickerCapsuleBounds
@@ -146,7 +147,9 @@ import kotlin.math.roundToInt
 
 private enum class ToolsPanel { Closed, WaitingForIme, Open }
 
-private const val ChatDraftHint = "Chat with AI"
+internal val HubState.composerAssistantName: String
+    get() = assistants.find { it.id == current.assistantId }?.name?.takeIf { it.isNotBlank() } ?: LocalAssistant.Default.name
+
 private val FoldedTextStart = 48.dp
 private val OpenTextStart = 15.dp
 private val OpenTextEnd = 16.dp
@@ -217,6 +220,8 @@ internal fun HubComposer(
     val glyphAccent = if (darkComposer) Color.White else colors.onSurface
     val glyphLine = if (darkComposer) Color.White else colors.onSurfaceVariant
     val chat = state.current.mode == Mode.Chat
+    val assistantName = remember(state.current.assistantId, state.assistants) { state.composerAssistantName }
+    val chatDraftHint = stringResource(R.string.chat_message_hint, assistantName)
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val density = LocalDensity.current
@@ -524,7 +529,7 @@ internal fun HubComposer(
                             val shown = if (visibleModelQuery) chatPicker!!.searchQuery else toolEditor?.query ?: editorValue
                             val showingChatDraft = chat && !visibleModelQuery && toolEditor == null
                             val inputHint = if (visibleModelQuery) modelHint else if (toolEditor != null) toolHint
-                                else if (state.current.mode == Mode.Chat) ChatDraftHint else "描述想生成的图片"
+                                else if (chat) chatDraftHint else "描述想生成的图片"
                             BasicTextField(
                                 // The same field, FocusRequester and native IME options serve both roles.
                                 value = shown,
@@ -614,7 +619,7 @@ internal fun HubComposer(
                                             if (shown.text.isEmpty()) {
                                                 val hintStyle = if (chat) editorTextStyle else editorTextStyle.copy(fontSize = 17.sp)
                                                 if (modelSearch != null) {
-                                                    ModelSearchHints(ChatDraftHint, modelHint, hintStyle, browsing, browseProgress,
+                                                    ModelSearchHints(chatDraftHint, modelHint, hintStyle, browsing, browseProgress,
                                                         draftEmpty = draft.text.isEmpty(), lastQueryEmpty = exitingEmptySearch)
                                                 } else Text(inputHint, color = HubStyle.ComposerHint, style = hintStyle,
                                                     maxLines = 1, overflow = TextOverflow.Ellipsis)

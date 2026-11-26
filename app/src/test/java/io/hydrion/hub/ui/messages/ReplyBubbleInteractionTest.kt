@@ -331,6 +331,60 @@ class ReplyBubbleInteractionTest {
     @Test @Config(qualifiers = "zh-rCN-w407dp-h915dp-xxhdpi")
     fun chineseMessagesOnPhone() = checkMessageGeometry(narrow = false, chinese = true)
 
+    @Test fun savedSearchDetailsUseTheRecordedQuerySourcesAndLegacyFallback() {
+        val nativeUrl = "https://catalog.example.invalid/palette"
+        val reducer = ResponsesEventAccumulator(answer)
+        reducer.accept("""{"output_index":0,"item":{"type":"web_search_call","id":"swatch","status":"completed","action":{
+            "type":"search","query":"palette index","sources":[{"type":"url","url":"$nativeUrl"}]}}}""", "response.output_item.done")
+        val url = "https://garden.example.invalid/colour"
+        val contact = "mailto:studio@example.invalid"
+        val result = """{"answer":"Two shades.","results":[{"title":"Garden notes","url":"$url","content":"Mint and sage.",
+            "published_date":"2025-05-01","score":0},{"title":"Studio","url":"$contact"}]}"""
+        val provider = ReplyToolCall("search_web", ToolCallState.Completed, 0,
+            arguments = """{"query":"garden tones","search_depth":"basic"}""", result = result, slot = 1)
+        val oldResult = """{"legacy_message":"Partial archived response"}"""
+        val old = ReplyToolCall("search_web", ToolCallState.Incomplete, 0,
+            arguments = """{"query":"archived swatches"}""", result = oldResult, slot = 2)
+        val reply = answer.copy(toolCalls = listOf(reducer.message.toolCalls.single(), provider, old))
+        open(initial = Conversation(messages = listOf(reply)))
+        screen.onNodeWithText("Show 1 more step").performScrollTo().performClick()
+        val turn = hasAnyAncestor(hasTestTag("message-turn-" + reply.id))
+        val sheet = hasAnyAncestor(hasTestTag("turn-action-sheet"))
+        fun openRow(name: String) = screen.onNode(turn and hasText(name) and hasClickAction()).performScrollTo().performClick()
+        fun field(name: String) = screen.onNode(sheet and hasText(name), useUnmergedTree = true)
+        fun reveal(name: String): SemanticsNodeInteraction {
+            screen.onNode(sheet and hasScrollToIndexAction()).performScrollToNode(hasText(name))
+            return field(name).assertIsDisplayed()
+        }
+        openRow("Search web: palette index")
+        field("palette index").assertIsDisplayed()
+        reveal(nativeUrl)
+        field("Summary").assertDoesNotExist()
+        field("No sources returned").assertDoesNotExist()
+        screen.onNodeWithContentDescription(label(R.string.turn_close_details)).performClick()
+
+        openRow("Search web: garden tones")
+        field("search_depth: basic").assertIsDisplayed()
+        field("Two shades.").assertIsDisplayed()
+        field(result).assertDoesNotExist()
+        val source = layoutOf(reveal(url)).layoutInput.text
+        val link = source.getLinkAnnotations(0, source.length).single().item as androidx.compose.ui.text.LinkAnnotation.Url
+        assertEquals(url, link.url)
+        for (value in listOf("Garden notes", "Mint and sage.", "2025-05-01", "Score: 0")) reveal(value)
+        val plain = layoutOf(reveal(contact)).layoutInput.text
+        assertTrue(plain.getLinkAnnotations(0, plain.length).isEmpty())
+        reveal("Show original record").performClick()
+        reveal(result)
+        screen.onNode(sheet and hasScrollToIndexAction()).performScrollToIndex(0)
+        screen.onNodeWithContentDescription(label(R.string.turn_close_details)).performClick()
+
+        openRow("Search web: archived swatches")
+        field("search_web").assertIsDisplayed()
+        field(label(R.string.turn_tool_incomplete)).assertExists()
+        field(oldResult).assertExists()
+        field("Sources").assertDoesNotExist()
+    }
+
     @Test @Config(qualifiers = "en-rUS-w320dp-h915dp-xxhdpi")
     fun englishMessagesOnNarrowScreen() = checkMessageGeometry(narrow = true, chinese = false)
 

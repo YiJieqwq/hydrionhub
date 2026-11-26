@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_message_hint" translatable="false">Message %1$s</string>
     <string name="turn_attachment_no_viewer">No app can open this attachment.</string>
     <string name="turn_attachment_access_denied">Permission to open this attachment has been denied.</string>
     <string name="turn_code_label">Code</string>
@@ -96,6 +97,15 @@
     <string name="turn_shell_title">Shell: %1$s</string>
     <string name="turn_search_title">Search web: %1$s</string>
     <string name="turn_shell_exit" translatable="false">exit %1$s</string>
+    <string name="turn_shell_name" translatable="false">Shell</string>
+    <string name="turn_shell_directory">Working directory</string>
+    <string name="turn_search_query">Query</string>
+    <string name="turn_search_summary">Summary</string>
+    <string name="turn_search_sources">Sources</string>
+    <string name="turn_search_no_sources">No sources returned</string>
+    <string name="turn_search_score">Score: %1$s</string>
+    <string name="turn_show_record">Show original record</string>
+    <string name="turn_hide_record">Hide original record</string>
     <string name="turn_shell_stdout">Standard output</string>
     <string name="turn_tool_details">Tool call details</string>
     <string name="turn_close_details">Close details</string>

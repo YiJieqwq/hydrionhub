@@ -26,6 +26,7 @@ import io.hydrion.hub.provider.Provider
 import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.provider.ProviderStore
 import io.hydrion.hub.ui.composer.ToolsPageTravelMillis
+import io.hydrion.hub.ui.composer.composerAssistantName
 import io.hydrion.hub.ui.ModelEditorMotionMillis
 import io.hydrion.hub.provider.deepSeekProvider
 import java.util.UUID
@@ -43,10 +44,14 @@ class ChatModelSearchTest {
     private val editor get() = screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction())
     private val send get() = screen.onNodeWithTag("chat-composer-send")
     private val searchHint get() = screen.activity.getString(R.string.chat_picker_search_hint)
+    private val draftHint get() = screen.runOnIdle {
+        val state = ViewModelProvider(screen.activity)[HubViewModel::class.java].state.value
+        screen.activity.getString(R.string.chat_message_hint, state.composerAssistantName)
+    }
 
     private fun assertComposerHint(expected: String?) {
         val inCapsule = hasAnyAncestor(hasTestTag("composer-capsule"))
-        for (hint in listOf("Chat with AI", searchHint)) {
+        for (hint in listOf(draftHint, searchHint)) {
             screen.onAllNodes(inCapsule and hasText(hint)).assertCountEquals(if (hint == expected) 1 else 0)
         }
     }
@@ -187,7 +192,7 @@ class ChatModelSearchTest {
         control("results").assertIsDisplayed()
         assertImeStays(true) { control("list-back").performTouchInput { click(center) } }
         control("card").assertIsDisplayed()
-        assertComposerHint("Chat with AI")
+        assertComposerHint(draftHint)
         hideKeyboard()
         screen.waitUntil(15_000) { capsule() == compact }
         send.assertIsNotEnabled()
@@ -254,7 +259,7 @@ class ChatModelSearchTest {
                 control("search-field").assertDoesNotExist()
                 assertEquals(original, editor.assertIsFocused().fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
                 assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-                assertComposerHint(if (original.isEmpty()) "Chat with AI" else null)
+                assertComposerHint(if (original.isEmpty()) draftHint else null)
                 val middle = xBounds(labelTag)
                 assertEquals("The model label and mic must travel together", gap, xBounds(micTag).left - middle.right, 1f)
                 clock.advanceTimeBy(ToolsPageTravelMillis.toLong())

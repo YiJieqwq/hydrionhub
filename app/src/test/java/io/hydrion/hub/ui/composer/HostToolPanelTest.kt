@@ -118,6 +118,35 @@ class HostToolPanelTest {
         waitForText(name)
     }
 
+    @Test @Config(qualifiers = "zh-rCN-w407dp-h915dp")
+    fun emptyChatHintFollowsTheAssistantSelectedInTheDrawer() {
+        val other = screen.runOnIdle {
+            vm.setDraft("")
+            assertTrue(vm.addAssistant("月笺"))
+            vm.state.value.assistants.last()
+        }
+        fun hint(value: String) = screen.onNode(hasAnyAncestor(hasTestTag("composer-capsule")) and hasText(value),
+            useUnmergedTree = true)
+        hint("Message HydrionHub").assertIsDisplayed()
+        screen.onNodeWithContentDescription("打开侧栏").performClick()
+        screen.onNodeWithContentDescription(label(R.string.drawer_assistants)).performClick()
+        screen.onNodeWithTag("assistant-row-" + other.id).performClick()
+        awaitUi { vm.state.value.current.assistantId == other.id }
+        hint("Message 月笺").assertIsDisplayed()
+        hint("Message HydrionHub").assertDoesNotExist()
+        val editor = screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction())
+        editor.performTextReplacement("一段草稿")
+        open()
+        hint(label(R.string.tools_search_hint)).assertIsDisplayed()
+        hint("Message 月笺").assertDoesNotExist()
+        screen.onNodeWithTag("chat-tools-back").performClick()
+        editor.assertTextContains("一段草稿").performTextClearance()
+        hint("Message 月笺").assertIsDisplayed()
+        val blank = vm.state.value.copy(assistants = listOf(other.copy(name = "  ")))
+        assertEquals(LocalAssistant.Default.name, blank.composerAssistantName)
+        assertEquals(LocalAssistant.Default.name, blank.copy(assistants = emptyList()).composerAssistantName)
+    }
+
     @Test fun emptyEnvironmentCanBeBoundThenBrowsedFromTheSamePanelWithConsent() {
         open()
         act("Terminal").assertIsNotEnabled()

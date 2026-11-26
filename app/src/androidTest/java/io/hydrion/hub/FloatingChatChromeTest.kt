@@ -47,7 +47,7 @@ class FloatingChatChromeTest {
     }
 
     private fun checkHintLayout(shell: ComposeRect, startDp: Float, baselineDp: Float) {
-        val hint = screen.onNodeWithText("Chat with AI", useUnmergedTree = true)
+        val hint = screen.onNode(hasAnyAncestor(hasTestTag("composer-capsule")) and hasText("Message ", substring = true), useUnmergedTree = true)
         val layouts = mutableListOf<TextLayoutResult>()
         hint.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
         val layout = layouts.single()

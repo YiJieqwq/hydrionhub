@@ -76,11 +76,7 @@ private fun richText(value: String, query: String, chat: Boolean): AnnotatedStri
                     token.startsWith('[') -> {
                         val end = token.indexOf("](")
                         val url = token.substring(end + 2, token.length - 1)
-                        withLink(LinkAnnotation.Url(url)) {
-                            withStyle(SpanStyle(color = colors.primary, textDecoration = TextDecoration.Underline)) {
-                                append(label)
-                            }
-                        }
+                        appendChatLink(label, url, colors.primary)
                     }
                     else -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
                         append(label)
@@ -95,6 +91,12 @@ private fun richText(value: String, query: String, chat: Boolean): AnnotatedStri
 }
 
 private val listLine = Regex("""^(\s*)(•|[0-9]{1,6}[.)])\s+(.+)""")
+
+internal fun AnnotatedString.Builder.appendChatLink(label: String, url: String, color: Color) {
+    withLink(LinkAnnotation.Url(url)) {
+        withStyle(SpanStyle(color = color, textDecoration = TextDecoration.Underline)) { append(label) }
+    }
+}
 
 @Composable
 private fun Paragraph(value: String, query: String, style: TextStyle, chat: Boolean) {
@@ -151,18 +153,19 @@ internal fun MarkdownBody(value: String, query: String, modifier: Modifier, body
 }
 
 @Composable
-private fun CodeBlock(block: MarkdownBlock.Code, query: String, chat: Boolean) {
+internal fun CodeBlock(block: MarkdownBlock.Code, query: String, chat: Boolean,
+    code: AnnotatedString = highlighted(block.value, query), labelColor: Color = Color.Unspecified) {
     val copyText = rememberPlainTextCopier(R.string.turn_code_copied)
     val palette = LocalMessageStyle.current.renderPalette.assistant
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(palette.background.messageColor())) {
         Row(Modifier.fillMaxWidth().background(palette.border.messageColor().copy(alpha = .35f)).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(highlighted(block.language.ifEmpty { stringResource(R.string.turn_code_label) }, query), Modifier.weight(1f),
+            Text(highlighted(block.language.ifEmpty { stringResource(R.string.turn_code_label) }, query), Modifier.weight(1f), color = labelColor,
                 style = if (chat) MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, letterSpacing = 0.sp) else MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             IconButton(onClick = { copyText(block.value) }) {
                 Icon(Icons.Outlined.ContentCopy, stringResource(R.string.turn_copy_code), Modifier.size(16.dp))
             }
         }
-        Text(highlighted(block.value, query), Modifier.horizontalScroll(rememberScrollState()).padding(14.dp),
+        Text(code, Modifier.horizontalScroll(rememberScrollState()).padding(14.dp),
             style = if (chat) MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 19.5.sp,
                 letterSpacing = 0.sp) else MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
     }

@@ -3,6 +3,7 @@ package io.hydrion.hub.ui.messages
 import io.hydrion.hub.json.JsonSyntax
 import io.hydrion.hub.model.ReplyToolCall
 import io.hydrion.hub.model.ToolRecordText
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
@@ -12,15 +13,19 @@ internal class ShellPreview(val exitCode: Int?, val stdout: String?)
 internal fun ReplyToolCall.shellPreview(): ShellPreview? {
     if (name !in shellToolNames) return null
     val fields = recordedObject(result) ?: return null
-    val rawCode = fields.opt("exitCode") ?: fields.opt("exit_code")
-        ?: if (name == "bash_code_execution") fields.opt("return_code") else null
-    val code = when (rawCode) {
+    val code = fields.recordedExitCode(name)
+    val stdout = (fields.opt("stdout") as? String)?.takeIf { it.isNotEmpty() }
+    return if (code != null || stdout != null) ShellPreview(code, stdout) else null
+}
+
+internal fun JSONObject.recordedExitCode(tool: String): Int? {
+    val rawCode = opt("exitCode") ?: opt("exit_code")
+        ?: if (tool == "bash_code_execution") opt("return_code") else null
+    return when (rawCode) {
         is Int -> rawCode
         is Long -> rawCode.toInt().takeIf { it.toLong() == rawCode }
         else -> null
     }
-    val stdout = (fields.opt("stdout") as? String)?.takeIf { it.isNotEmpty() }
-    return if (code != null || stdout != null) ShellPreview(code, stdout) else null
 }
 
 internal fun ReplyToolCall.titleArgument(): String? {
@@ -32,10 +37,14 @@ internal fun ReplyToolCall.titleArgument(): String? {
     return (recordedObject(arguments)?.opt(key) as? String)?.replace('\n', ' ')?.trim()?.takeIf { it.isNotEmpty() }
 }
 
-internal fun recordedObject(text: String?): JSONObject? {
-    if (text == null || text.length > ToolRecordText.limit || !text.trimStart().startsWith('{')) return null
+internal fun recordedObject(text: String?): JSONObject? = recordedContainer(text) as? JSONObject
+
+internal fun recordedContainer(text: String?): Any? {
+    if (text == null || text.length > ToolRecordText.limit) return null
+    val first = text.firstOrNull { !it.isWhitespace() }
+    if (first != '{' && first != '[') return null
     return try {
-        JsonSyntax(text) { throw JSONException("Incomplete recorded object") }.check()
-        JSONObject(text)
+        JsonSyntax(text) { throw JSONException("Incomplete tool record") }.check()
+        if (first == '{') JSONObject(text) else JSONArray(text)
     } catch (_: JSONException) { null }
 }

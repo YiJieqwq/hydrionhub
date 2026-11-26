@@ -92,6 +92,14 @@
     <string name="turn_step_duration">%1$s，本步观测耗时 %2$s</string>
     <string name="turn_shell_title">Shell：%1$s</string>
     <string name="turn_search_title">联网搜索：%1$s</string>
+    <string name="turn_shell_directory">工作目录</string>
+    <string name="turn_search_query">查询</string>
+    <string name="turn_search_summary">摘要</string>
+    <string name="turn_search_sources">来源</string>
+    <string name="turn_search_no_sources">未返回来源</string>
+    <string name="turn_search_score">评分：%1$s</string>
+    <string name="turn_show_record">查看原始记录</string>
+    <string name="turn_hide_record">收起原始记录</string>
     <string name="turn_shell_stdout">标准输出</string>
     <string name="turn_tool_details">工具调用详情</string>
     <string name="turn_close_details">关闭详情</string>

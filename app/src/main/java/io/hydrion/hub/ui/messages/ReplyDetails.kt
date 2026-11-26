@@ -36,7 +36,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role as UiRole
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.IntOffset
@@ -51,8 +50,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.style.TextOverflow
@@ -417,10 +414,7 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
                 Text(highlighted(detail, query), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = bodyInk)
             } else if (shell != null) {
                 Column(previewAction, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    shell.exitCode?.let { code ->
-                        val tint = if (code != 0) MaterialTheme.colorScheme.error else if (dark) Color(0xFF73C878) else Color(0xFF23652D)
-                        Text(stringResource(R.string.turn_shell_exit, code.toString()), style = MaterialTheme.typography.labelSmall, color = tint)
-                    }
+                    shell.exitCode?.let { ShellExitLabel(it) }
                     shell.stdout?.let { stdout ->
                         val desc = stringResource(R.string.turn_shell_stdout)
                         Box(Modifier.fillMaxWidth().background(Color(0xFF1B2023), RoundedCornerShape(8.dp))
@@ -433,37 +427,6 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
             } else {
                 Text(highlighted(detail, query), previewAction, fontSize = 12.sp, lineHeight = 16.8.sp, letterSpacing = 0.sp,
                     color = if (dark) Color(0xFFBFE5F6) else bodyInk, maxLines = 4, overflow = TextOverflow.Ellipsis)
-            }
-        }
-    }
-}
-
-@Composable
-private fun RecordedToolSheet(name: String, status: String, position: String?, call: ReplyToolCall, close: () -> Unit) {
-    TurnActionSheet(close) {
-        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SelectionContainer(Modifier.weight(1f)) {
-                    Text(name, Modifier.semantics { heading() }, fontSize = 15.sp, lineHeight = 18.sp,
-                        letterSpacing = 0.sp, fontWeight = FontWeight.Medium)
-                }
-                IconButton(onClick = close) {
-                    Icon(Icons.Outlined.Close, stringResource(R.string.turn_close_details))
-                }
-            }
-            SelectionContainer {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    for ((field, value) in listOf(R.string.turn_tool_status to status, R.string.turn_tool_arguments to call.arguments,
-                        R.string.turn_tool_result to call.result, R.string.turn_tool_offset_label to position)) {
-                        if (value == null) continue
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(stringResource(field), fontSize = 12.sp, lineHeight = 1.43.em, letterSpacing = 0.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(value, fontSize = 12.sp, lineHeight = 1.43.em, letterSpacing = 0.sp)
-                        }
-                    }
-                }
             }
         }
     }

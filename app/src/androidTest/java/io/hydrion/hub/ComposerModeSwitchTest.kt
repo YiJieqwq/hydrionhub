@@ -15,6 +15,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.Role
+import io.hydrion.hub.ui.composer.composerAssistantName
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -139,7 +140,7 @@ class ComposerModeSwitchTest {
                         assertToolbar(if (mode == Mode.Image) Mode.Chat else Mode.Image)
                     }
                     selectTab(mode)
-                    val hint = if (mode == Mode.Chat) "Chat with AI" else "描述想生成的图片"
+                    val hint = if (mode == Mode.Chat) screen.activity.getString(R.string.chat_message_hint, before.composerAssistantName) else "描述想生成的图片"
                     screen.onNodeWithText(hint, useUnmergedTree = true).assertIsDisplayed()
                     screen.runOnIdle {
                         val current = store.state.value
