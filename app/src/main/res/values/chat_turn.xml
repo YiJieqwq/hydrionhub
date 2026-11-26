@@ -94,7 +94,7 @@
     <string name="turn_step_duration">%1$s, observed step duration %2$s</string>
     <string name="turn_shell_title">Shell: %1$s</string>
     <string name="turn_search_title">Search web: %1$s</string>
-    <string name="turn_shell_exit">exit %1$d</string>
+    <string name="turn_shell_exit" translatable="false">exit %1$s</string>
     <string name="turn_shell_stdout">Standard output</string>
     <string name="turn_tool_details">Tool call details</string>
     <string name="turn_close_details">Close details</string>

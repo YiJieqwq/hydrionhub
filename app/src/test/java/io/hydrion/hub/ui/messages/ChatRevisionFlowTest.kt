@@ -12,6 +12,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.core.view.drawToBitmap
@@ -249,12 +250,24 @@ class ChatRevisionFlowTest {
         assertEquals(reply.replySteps, reopened.replySteps)
         text("exit 2").assertDoesNotExist()
         text("exit 0").performScrollTo().assertIsDisplayed()
+        val card = screen.onNode(scope and hasTestTag("message-thought")).getUnclippedBoundsInRoot()
+        val fold = screen.onNode(scope and hasText("Show 2 more steps") and hasClickAction()).getUnclippedBoundsInRoot()
+        val foldLabel = text("Show 2 more steps").getUnclippedBoundsInRoot()
+        assertEquals(12.dp, fold.left - card.left)
+        assertEquals(4.dp, fold.top - card.top)
+        assertEquals(44.dp, foldLabel.left - card.left)
+        assertEquals(4.dp, foldLabel.top - fold.top)
+        assertEquals(4.dp, fold.bottom - foldLabel.bottom)
         val title = screen.onNode(scope and hasText("Shell: printf", substring = true), useUnmergedTree = true)
         val label = layout(title)
         assertEquals(2, label.lineCount)
         assertTrue(label.isLineEllipsized(1))
         val time = text("1.25 s").getUnclippedBoundsInRoot()
-        assertTrue(title.getUnclippedBoundsInRoot().right <= time.left)
+        val titleBox = title.getUnclippedBoundsInRoot()
+        assertEquals(foldLabel.left, titleBox.left)
+        assertEquals(8.dp, time.left - titleBox.right)
+        // To the right of the duration are the gap, disclosure icon and card inset.
+        assertEquals(36.dp, card.right - time.right)
         val timeLayout = layout(text("1.25 s"))
         val lastGlyph = timeLayout.getBoundingBox(timeLayout.layoutInput.text.lastIndex)
         assertEquals(1, timeLayout.lineCount)
@@ -268,6 +281,18 @@ class ChatRevisionFlowTest {
         val stdout = "April: mint\nMay: amber\nJune: lilac\nJuly: blue\nAugust: pine\nSeptember: plum"
         val output = text(stdout)
         assertEquals(FontFamily.Monospace, layout(output).layoutInput.style.fontFamily)
+        val header = screen.onNode(scope and hasText("Shell: printf", substring = true) and hasClickAction()).getUnclippedBoundsInRoot()
+        val exit = text("exit 0").getUnclippedBoundsInRoot()
+        val box = out.getUnclippedBoundsInRoot()
+        val lines = output.getUnclippedBoundsInRoot()
+        assertEquals(titleBox.left, exit.left)
+        assertEquals(exit.left, box.left)
+        assertEquals(4.dp, exit.top - header.bottom)
+        assertEquals(4.dp, box.top - exit.bottom)
+        assertEquals(12.dp, card.right - box.right)
+        assertEquals(8.dp, lines.left - box.left)
+        assertEquals(6.dp, lines.top - box.top)
+        assertEquals(6.dp, box.bottom - lines.bottom)
         val panel = out.performScrollTo().fetchSemanticsNode().boundsInWindow
         val window = screen.runOnIdle { screen.activity.window.decorView.drawToBitmap() }
         assertEquals(Color.rgb(27, 32, 35), window.getPixel(panel.center.x.roundToInt(), panel.top.roundToInt() + 2))
@@ -318,8 +343,8 @@ class ChatRevisionFlowTest {
     private fun assertRowIcon(name: String, row: SemanticsNodeInteraction, expected: Int) {
         val bounds = row.fetchSemanticsNode().boundsInWindow
         val density = screen.activity.resources.displayMetrics.density
-        val size = (16 * density).roundToInt()
-        val left = (bounds.left + 4 * density).roundToInt()
+        val size = (14 * density).roundToInt()
+        val left = (bounds.left + 5 * density).roundToInt()
         val top = (bounds.center.y - size / 2f).roundToInt()
         val window = screen.runOnIdle { screen.activity.window.decorView.drawToBitmap() }
         val reference = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)

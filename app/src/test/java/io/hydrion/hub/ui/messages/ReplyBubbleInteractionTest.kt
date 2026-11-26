@@ -207,9 +207,17 @@ class ReplyBubbleInteractionTest {
             val second = screen.onNodeWithText("catalog_lookup", useUnmergedTree = true).onParent().fetchSemanticsNode().boundsInWindow
             val scale = screen.density.density
             val joinY = (second.top - card.top + scale).roundToInt()
-            val lineX = (20 * scale).roundToInt()
+            val lineX = (24 * scale).roundToInt()
             val bitmap = snapshot("message-tool-chain")
-            assertTrue("The two tool steps must stay connected", (lineX - 1..lineX + 1).any { bitmap.getPixel(it, joinY) != fill })
+            fun railAt(y: Int) = (lineX - 1..lineX + 1).any { bitmap.getPixel(it, y) != fill }
+            val center = second.center.y - card.top
+            assertTrue("The two tool steps must stay connected", railAt(joinY))
+            assertTrue(railAt((center - 11 * scale).roundToInt()))
+            assertFalse(railAt((center - 9 * scale).roundToInt()))
+            val outsideCorner = (5 * scale).roundToInt()
+            val insideCorner = (7 * scale).roundToInt()
+            assertEquals(bitmap.getPixel(0, 0), bitmap.getPixel(outsideCorner, outsideCorner))
+            assertEquals(fill, bitmap.getPixel(insideCorner, insideCorner))
         }
         checkCards()
         screen.onNodeWithText(thought).performClick()
@@ -897,11 +905,11 @@ class ReplyBubbleInteractionTest {
             val bounds = card.fetchSemanticsNode().boundsInWindow
             assertEquals(4 * density, body.top - headerBox.bottom, 1f)
             assertEquals(rect(headerText).left, body.left, 1f)
-            assertEquals(40 * density, body.left - bounds.left, 1f)
+            assertEquals(44 * density, body.left - bounds.left, 1f)
             val bottom = if (next != null) header(next).fetchSemanticsNode().boundsInWindow.top else bounds.bottom - 4 * density
             assertEquals(8 * density, bottom - body.bottom, 1f)
             val bitmap = snapshot("message-thought")
-            val x = (20 * density).roundToInt()
+            val x = (24 * density).roundToInt()
             val fill = parseColor("#262B2E")
             for (y in headerBox.bottom.roundToInt() until bottom.roundToInt()) {
                 val row = y - bounds.top.roundToInt()
@@ -912,7 +920,7 @@ class ReplyBubbleInteractionTest {
         header(title).performClick()
         assertThoughtFillsReply()
         checkBody(title, thought, first)
-        assertEquals(12.5f, textLayout(thought).layoutInput.style.fontSize.value)
+        assertEquals(12f, textLayout(thought).layoutInput.style.fontSize.value)
         checkBody(first, "Found a lamp.", last)
         assertEquals(12f, textLayout("Found a lamp.").layoutInput.style.fontSize.value)
         header(first).performClick()
@@ -931,6 +939,24 @@ class ReplyBubbleInteractionTest {
         screen.onNodeWithContentDescription("Close details").performClick()
         assertEquals(original, card.fetchSemanticsNode().boundsInWindow)
         screen.runOnIdle { assertEquals(saved, vm.state.value.current) }
+    }
+
+    @Test @Config(qualifiers = "zh-rCN-w393dp-h842dp-night-xhdpi")
+    fun chineseShellCardsShowLiteralExitOnlyWhenTheCodeWasRecorded() {
+        val outputs = listOf("""{"exitCode":2}""", """{"stdout":"仅有标准输出"}""", """{"exitCode":0}""")
+        val reply = answer.copy(text = "样例已完成。", toolCalls = outputs.mapIndexed { slot, result ->
+            ReplyToolCall("shell", ToolCallState.Completed, bodyOffset = 0, result = result, slot = slot)
+        })
+        open(initial = Conversation(messages = listOf(reply)))
+        val chain = hasAnyAncestor(hasTestTag("message-tool-chain"))
+        fun exitLabels() = screen.onAllNodes(chain and hasText("exit ", substring = true), useUnmergedTree = true)
+        screen.onNode(chain and hasText("仅有标准输出")).assertIsDisplayed()
+        exitLabels().assertCountEquals(1)
+        screen.onNode(chain and hasText("exit 0")).assertIsDisplayed()
+        screen.onNodeWithText("展开更多 1 步").performClick()
+        exitLabels().assertCountEquals(2)
+        screen.onNode(chain and hasText("exit 2")).assertIsDisplayed()
+        screen.onNode(chain and hasText("退出码", substring = true), useUnmergedTree = true).assertDoesNotExist()
     }
 
     @Test @Config(qualifiers = "en-rUS-w320dp-h915dp-xxhdpi")

@@ -23,7 +23,7 @@ internal fun AskUserCard(call: ReplyToolCall, form: PendingAsk?, inbox: AskUserI
         return
     }
     val ticket = form.ticket
-    Column(Modifier.fillMaxWidth().padding(start = 30.dp, end = 8.dp, bottom = 8.dp).testTag("ask-form"),
+    Column(Modifier.fillMaxWidth().padding(stepBodyPadding).testTag("ask-form"),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         for (q in form.questions) key(q.id) {
             val draft = form.drafts[q.id] ?: AnswerDraft()
@@ -65,7 +65,7 @@ private fun AnswerChoice(label: String, selected: Boolean, multiple: Boolean, se
 private fun AnswerSummary(call: ReplyToolCall) {
     val questions = remember(call.arguments) { runCatching { readQuestions(call.arguments.orEmpty()) }.getOrDefault(emptyList()) }
     val answers = remember(call.result) { runCatching { JSONObject(call.result.orEmpty()).getJSONObject("answers") }.getOrNull() }
-    Column(Modifier.fillMaxWidth().padding(start = 30.dp, end = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(Modifier.fillMaxWidth().padding(stepBodyPadding), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         for (q in questions) {
             val answer = answers?.optJSONObject(q.id) ?: continue
             val value = when (val raw = answer.opt("value")) {

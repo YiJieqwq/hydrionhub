@@ -113,6 +113,7 @@ internal fun MessageCard(
 internal enum class ChatSurface { UserBubble, ThoughtAndTools, ToolPanel, Translation }
 
 private val chatTintedShape = RoundedCornerShape(16.dp)
+private val replyChainShape = RoundedCornerShape(20.dp)
 private val darkThoughtToolFill = defaultMessagePalette(MessageTone.Dark).assistant.background.messageColor()
 
 private fun uneditedUserFill(scheme: ColorScheme, dark: Boolean): Color {
@@ -153,7 +154,7 @@ internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content:
     val fixedDarkCard = thoughtOrTools && dark
     val palette = if (user) style.renderPalette.user else style.renderPalette.assistant
     val defaults = defaultMessagePalette(style.tone)
-    val shape = chatTintedShape
+    val shape = if (target == ChatSurface.ThoughtAndTools) replyChainShape else chatTintedShape
     val useMaterial = if (user) !style.usesAutomaticUserTint else style.material != CardMaterial.Solid || palette != defaults.assistant
     if (useMaterial && !fixedDarkCard) {
         MessageCard(palette, modifier, shape, outlined = !thoughtOrTools, content = content)

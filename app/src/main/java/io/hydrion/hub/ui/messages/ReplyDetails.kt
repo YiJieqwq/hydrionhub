@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -244,6 +245,11 @@ private fun toolStatus(state: ToolCallState): Int = when (state) {
     ToolCallState.Incomplete -> R.string.turn_tool_incomplete
 }
 
+private val stepIconColumn = 24.dp
+private val stepNodeSize = 20.dp
+private val stepColumnGap = 8.dp
+internal val stepBodyPadding = PaddingValues(start = stepIconColumn + stepColumnGap, top = 4.dp, bottom = 8.dp)
+
 @Composable
 private fun ReplyToolChain(block: ReplyBlock.Chain, calls: Map<Int, ReplyToolCall>, query: String, thought: String, pendingSlots: Set<Int>,
     answerCard: @Composable (ReplyToolCall) -> Unit, openRecord: (Int) -> Unit,
@@ -269,7 +275,7 @@ private fun ReplyToolChain(block: ReplyBlock.Chain, calls: Map<Int, ReplyToolCal
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         ChatTintedSurface(ChatSurface.ThoughtAndTools,
             Modifier.fillMaxWidth().testTag(if (hasThought) "message-thought" else "message-tool-chain")) {
-            Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
                 if (hidden > 0) ChainFoldControl(expanded, hidden) { expanded = !expanded }
                 for (index in 0 until count) {
                     val step = block.steps[start + index]
@@ -311,13 +317,19 @@ private fun ChainFoldControl(expanded: Boolean, hidden: Int, toggle: () -> Unit)
     val label = if (expanded) stringResource(R.string.turn_collapse_steps)
         else pluralStringResource(R.plurals.turn_show_steps, hidden, hidden)
     Row(Modifier.fillMaxWidth().clickable(interactionSource = null, indication = StepIndication, role = UiRole.Button, onClick = toggle)
-        .semantics { stateDescription = state }.heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+        .semantics { stateDescription = state }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(stepColumnGap)) {
+        Box(Modifier.width(stepIconColumn), contentAlignment = Alignment.Center) {
             Icon(painterResource(if (expanded) R.drawable.lucide_chevron_up else R.drawable.lucide_chevron_down),
                 null, Modifier.size(16.dp), tint = ink)
         }
-        Text(label, Modifier.padding(start = 8.dp), color = ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(label, color = ink, style = MaterialTheme.typography.labelMedium)
     }
+}
+
+private fun DrawScope.stepAxisX(): Float {
+    val inset = stepIconColumn.toPx() / 2
+    return if (layoutDirection == LayoutDirection.Ltr) inset else size.width - inset
 }
 
 @Composable
@@ -325,7 +337,7 @@ private fun Modifier.stepContinuation(continues: Boolean): Modifier {
     if (!continues) return this
     val line = LocalContentColor.current.copy(alpha = .16f)
     return drawBehind {
-        val x = 12.dp.toPx()
+        val x = stepAxisX()
         drawLine(line, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
     }
 }
@@ -372,51 +384,50 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
         onClickLabel = if (status != null) stringResource(R.string.turn_tool_details) else null, onClick = toggle
     ).then(if (rowState != null) Modifier.semantics { stateDescription = rowState } else Modifier)
     Row(Modifier.fillMaxWidth().drawBehind {
-        val x = 12.dp.toPx()
+        val x = stepAxisX()
         val middle = size.height / 2
-        val cut = 12.dp.toPx()
+        val cut = stepNodeSize.toPx() / 2
         if (index > 0) drawLine(line, Offset(x, 0f), Offset(x, (middle - cut).coerceAtLeast(0f)), 1.dp.toPx())
         if (index + 1 < count) drawLine(line, Offset(x, (middle + cut).coerceAtMost(size.height)), Offset(x, size.height), 1.dp.toPx())
-    }.then(interaction).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
-            Icon(painterResource(icon), null, Modifier.size(if (status == null) 18.dp else 16.dp), tint = ink.copy(alpha = .78f))
+    }.then(interaction).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(stepColumnGap)) {
+        Box(Modifier.size(width = stepIconColumn, height = stepNodeSize), contentAlignment = Alignment.Center) {
+            Icon(painterResource(icon), null, Modifier.size(14.dp), tint = ink.copy(alpha = .78f))
         }
-        Spacer(Modifier.width(8.dp))
-        Text(highlighted(label, query), Modifier.weight(1f), fontWeight = FontWeight.Medium, fontSize = 13.sp,
-            lineHeight = 1.43.em, letterSpacing = 0.sp, color = ink, overflow = TextOverflow.Ellipsis, maxLines = 2)
+        Text(highlighted(label, query), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall,
+            color = ink, overflow = TextOverflow.Ellipsis, maxLines = 2)
         if (duration != null) {
-            Column(Modifier.padding(start = 8.dp), horizontalAlignment = Alignment.End) {
-                if (showStatusWithTime && status != null) Text(status, fontSize = 11.sp, lineHeight = 14.sp, color = ink)
-                Text(duration, softWrap = false,
-                    fontSize = 11.sp, lineHeight = 14.sp, letterSpacing = 0.sp, color = ink)
+            Column(horizontalAlignment = Alignment.End) {
+                if (showStatusWithTime && status != null) Text(status, style = MaterialTheme.typography.labelSmall, color = ink)
+                Text(duration, softWrap = false, style = MaterialTheme.typography.labelSmall, color = ink)
             }
-        } else if (status != null) Text(status, Modifier.padding(start = 8.dp), fontSize = 11.sp, lineHeight = 14.sp,
-            letterSpacing = 0.sp, color = if (dark) ink else ink.copy(alpha = .65f))
+        } else if (status != null) Text(status, style = MaterialTheme.typography.labelSmall,
+            color = if (dark) ink else ink.copy(alpha = .65f))
         if (toggle != null) Icon(painterResource(if (status != null) R.drawable.lucide_chevron_right
             else if (open) R.drawable.lucide_chevron_up else R.drawable.lucide_chevron_down),
-            null, Modifier.padding(start = 6.dp).size(16.dp), tint = ink.copy(alpha = .55f))
+            null, Modifier.size(16.dp), tint = ink.copy(alpha = .55f))
     }
     ExpandingCardBody(open && detail != null) {
         if (detail == null) return@ExpandingCardBody
-        Box(Modifier.fillMaxWidth().stepContinuation(index + 1 < count).padding(start = 32.dp, top = 4.dp, bottom = 8.dp)) {
+        Box(Modifier.fillMaxWidth().stepContinuation(index + 1 < count).padding(stepBodyPadding)) {
             val bodyInk = if (dark) Color(0xFFDCE2E5) else ink.copy(alpha = .8f)
             val previewAction = Modifier.fillMaxWidth().clickable(interactionSource = null, indication = StepIndication,
                 role = UiRole.Button, onClickLabel = stringResource(R.string.turn_tool_details), onClick = { toggle?.invoke() })
             if (status == null) SelectionContainer {
-                Text(highlighted(detail, query), Modifier.fillMaxWidth(), fontSize = 12.5.sp,
-                    lineHeight = 16.5.sp, letterSpacing = 0.sp, color = bodyInk)
+                Text(highlighted(detail, query), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = bodyInk)
             } else if (shell != null) {
                 Column(previewAction, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     shell.exitCode?.let { code ->
                         val tint = if (code != 0) MaterialTheme.colorScheme.error else if (dark) Color(0xFF73C878) else Color(0xFF23652D)
-                        Text(stringResource(R.string.turn_shell_exit, code), fontSize = 12.sp, lineHeight = 16.sp, color = tint)
+                        Text(stringResource(R.string.turn_shell_exit, code.toString()), style = MaterialTheme.typography.labelSmall, color = tint)
                     }
                     shell.stdout?.let { stdout ->
                         val desc = stringResource(R.string.turn_shell_stdout)
-                        Text(highlighted(stdout, query), Modifier.fillMaxWidth().background(Color(0xFF1B2023), RoundedCornerShape(8.dp))
-                            .semantics { stateDescription = desc }.padding(horizontal = 8.dp, vertical = 6.dp),
-                            fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp, letterSpacing = 0.sp,
-                            color = Color(0xFFDCE2E5), maxLines = 8, overflow = TextOverflow.Ellipsis)
+                        Box(Modifier.fillMaxWidth().background(Color(0xFF1B2023), RoundedCornerShape(8.dp))
+                            .semantics { stateDescription = desc }.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                            Text(highlighted(stdout, query), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp, lineHeight = 14.sp, color = Color(0xFFDCE2E5), maxLines = 8, overflow = TextOverflow.Ellipsis)
+                        }
                     }
                 }
             } else {
