@@ -942,6 +942,36 @@ class ReplyBubbleInteractionTest {
     }
 
     @Test @Config(qualifiers = "zh-rCN-w393dp-h842dp-night-xhdpi")
+    fun chineseStepTimersSeparateMeasuredSecondsFromMissingObservations() {
+        val body = "完成。"
+        val firstThought = "准备。"
+        val thought = firstThought + "复核。"
+        val tools = listOf("list_dir", "read_file", "get_time_info", "web_search")
+        val reply = answer.copy(text = body, thought = thought, toolCalls = tools.mapIndexed { slot, name ->
+            ReplyToolCall(name, ToolCallState.Completed, bodyOffset = 0, slot = slot)
+        }, replySteps = listOf(
+            ReplyStep.Thought(0, 0, 0, firstThought.length, observedMs = 0L),
+            ReplyStep.Tool(0, 750L), ReplyStep.Tool(1, 1250L), ReplyStep.Tool(2, 2000L), ReplyStep.Tool(3),
+            ReplyStep.Thought(1, body.length, firstThought.length, thought.length)
+        ))
+        open(initial = Conversation(messages = listOf(reply)))
+        screen.onNodeWithText("展开更多 3 步").performScrollTo().performClick()
+        val turn = hasAnyAncestor(hasTestTag("message-turn-" + reply.id))
+        fun row(name: String) = screen.onNode(turn and hasText(name) and hasClickAction())
+        row("list_dir").assertTextEquals("list_dir", "0.8s")
+        row("read_file").assertTextEquals("read_file", "1.3s")
+        row("get_time_info").assertTextEquals("get_time_info", "2.0s")
+        row("web_search").assertTextEquals("web_search", label(R.string.turn_tool_done))
+        val title = label(R.string.turn_thinking)
+        val thoughts = screen.onAllNodes(turn and hasText(title) and hasClickAction())
+        thoughts.assertCountEquals(2)
+        thoughts[0].assertTextEquals(title, "0.0s").performScrollTo().performClick()
+        screen.onNodeWithText(firstThought).assertIsDisplayed()
+        thoughts[0].assertTextEquals(title, "0.0s")
+        thoughts[1].assertTextEquals(title)
+    }
+
+    @Test @Config(qualifiers = "zh-rCN-w393dp-h842dp-night-xhdpi")
     fun chineseShellCardsShowLiteralExitOnlyWhenTheCodeWasRecorded() {
         val outputs = listOf("""{"exitCode":2}""", """{"stdout":"仅有标准输出"}""", """{"exitCode":0}""")
         val reply = answer.copy(text = "样例已完成。", toolCalls = outputs.mapIndexed { slot, result ->

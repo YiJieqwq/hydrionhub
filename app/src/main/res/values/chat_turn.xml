@@ -91,6 +91,7 @@
         <item quantity="other">Show %1$d more steps</item>
     </plurals>
     <string name="turn_collapse_steps">Collapse</string>
+    <string name="turn_step_seconds" translatable="false">%1$.1fs</string>
     <string name="turn_step_duration">%1$s, observed step duration %2$s</string>
     <string name="turn_shell_title">Shell: %1$s</string>
     <string name="turn_search_title">Search web: %1$s</string>

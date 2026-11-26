@@ -373,7 +373,7 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
     val dark = LocalMessageStyle.current.tone == MessageTone.Dark
     val line = ink.copy(alpha = .16f)
     val state = stringResource(if (open) R.string.turn_expanded else R.string.turn_collapsed)
-    val duration = observedMs?.let { localizedDuration(it) }
+    val duration = observedMs?.let { stringResource(R.string.turn_step_seconds, BigDecimal.valueOf(it, 3)) }
     val rowState = when {
         status == null -> state
         duration != null -> stringResource(R.string.turn_step_duration, status, duration)
