@@ -192,11 +192,10 @@ fun MessageStylePreview(style: MessageStyle, modifier: Modifier = Modifier) {
     val user = remember { Message(id = "preview-user", role = Role.User, text = "用户消息") }
     val assistant = remember { Message(id = "preview-assistant", role = Role.Assistant,
         text = "这是助手的回复。", thought = "这里展示思考内容。") }
-    var expanded by remember { mutableStateOf(false) }
     MessageCanvas(style, modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)), previewScheme(style.tone)) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) { UserBubble(user, "", Mode.Chat) }
-            ReplyTimeline(assistant, "", expanded) { expanded = !expanded }
+            ReplyTimeline(assistant, "")
         }
     }
 }

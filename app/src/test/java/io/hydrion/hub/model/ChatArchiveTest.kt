@@ -26,7 +26,8 @@ class ChatArchiveTest {
         val old = chat.messages.single()
         val visible = old.copy(text = "new revision", imageKeys = emptyList(), attachments = emptyList(),
             translation = ReplyTranslation("English", "translated"), timing = ReplyTiming(0, 100, 250),
-            toolCalls = listOf(ReplyToolCall("catalog", ToolCallState.Completed, 3)))
+            thought = "AB", toolCalls = listOf(ReplyToolCall("catalog", ToolCallState.Completed, 3, slot = 1)),
+            replySteps = listOf(ReplyStep.Thought(0, 3, 0, 1), ReplyStep.Tool(1), ReplyStep.Thought(2, 3, 1, 2)))
         val thread = chat.appendVersion(old, visible).copy(contextStart = old.id)
         val zip = ChatArchive.export(root.newFolder(), SavedWorkspace(listOf(thread)),
             { uri -> assertEquals(external, uri); original.inputStream() }, { id, out -> assertEquals(key, id); out.write(png) })
@@ -44,6 +45,7 @@ class ChatArchiveTest {
         assertEquals("new revision", revived.messages.single().text)
         assertEquals(visible.translation, revived.messages.single().translation)
         assertEquals(visible.timing, revived.messages.single().timing)
+        assertEquals(visible.replySteps, revived.messages.single().replySteps)
         assertEquals(visible.toolCalls, revived.messages.single().toolCalls)
         val previous = revived.withVersion(old.id, 0).messages.single()
         assertEquals(listOf("local-image"), previous.imageKeys)

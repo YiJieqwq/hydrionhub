@@ -337,10 +337,10 @@ internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: 
             }
             TurnByline(named?.name ?: msg.model.ifBlank { "HydrionHub" }, msg.createdAt)
         }
-        val thinking = msg.remoteModel != null && msg.status.isActive && msg.text.isEmpty()
-        var chosenExpansion by rememberSaveable(msg.id, query) { mutableStateOf<Boolean?>(null) }
-        val thoughtExpanded = chosenExpansion ?: (thinking || (query.isNotEmpty() && msg.thought.contains(query, ignoreCase = true)))
         if (mode == Mode.Image && msg.thought.isNotBlank()) {
+            val thinking = msg.remoteModel != null && msg.status.isActive && msg.text.isEmpty()
+            var chosenExpansion by rememberSaveable(msg.id, query) { mutableStateOf<Boolean?>(null) }
+            val thoughtExpanded = chosenExpansion ?: (thinking || (query.isNotEmpty() && msg.thought.contains(query, ignoreCase = true)))
             Thought(msg, query, thoughtExpanded, onToggle = { chosenExpansion = !thoughtExpanded })
         }
         if (mode == Mode.Image) msg.tool?.let { tool ->
@@ -353,9 +353,7 @@ internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: 
             }
         }
         if (mode == Mode.Chat) {
-            ReplyTimeline(msg, query, thoughtExpanded, answerCard = { call -> AskUserCard(chat.id, msg.id, call, vm.questions) }) {
-                chosenExpansion = !thoughtExpanded
-            }
+            ReplyTimeline(msg, query) { call -> AskUserCard(chat.id, msg.id, call, vm.questions) }
             ReplyTranslationBody(chat.id, msg, query, vm.translations)
         } else if (msg.text.isNotBlank()) AssistantBody(msg.text, query, mode)
         if (msg.imageKeys.isNotEmpty()) ImageResult(msg, query, vm, busy, showRegenerate = mode == Mode.Image)

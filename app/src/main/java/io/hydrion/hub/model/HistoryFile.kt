@@ -154,6 +154,13 @@ private fun writeMessage(m: Message): JSONObject = JSONObject().put("id", m.id).
         JSONArray(calls.map { JSONObject().put("name", it.name).put("state", it.state.name).put("bodyOffset", it.bodyOffset)
             .put("slot", it.slot).put("arguments", it.arguments).put("result", it.result) })
     })
+    .put("replySteps", m.replySteps.takeIf { it.isNotEmpty() }?.let { steps -> JSONArray(steps.map { step ->
+        when (step) {
+            is ReplyStep.Tool -> JSONObject().put("tool", step.slot)
+            is ReplyStep.Thought -> JSONObject().put("thought", step.slot).put("bodyOffset", step.bodyOffset)
+                .put("start", step.start).put("end", step.end)
+        }
+    }) })
     .put("translation", m.translation?.let { JSONObject().put("language", it.language).put("text", it.text) })
     .put("continuesAssistant", m.continuesAssistant.takeIf { it })
     .put("error", m.error).put("replyTo", m.replyTo).put("imageInvocation", m.imageInvocation?.let {
@@ -183,5 +190,36 @@ private fun readMessage(j: JSONObject): Message {
             val imageParameters = it.getJSONObject("parameters")
             ImageInvocation(it.getString("model"), imageParameters.keys().asSequence().associateWith(imageParameters::getString),
                 it.readRoute("remoteModel"))
-        })
+        }).withSavedSteps(j.optJSONArray("replySteps"))
+}
+
+// Old histories have only the aggregate thought. If optional ordering is unreadable,
+// retain that text and every original call instead of showing a partial reconstruction.
+private fun Message.withSavedSteps(array: JSONArray?): Message {
+    if (array == null || array.length() == 0) return this
+    val remainingCalls = toolCalls.mapNotNull { it.slot }.toMutableSet()
+    val thoughts = mutableSetOf<Int>()
+    val steps = mutableListOf<ReplyStep>()
+    var lastEnd = 0
+    for (i in 0 until array.length()) {
+        val step = array.optJSONObject(i) ?: return this
+        if (step.has("tool")) {
+            val slot = step.optInt("tool", -1)
+            if (!remainingCalls.remove(slot)) return this
+            steps += ReplyStep.Tool(slot)
+        } else {
+            val slot = step.optInt("thought", -1)
+            val offset = step.optInt("bodyOffset", -1)
+            val start = step.optInt("start", -1)
+            val end = step.optInt("end", -1)
+            if (slot < 0 || !thoughts.add(slot) || offset !in 0..text.length ||
+                start < lastEnd || end <= start || end > thought.length ||
+                (lastEnd until start).any { !thought[it].isWhitespace() }) return this
+            steps += ReplyStep.Thought(slot, offset, start, end)
+            lastEnd = end
+        }
+    }
+    if (remainingCalls.isNotEmpty() || toolCalls.size + thoughts.size != steps.size ||
+        (lastEnd until thought.length).any { !thought[it].isWhitespace() }) return this
+    return copy(replySteps = steps)
 }

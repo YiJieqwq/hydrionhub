@@ -42,20 +42,24 @@ internal class QuestionPeer {
         if (completions) {
             fun delta(chunk: JSONObject, reason: String? = null) = frame(JSONObject().put("choices", JSONArray().put(
                 JSONObject().put("index", 0).put("delta", chunk).put("finish_reason", reason ?: JSONObject.NULL))))
-            if (answer != null) return delta(JSONObject().put("content", text), "stop") + "data: [DONE]\n\n"
+            val thought = delta(JSONObject().put("reasoning_content", if (answer == null) "Before" else "After"))
+            if (answer != null) return thought + delta(JSONObject().put("content", text), "stop") + "data: [DONE]\n\n"
             fun call(function: JSONObject, start: Boolean) = JSONObject().put("index", 0).put("function", function).apply {
                 if (start) put("id", "shared-call").put("type", "function")
             }
             val head = call(JSONObject().put("name", ASK_USER).put("arguments", arguments.take(8)), true)
             val tail = call(JSONObject().put("arguments", arguments.drop(8)), false)
-            return delta(JSONObject().put("tool_calls", JSONArray().put(head))) +
+            return thought + delta(JSONObject().put("tool_calls", JSONArray().put(head))) +
                 delta(JSONObject().put("tool_calls", JSONArray().put(tail)), "tool_calls") + "data: [DONE]\n\n"
         }
         val item = if (answer == null) JSONObject().put("type", "function_call").put("id", "function-item")
             .put("name", ASK_USER).put("call_id", "shared-call").put("arguments", arguments)
         else JSONObject().put("type", "message").put("role", "assistant")
             .put("content", JSONArray().put(JSONObject().put("type", "output_text").put("text", text)))
+        val output = JSONArray()
+        if (answer != null) output.put(JSONObject().put("type", "reasoning").put("summary",
+            JSONArray().put(JSONObject().put("type", "summary_text").put("text", "After"))))
         return frame(JSONObject().put("type", "response.completed").put("response",
-            JSONObject().put("status", "completed").put("output", JSONArray().put(item))))
+            JSONObject().put("status", "completed").put("output", output.put(item))))
     }
 }

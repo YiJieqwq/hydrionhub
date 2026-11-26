@@ -177,15 +177,16 @@ private fun UsageRow(@DrawableRes icon: Int, label: Int, value: String) {
 }
 
 @Composable
-internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean,
-    answerCard: @Composable (ReplyToolCall) -> Unit = {}, toggleThought: () -> Unit) {
+internal fun ReplyTimeline(msg: Message, query: String, answerCard: @Composable (ReplyToolCall) -> Unit = {}) {
     var selected by rememberSaveable(msg.id) { mutableStateOf<Int?>(null) }
-    val calls = remember(msg.toolCalls) { msg.toolCalls.withIndex().toList() }
-    val limit = if (msg.status.isActive) Int.MAX_VALUE else msg.text.length
-    val (positioned, unplaced) = remember(calls, limit) {
-        calls.partition { (_, call) -> call.bodyOffset != null && call.bodyOffset in 0..limit }
+    var expansions by rememberSaveable(msg.id, query) { mutableStateOf(mapOf<Int, Boolean>()) }
+    val calls = remember(msg.toolCalls) {
+        // Legacy records without a protocol slot keep the same negative key across updates.
+        msg.toolCalls.withIndex().associate { (i, call) -> (call.slot ?: -1 - i) to call }
     }
-    val groups = remember(positioned) { positioned.groupBy { requireNotNull(it.value.bodyOffset) }.toSortedMap() }
+    val blocks = remember(msg.replySteps, msg.text, msg.thought, calls, msg.status.isActive) { msg.replyBlocks(calls) }
+    val liveThought = if (msg.remoteModel != null && msg.status.isActive)
+        (blocks.lastOrNull() as? ReplyBlock.Chain)?.steps?.lastOrNull() as? ReplyStep.Thought else null
     msg.tool?.let { name ->
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Icon(painterResource(R.drawable.lucide_wrench), null, Modifier.size(14.dp),
@@ -194,30 +195,20 @@ internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean
             Text(highlighted(name, query), style = MaterialTheme.typography.labelMedium)
         }
     }
-    if (msg.thought.isNotBlank() || groups.containsKey(0)) {
-        ReplyToolChain(msg.thought, groups[0].orEmpty(), query, thoughtExpanded, toggleThought, answerCard) { selected = it }
-    }
-    var cursor = 0
-    for ((position, calls) in groups) {
-        if (position == 0) continue
-        val offset = position.coerceIn(cursor, msg.text.length)
-        val segment = msg.text.substring(cursor, offset)
-        if (segment.isNotBlank()) AssistantBody(segment, query, Mode.Chat)
-        key(position) { ReplyToolChain("", calls, query, false, {}, answerCard, openRecord = { selected = it }) }
-        cursor = offset
-    }
-    val last = msg.text.substring(cursor)
-    if (last.isNotBlank()) AssistantBody(last, query, Mode.Chat)
-    if (unplaced.isNotEmpty()) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(stringResource(R.string.turn_tool_position_unknown), fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            ReplyToolChain("", unplaced, query, false, {}, answerCard, openRecord = { selected = it })
+    for (block in blocks) when (block) {
+        is ReplyBlock.Body -> AssistantBody(block.text, query, Mode.Chat)
+        is ReplyBlock.Chain -> key(block.steps.first().slot, block.steps.first() is ReplyStep.Thought) {
+            ReplyToolChain(block, calls, query, answerCard, openRecord = { selected = it }) { step, index ->
+                val detail = remember(msg.thought, step.start, step.end) { msg.thought.substring(step.start, step.end) }
+                val open = expansions[step.slot] ?: (step == liveThought || (query.isNotEmpty() && detail.contains(query, ignoreCase = true)))
+                TimelineStep(R.drawable.thinking_idea, stringResource(R.string.turn_thinking), query, index, block.steps.size,
+                    detail = detail, open = open, toggle = { expansions = expansions + (step.slot to !open) })
+            }
         }
     }
     // A streaming update can move a step to a different text block while its sheet is open.
     selected?.let { id ->
-        val call = calls.firstOrNull { it.recordKey == id }?.value ?: return@let
+        val call = calls[id] ?: return@let
         val offset = call.bodyOffset?.takeIf { it in 0..msg.text.length }
         val position = when (offset) {
             null -> null
@@ -229,9 +220,6 @@ internal fun ReplyTimeline(msg: Message, query: String, thoughtExpanded: Boolean
     }
 }
 
-// Live records have a protocol ordinal. Legacy records use their stable position in the saved reply.
-private val IndexedValue<ReplyToolCall>.recordKey: Int get() = value.slot ?: -1 - index
-
 private fun toolStatus(state: ToolCallState): Int = when (state) {
     ToolCallState.Requested -> R.string.turn_tool_requested
     ToolCallState.Running -> R.string.turn_tool_running
@@ -241,29 +229,42 @@ private fun toolStatus(state: ToolCallState): Int = when (state) {
 }
 
 @Composable
-private fun ReplyToolChain(thought: String, calls: List<IndexedValue<ReplyToolCall>>, query: String,
-    thoughtExpanded: Boolean, toggleThought: () -> Unit, answerCard: @Composable (ReplyToolCall) -> Unit, openRecord: (Int) -> Unit) {
-    val hasThought = thought.isNotBlank()
-    val firstCall = if (hasThought) 1 else 0
-    val size = firstCall + calls.size
-    ChatTintedSurface(ChatSurface.ThoughtAndTools,
-        Modifier.fillMaxWidth().testTag(if (hasThought) "message-thought" else "message-tool-chain")) {
-        Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-            if (hasThought) {
-                TimelineStep(R.drawable.thinking_idea, stringResource(R.string.turn_thinking), query, 0, size,
-                    detail = thought, open = thoughtExpanded, toggle = toggleThought)
-            }
-            calls.forEachIndexed { i, step ->
-                key(step.recordKey) {
-                    val call = step.value
-                    val asking = call.name == ASK_USER
-                    val label = if (asking) stringResource(R.string.panel_ask_user) else call.name.ifBlank { stringResource(R.string.turn_unnamed_tool) }
-                    TimelineStep(toolIcon(call.name), label, query, firstCall + i, size, status = stringResource(toolStatus(call.state)),
-                        detail = call.result.takeUnless { asking }, open = !asking && call.result != null, toggle = { openRecord(step.recordKey) })
-                    if (asking) answerCard(call)
+private fun ReplyToolChain(block: ReplyBlock.Chain, calls: Map<Int, ReplyToolCall>, query: String,
+    answerCard: @Composable (ReplyToolCall) -> Unit, openRecord: (Int) -> Unit,
+    thoughtRow: @Composable (ReplyStep.Thought, Int) -> Unit) {
+    val hasThought = block.steps.any { it is ReplyStep.Thought }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (block.unplaced) Text(stringResource(R.string.turn_tool_position_unknown), fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        ChatTintedSurface(ChatSurface.ThoughtAndTools,
+            Modifier.fillMaxWidth().testTag(if (hasThought) "message-thought" else "message-tool-chain")) {
+            Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                for ((index, step) in block.steps.withIndex()) key(step.slot, step is ReplyStep.Thought) {
+                    when (step) {
+                        is ReplyStep.Thought -> thoughtRow(step, index)
+                        is ReplyStep.Tool -> {
+                            val call = calls.getValue(step.slot)
+                            val asking = call.name == ASK_USER
+                            val label = if (asking) stringResource(R.string.panel_ask_user)
+                                else call.name.ifBlank { stringResource(R.string.turn_unnamed_tool) }
+                            TimelineStep(toolIcon(call.name), label, query, index, block.steps.size, status = stringResource(toolStatus(call.state)),
+                                detail = call.result.takeUnless { asking }, open = !asking && call.result != null, toggle = { openRecord(step.slot) })
+                            if (asking) Box(Modifier.stepContinuation(index < block.steps.lastIndex)) { answerCard(call) }
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun Modifier.stepContinuation(continues: Boolean): Modifier {
+    if (!continues) return this
+    val line = LocalContentColor.current.copy(alpha = .16f)
+    return drawBehind {
+        val x = 12.dp.toPx()
+        drawLine(line, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
     }
 }
 
@@ -333,12 +334,7 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
     }
     ExpandingCardBody(open && detail != null) {
         if (detail == null) return@ExpandingCardBody
-        Box(Modifier.fillMaxWidth().drawBehind {
-            if (index + 1 < count) {
-                val x = 12.dp.toPx()
-                drawLine(line, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
-            }
-        }.padding(start = 32.dp, top = 4.dp, bottom = 8.dp)) {
+        Box(Modifier.fillMaxWidth().stepContinuation(index + 1 < count).padding(start = 32.dp, top = 4.dp, bottom = 8.dp)) {
             val bodyInk = if (dark) ink else ink.copy(alpha = .8f)
             if (status == null) SelectionContainer {
                 Text(highlighted(detail, query), Modifier.fillMaxWidth(), fontSize = 12.5.sp,

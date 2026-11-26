@@ -22,6 +22,9 @@ import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.ui.HydrionApp
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import org.json.JSONObject
 import org.junit.After
@@ -56,7 +59,7 @@ class ChatRevisionFlowTest {
         condition()
     }
 
-    private fun open(protocol: ChatProtocol) {
+    private fun open(protocol: ChatProtocol, stream: ((Message) -> Flow<Message>)? = null) {
         val host = screen.activity
         val directory = Files.createTempDirectory(host.cacheDir.toPath(), "revision-flow-").toFile()
         val app = object : Application() {
@@ -85,7 +88,7 @@ class ChatRevisionFlowTest {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T = HubViewModel(app) { _, request, pending ->
                     requests.add(request.body.toString())
-                    flowOf(pending.copy(status = Generation.Completed, text = "Fixture response " + requests.size))
+                    stream?.invoke(pending) ?: flowOf(pending.copy(status = Generation.Completed, text = "Fixture response " + requests.size))
                 } as T
             }
             vm = ViewModelProvider(owner, factory)[HubViewModel::class.java]
@@ -112,6 +115,88 @@ class ChatRevisionFlowTest {
     private fun send(text: String) {
         screen.onNodeWithContentDescription("消息输入框").performClick().performTextReplacement(text)
         screen.onNodeWithContentDescription("发送消息").assertIsEnabled().performClick()
+    }
+
+    @Test fun sentReplyKeepsAdjacentFunctionsTogetherAsFramesArriveAndBodySeparatesTheNextGroup() {
+        val appendCalls = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        open(ChatProtocol.ResponsesHttp) { pending -> flow {
+            val fixture = if (pending.prompt == "Check inventory") "continuous-functions" else "deepseek-reasoning-text"
+            val wire = requireNotNull(javaClass.getResource("/responses/$fixture.sse")).readText()
+            readResponsesEvents(wire.reader().buffered(), pending) { part ->
+                emit(part)
+                if (part.thought == "Check the lamp." && part.toolCalls.isEmpty()) appendCalls.await()
+                if (part.thought.endsWith("Compare both.") && part.text.isEmpty()) finish.await()
+            }
+        } }
+        send("Check inventory")
+        awaitHost { vm.state.value.current.messages.last().thought == "Check the lamp." }
+        val replyId = vm.state.value.current.messages.last().id
+        val turn = hasAnyAncestor(hasTestTag("message-turn-$replyId"))
+        val card = hasTestTag("message-thought")
+        val title = screen.activity.getString(R.string.turn_thinking)
+        val thoughts = screen.onAllNodes(turn and hasText(title) and hasClickAction())
+        // Compose collections retain the IDs from their first fetch. Query each live frame afresh.
+        fun cards() = screen.onAllNodes(turn and card)
+        cards().assertCountEquals(1)
+        val single = cards()[0].getUnclippedBoundsInRoot()
+        thoughts[0].performScrollTo().performClick()
+        screen.onNodeWithText("Check the lamp.").assertDoesNotExist()
+        screen.runOnIdle { appendCalls.complete(Unit) }
+        awaitHost { vm.state.value.current.messages.last().thought.endsWith("Compare both.") }
+        cards().assertCountEquals(1)
+        val rows = screen.onAllNodes(turn and hasAnyAncestor(card) and hasClickAction() and
+            (hasText(title) or hasText("ping_a") or hasText("ping_b")))
+        rows.assertCountEquals(4)
+        listOf(title, "ping_a", "ping_b", title).forEachIndexed { i, label ->
+            rows[i].assertTextContains(label)
+            if (i > 0) assertTrue(rows[i - 1].getUnclippedBoundsInRoot().top < rows[i].getUnclippedBoundsInRoot().top)
+        }
+        screen.onNodeWithText("Compare both.").assertExists()
+        thoughts[0].performScrollTo().performClick()
+        screen.onNodeWithText("Check the lamp.").assertExists()
+        thoughts[1].performScrollTo().performClick()
+        screen.onNodeWithText("Compare both.").assertDoesNotExist()
+        screen.onNodeWithText("Check the lamp.").assertExists()
+        rows[1].performScrollTo().performClick()
+        val sheet = hasAnyAncestor(hasTestTag("turn-action-sheet"))
+        screen.onNode(sheet and hasText(screen.activity.getString(R.string.turn_tool_running))).assertIsDisplayed()
+        screen.runOnIdle { finish.complete(Unit) }
+        awaitHost { !vm.state.value.isGenerating }
+        val completed = vm.state.value.current.messages.last()
+        assertEquals(completed.error, Generation.Completed, completed.status)
+        assertEquals("Visible divider.Finished.", completed.text)
+        assertEquals(listOf(0, 0, "Visible divider.".length),
+            completed.replySteps.filterIsInstance<ReplyStep.Thought>().map { it.bodyOffset })
+        screen.onNode(sheet and hasText("Lamp present")).assertIsDisplayed()
+        screen.onNode(sheet and hasText("Book unavailable")).assertDoesNotExist()
+        screen.onNodeWithContentDescription(screen.activity.getString(R.string.turn_close_details)).performClick()
+        cards().assertCountEquals(2)
+        val divider = screen.onNode(turn and hasText("Visible divider.")).getUnclippedBoundsInRoot()
+        val first = cards()[0].getUnclippedBoundsInRoot()
+        val second = cards()[1].getUnclippedBoundsInRoot()
+        assertTrue(first.bottom <= divider.top && divider.bottom <= second.top)
+        assertEquals(single.left, first.left)
+        assertEquals(single.right, first.right)
+        assertEquals(first.left, second.left)
+        assertEquals(first.right, second.right)
+        screen.onNode(turn and hasText("ping_b") and hasClickAction()).performScrollTo().performClick()
+        screen.onNode(sheet and hasText(screen.activity.getString(R.string.turn_tool_failed))).assertIsDisplayed()
+        screen.onNode(sheet and hasText("Book unavailable")).assertIsDisplayed()
+        screen.onNodeWithContentDescription(screen.activity.getString(R.string.turn_close_details)).performClick()
+        thoughts[2].performScrollTo().performClick()
+        screen.onNodeWithText("Review the shelf.").assertExists()
+        screen.onNodeWithText("Check the lamp.").assertExists()
+        screen.onNodeWithText("Compare both.").assertDoesNotExist()
+
+        send("New turn")
+        awaitHost { !vm.state.value.isGenerating && vm.state.value.current.messages.last().text == "Monday." }
+        val nextId = vm.state.value.current.messages.last().id
+        val next = hasAnyAncestor(hasTestTag("message-turn-$nextId"))
+        screen.onAllNodes(next and card).assertCountEquals(1)
+        screen.onNode(next and hasText(title) and hasClickAction()).performScrollTo().performClick()
+        screen.onNode(next and hasText("Checked the date.")).assertIsDisplayed()
+        screen.onAllNodes(next and (hasText("ping_a") or hasText("Review the shelf."))).assertCountEquals(0)
     }
 
     private fun wire(index: Int, array: String, model: String): List<Pair<String, String>> {

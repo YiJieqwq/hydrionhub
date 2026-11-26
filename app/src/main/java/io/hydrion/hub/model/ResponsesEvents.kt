@@ -140,17 +140,27 @@ private class ResponseParts(private val privacy: ToolRecordText) {
 
     fun slotFor(callId: String): Int? = callsById[callId]
 
-    fun applyTo(message: Message) = message.copy(
-        toolCalls = buildList {
-            var bodyOffset = 0
-            for (item in items.values) {
-                item.tool?.let { add(it.copy(bodyOffset = bodyOffset)) }
-                bodyOffset += item.answer.values.sumOf { it.length }
+    fun applyTo(message: Message): Message {
+        val body = StringBuilder()
+        val thought = StringBuilder()
+        val calls = mutableListOf<ReplyToolCall>()
+        val steps = mutableListOf<ReplyStep>()
+        for ((index, item) in items) {
+            val detail = item.thought()
+            if (detail.isNotEmpty()) {
+                if (thought.isNotEmpty()) thought.append("\n\n")
+                val start = thought.length
+                thought.append(detail)
+                steps += ReplyStep.Thought(index, body.length, start, thought.length)
             }
-        },
-        text = items.values.joinToString("") { it.answer.values.joinToString("") },
-        thought = items.values.map { it.thought() }.filter { it.isNotEmpty() }.joinToString("\n\n")
-    )
+            item.tool?.let {
+                steps += ReplyStep.Tool(index)
+                calls += it.copy(bodyOffset = body.length)
+            }
+            for (part in item.answer.values) body.append(part)
+        }
+        return message.copy(text = body.toString(), thought = thought.toString(), toolCalls = calls, replySteps = steps)
+    }
 
     fun update(type: String, event: JSONObject): Boolean {
         if (type !in partEvents && (type.removePrefix("response.").substringBefore('.') !in hostedToolTypes ||

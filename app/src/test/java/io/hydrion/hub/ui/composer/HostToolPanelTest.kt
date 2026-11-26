@@ -471,6 +471,7 @@ class HostToolPanelTest {
         assertEquals(listOf(Role.User, Role.Assistant), finishedA.messages.map { it.role })
         assertEquals(replyId, finishedA.messages.last().id)
         assertEquals(ToolCallState.Completed, finishedA.messages.last().toolCalls.single().state)
+        assertEquals(listOf(ReplyStep.Tool(0), ReplyStep.Thought(0, 0, 0, 5)), finishedA.messages.last().replySteps)
         checkExchange("Chat A", "questions-a.invalid", "Blue", false)
 
         visit("Chat B"); send("B stop"); expectQuestion("B stop")
@@ -486,6 +487,9 @@ class HostToolPanelTest {
         option("Green").performClick(); submit().performScrollTo().performClick()
         waitForText("Finished B again")
         checkExchange("B again", "questions-b.invalid", "Green", true)
+        val continued = vm.state.value.current.messages.last()
+        assertEquals("BeforeAfter", continued.thought)
+        assertEquals(listOf(ReplyStep.Thought(0, 0, 0, 6), ReplyStep.Tool(0), ReplyStep.Thought(1, 0, 6, 11)), continued.replySteps)
 
         send("Revoke"); expectQuestion("Revoke"); option("Blue").performClick()
         openFromComposer(); tap("Permissions"); dialogButton(R.string.panel_deny); back()

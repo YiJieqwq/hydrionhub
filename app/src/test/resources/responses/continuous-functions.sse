@@ -1,0 +1,21 @@
+data: {"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Check the lamp."}
+
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"mcp_call","id":"a","name":"ping_a","arguments":"{\"item\":\"lamp\"}","status":"in_progress"}}
+
+data: {"type":"response.output_item.added","output_index":2,"item":{"type":"mcp_call","id":"b","name":"ping_b","arguments":"{\"item\":\"book\"}","status":"in_progress"}}
+
+data: {"type":"response.reasoning_summary_text.delta","output_index":3,"delta":"Compare both."}
+
+data: {"type":"response.output_item.done","output_index":2,"item":{"type":"mcp_call","id":"b","error":"Book unavailable","status":"failed"}}
+
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"mcp_call","id":"a","output":"Lamp present","status":"completed"}}
+
+data: {"type":"response.output_text.done","output_index":4,"text":"Visible divider."}
+
+data: {"type":"response.reasoning_summary_text.done","output_index":5,"text":"Review the shelf."}
+
+data: {"type":"response.output_text.done","output_index":6,"text":"Finished."}
+
+data: {"type":"response.completed","response":{"status":"completed"}}
+
+: end

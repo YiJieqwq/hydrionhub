@@ -1208,11 +1208,13 @@ class ReplyBubbleInteractionTest {
                 suspend fun event(type: String, data: JSONObject) { stream.accept(data.toString(), type).deliver { emit(it) } }
                 suspend fun item(index: Int, stage: String, call: JSONObject) =
                     event("response.output_item.$stage", JSONObject().put("output_index", index).put("item", call))
-                for (i in inputs.indices) item(i, "added", JSONObject().put("id", "item-$i").put("type", "mcp_call")
+                event("response.reasoning_text.done", JSONObject().put("output_index", 0).put("text", "Inspect the shelf."))
+                for (i in inputs.indices) item(i + 1, "added", JSONObject().put("id", "item-$i").put("type", "mcp_call")
                     .put("name", name).put("arguments", inputs[i].toString()).put("status", "in_progress"))
-                item(1, "done", JSONObject().put("id", "item-1").put("type", "mcp_call").put("error", second).put("status", "failed"))
-                item(0, "done", JSONObject().put("id", "item-0").put("type", "mcp_call").put("output", first).put("status", "completed"))
-                event("response.output_text.done", JSONObject().put("output_index", 2).put("text", "Two calls recorded."))
+                item(2, "done", JSONObject().put("id", "item-1").put("type", "mcp_call").put("error", second).put("status", "failed"))
+                item(1, "done", JSONObject().put("id", "item-0").put("type", "mcp_call").put("output", first).put("status", "completed"))
+                event("response.reasoning_text.done", JSONObject().put("output_index", 3).put("text", "Review the counts."))
+                event("response.output_text.done", JSONObject().put("output_index", 4).put("text", "Two calls recorded."))
                 event("response.completed", JSONObject().put("response", JSONObject().put("status", "completed")))
             }
         }
@@ -1221,6 +1223,11 @@ class ReplyBubbleInteractionTest {
         session.send("Fixture", emptyMap(), null, null, remoteModel = RemoteModel("fixture", "chat"))
         val saved = session.state.first { !it.isGenerating }.current
         val vm = open(initial = saved)
+        val thoughts = screen.onAllNodes(hasText(label(R.string.turn_thinking)) and hasClickAction())
+        thoughts.assertCountEquals(2)
+        thoughts[1].performClick()
+        screen.onNodeWithText("Review the counts.").assertIsDisplayed()
+        screen.onNodeWithText("Inspect the shelf.").assertDoesNotExist()
         val steps = screen.onAllNodes(hasText(name) and hasClickAction())
         steps.assertCountEquals(2)
         assertTrue(steps[0].getUnclippedBoundsInRoot().top < steps[1].getUnclippedBoundsInRoot().top)

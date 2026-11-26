@@ -29,12 +29,19 @@ internal fun questionRounds(protocol: ChatProtocol, initial: LocalModelRequest, 
         val next = LocalModelRequest(initial.model, initial.headers, body, initial.parameters, initial.url, wire)
         val base = prefix
         val firstSlot = (base?.toolCalls?.maxOfOrNull { it.slot ?: 0 } ?: -1) + 1
+        val firstThought = (base?.replySteps?.filterIsInstance<ReplyStep.Thought>()?.maxOfOrNull { it.slot } ?: -1) + 1
         var terminal: Message? = null
         requests++
         stream(protocol, next, request).collect { part ->
             val snapshot = if (base == null) part else part.copy(text = base.text + part.text, thought = base.thought + part.thought,
                 toolCalls = base.toolCalls + part.toolCalls.mapIndexed { i, call ->
                     call.copy(slot = firstSlot + (call.slot ?: i), bodyOffset = call.bodyOffset?.plus(base.text.length))
+                }, replySteps = base.replySteps + part.replySteps.map { step ->
+                    when (step) {
+                        is ReplyStep.Tool -> ReplyStep.Tool(firstSlot + step.slot)
+                        is ReplyStep.Thought -> ReplyStep.Thought(firstThought + step.slot, base.text.length + step.bodyOffset,
+                            base.thought.length + step.start, base.thought.length + step.end)
+                    }
                 })
             if (snapshot.status == Generation.Completed) terminal = snapshot else emit(snapshot)
         }

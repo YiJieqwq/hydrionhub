@@ -21,6 +21,7 @@ internal suspend fun readChatCompletionsEvents(
     val arguments = mutableMapOf<Int, ToolArgumentFragments>()
     val names = mutableMapOf<Int, String>()
     val indicesById = mutableMapOf<String, Int>()
+    var nextThoughtSlot = 0
     fun recordCall(index: Int, function: JSONObject?) {
         val current = callsByIndex[index] ?: ReplyToolCall("", ToolCallState.Requested, message.text.length, slot = index)
         function?.optionalText("name")?.let { names[index] = (names[index].orEmpty() + it.take(129)).take(129) }
@@ -57,6 +58,15 @@ internal suspend fun readChatCompletionsEvents(
                 if (finish != null && (content.isNotEmpty() || reasoning.isNotEmpty() || (reason != null && finish != reason))) {
                     throw IOException("Chat Completions 在结束原因之后返回了冲突的数据。")
                 }
+                var steps = message.replySteps
+                if (reasoning.isNotEmpty()) {
+                    val last = steps.lastOrNull() as? ReplyStep.Thought
+                    val end = message.thought.length + reasoning.length
+                    steps = if (last != null && last.bodyOffset == message.text.length)
+                        steps.dropLast(1) + last.copy(end = end)
+                    else steps + ReplyStep.Thought(nextThoughtSlot++, message.text.length, message.thought.length, end)
+                }
+                val newCalls = mutableListOf<Int>()
                 delta?.optJSONArray("tool_calls")?.let { calls ->
                     for (j in 0 until calls.length()) {
                         val call = calls.getJSONObject(j)
@@ -65,12 +75,14 @@ internal suspend fun readChatCompletionsEvents(
                         if (index < 0) throw JSONException("tool_calls index")
                         if (id != null && indicesById.put(id, index)?.let { it != index } == true) conflictingTool = true
                         if (!call.isNull("type") && call.opt("type") != "function" || finish != null) conflictingTool = true
+                        if (index !in callsByIndex) newCalls += index
                         recordCall(index, call.optJSONObject("function"))
                         pendingTool = "tool_calls"
                     }
                 }
                 delta?.optJSONObject("function_call")?.let {
                     conflictingTool = true
+                    if (0 !in callsByIndex) newCalls += 0
                     recordCall(0, it)
                     pendingTool = "function_call"
                 }
@@ -79,8 +91,15 @@ internal suspend fun readChatCompletionsEvents(
                         name = privacy.name(names[index].orEmpty()), arguments = arguments[index]?.finish(privacy))
                 }
                 if (pendingTool != null) message = message.copy(toolCalls = callsByIndex.values.toList())
-                if (content.isNotEmpty() || reasoning.isNotEmpty()) {
-                    message = message.copy(text = message.text + content, thought = message.thought + reasoning)
+                if (content.isNotEmpty() || reasoning.isNotEmpty() || newCalls.isNotEmpty()) {
+                    if (newCalls.isNotEmpty()) {
+                        // Parallel calls can start in different chunks. Respect their declared
+                        // indices within this run, without moving them across reasoning or text.
+                        val adjacent = steps.takeLastWhile { it is ReplyStep.Tool && callsByIndex[it.slot]?.bodyOffset == message.text.length }
+                        val batch = adjacent + newCalls.map { ReplyStep.Tool(it) }
+                        steps = steps.dropLast(adjacent.size) + batch.sortedBy { it.slot }
+                    }
+                    message = message.copy(text = message.text + content, thought = message.thought + reasoning, replySteps = steps)
                 }
                 if (reason != null) finish = reason
             }

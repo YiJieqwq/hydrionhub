@@ -17,6 +17,14 @@ data class ReplyToolCall(
 }
 data class ReplyTranslation(val language: String, val text: String)
 
+/** Ordered references into this revision. Text offsets are UTF-16, end is exclusive.
+ * Tool slots point at the existing record so later status/results never create another step. */
+sealed interface ReplyStep {
+    val slot: Int
+    data class Thought(override val slot: Int, val bodyOffset: Int, val start: Int, val end: Int) : ReplyStep
+    data class Tool(override val slot: Int) : ReplyStep
+}
+
 internal class ReplyObservation(private val clockMs: () -> Long) {
     private val start = clockMs()
     private var receivedSnapshot = false

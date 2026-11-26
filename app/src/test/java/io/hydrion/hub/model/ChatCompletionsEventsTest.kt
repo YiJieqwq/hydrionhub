@@ -89,6 +89,29 @@ class ChatCompletionsEventsTest {
         assertTrue(error.contains("tool_calls"))
     }
 
+    @Test fun reasoningDeltasSplitOnlyAtANewCallOrBodyAndOldHistoriesKeepTheirAggregate() = runBlocking {
+        val wire = frame(choice("""{"reasoning_content":"A"}""")) +
+            frame(choice("""{"tool_calls":[{"index":2,"function":{"name":"ping_b"}}]}""")) +
+            frame(choice("""{"tool_calls":[{"index":1,"function":{"name":"ping_a"}}]}""")) +
+            frame(choice("""{"reasoning_content":"B"}""")) +
+            frame(choice("""{"tool_calls":[{"index":1,"function":{"arguments":"{}"}}]}""")) +
+            frame(choice("""{"reasoning_content":"C","content":"🙂"}""")) +
+            frame(choice("""{"reasoning_content":"D"}""")) +
+            frame(choice("""{"tool_calls":[{"index":0,"function":{"name":"ping_c"}}]}""", "tool_calls")) + done
+        val (reply, _) = failure(wire)
+        assertEquals("ABCD", reply.thought)
+        assertEquals(listOf(ReplyStep.Thought(0, 0, 0, 1), ReplyStep.Tool(1), ReplyStep.Tool(2),
+            ReplyStep.Thought(1, 0, 1, 3), ReplyStep.Thought(2, 2, 3, 4), ReplyStep.Tool(0)), reply.replySteps)
+        val workspace = encodeWorkspace(SavedWorkspace(listOf(Conversation(messages = listOf(reply)))))
+        val json = workspace.getJSONArray("history").getJSONObject(0).getJSONArray("messages").getJSONObject(0)
+        fun reopen() = decodeWorkspace(workspace).history.single().messages.single()
+        assertEquals(reply.replySteps, reopen().replySteps)
+        json.getJSONArray("replySteps").getJSONObject(0).put("end", 200)
+        assertTrue(reopen().replySteps.isEmpty())
+        json.remove("replySteps")
+        assertEquals(reply.copy(replySteps = emptyList()), reopen())
+    }
+
     @Test fun refusalIsVisibleAndOtherChoicesCannotWriteOrFinishThePrimaryReply() = runBlocking {
         val other = choice("""{"content":"discarded","reasoning_content":"discarded"}""", "stop", index = 1)
         val first = frame(other + "," + choice("""{"refusal":"Cannot "}"""))

@@ -579,7 +579,7 @@ internal class ConversationSession(
 
     private fun Conversation.appendEdit(source: Message, text: String): Conversation {
         val edited = if (source.role == Role.User) source.copy(text = text) else source.copy(text = text,
-            thought = "", tool = null, totalTokens = null, usage = null, timing = null, toolCalls = emptyList(),
+            thought = "", tool = null, totalTokens = null, usage = null, timing = null, toolCalls = emptyList(), replySteps = emptyList(),
             translation = null, status = Generation.Completed, error = null)
         return appendVersion(source, edited)
     }
