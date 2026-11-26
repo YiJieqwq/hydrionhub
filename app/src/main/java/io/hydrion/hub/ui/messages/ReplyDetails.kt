@@ -189,7 +189,7 @@ internal fun ReplyTimeline(msg: Message, query: String, answerCard: @Composable 
         (blocks.lastOrNull() as? ReplyBlock.Chain)?.steps?.lastOrNull() as? ReplyStep.Thought else null
     msg.tool?.let { name ->
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Icon(painterResource(R.drawable.lucide_wrench), null, Modifier.size(14.dp),
+            Icon(painterResource(replyToolIcon(name)), null, Modifier.size(14.dp),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(stringResource(R.string.turn_local_tool), style = MaterialTheme.typography.labelSmall)
             Text(highlighted(name, query), style = MaterialTheme.typography.labelMedium)
@@ -247,7 +247,8 @@ private fun ReplyToolChain(block: ReplyBlock.Chain, calls: Map<Int, ReplyToolCal
                             val asking = call.name == ASK_USER
                             val label = if (asking) stringResource(R.string.panel_ask_user)
                                 else call.name.ifBlank { stringResource(R.string.turn_unnamed_tool) }
-                            TimelineStep(toolIcon(call.name), label, query, index, block.steps.size, status = stringResource(toolStatus(call.state)),
+                            val icon = remember(call.name, call.arguments) { replyToolIcon(call.name, call.arguments) }
+                            TimelineStep(icon, label, query, index, block.steps.size, status = stringResource(toolStatus(call.state)),
                                 detail = call.result.takeUnless { asking }, open = !asking && call.result != null, toggle = { openRecord(step.slot) })
                             if (asking) Box(Modifier.stepContinuation(index < block.steps.lastIndex)) { answerCard(call) }
                         }
@@ -266,17 +267,6 @@ private fun Modifier.stepContinuation(continues: Boolean): Modifier {
         val x = 12.dp.toPx()
         drawLine(line, Offset(x, 0f), Offset(x, size.height), 1.dp.toPx())
     }
-}
-
-private fun toolIcon(name: String) = when (name) {
-    ASK_USER -> R.drawable.lucide_message_circle_question
-    "search_web" -> R.drawable.lucide_earth
-    "web_search", "web_search_call", "web_search_preview", "chat_search", "builtin_search" -> R.drawable.lucide_search
-    "file_search", "file_search_call" -> R.drawable.lucide_file_search
-    "bash_code_execution" -> R.drawable.lucide_terminal
-    "code_execution", "text_editor_code_execution", "code_interpreter", "code_interpreter_call" -> R.drawable.lucide_code
-    "image_generation_call" -> R.drawable.lucide_image
-    else -> R.drawable.lucide_wrench
 }
 
 // Keep the Material focus and hover feedback on these rows while dropping only the press ripple.

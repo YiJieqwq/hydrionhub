@@ -2,11 +2,15 @@ package io.hydrion.hub.ui.messages
 
 import android.app.Application
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.os.Looper
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.core.view.drawToBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -22,6 +26,8 @@ import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.ui.HydrionApp
 import java.nio.file.Files
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -197,6 +203,53 @@ class ChatRevisionFlowTest {
         screen.onNode(next and hasText(title) and hasClickAction()).performScrollTo().performClick()
         screen.onNode(next and hasText("Checked the date.")).assertIsDisplayed()
         screen.onAllNodes(next and (hasText("ping_a") or hasText("Review the shelf."))).assertCountEquals(0)
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w393dp-h842dp-xhdpi")
+    fun sentReplyPaintsTheRecordedToolIconsAndKeepsDetailsClickable() {
+        open(ChatProtocol.ResponsesHttp) { pending -> flow {
+            val events = requireNotNull(javaClass.getResource("/responses/tool-card-icons.sse"))
+            events.openStream().bufferedReader().use { readResponsesEvents(it, pending) { part -> emit(part) } }
+        } }
+        send("Show recorded tool calls")
+        awaitHost { vm.state.value.current.messages.last().text == "已按顺序整理工具记录。" && !vm.state.value.isGenerating }
+        val turn = hasAnyAncestor(hasTestTag("message-turn-" + vm.state.value.current.messages.last().id))
+        fun row(name: String) = screen.onNode(turn and hasText(name) and hasClickAction())
+        val expected = mapOf("shell" to R.drawable.lucide_terminal, "search_web" to R.drawable.lucide_earth,
+            "web_search_call" to R.drawable.lucide_search, "fetch_url" to R.drawable.lucide_link,
+            "read_file" to R.drawable.lucide_file_text, "clipboard_tool" to R.drawable.lucide_clipboard_check,
+            "get_time_info" to R.drawable.lucide_clock, "catalog_lookup" to R.drawable.lucide_wrench)
+        for ((name, icon) in expected) {
+            assertRowIcon(name, row(name).performScrollTo().assertIsDisplayed(), icon)
+        }
+        row("shell").performScrollTo().performClick()
+        screen.onNode(hasAnyAncestor(hasTestTag("turn-action-sheet")) and hasText("shell")).assertIsDisplayed()
+    }
+
+    // Compare the rendered leading glyph with the resource silhouette independently of its tint.
+    private fun assertRowIcon(name: String, row: SemanticsNodeInteraction, expected: Int) {
+        val bounds = row.fetchSemanticsNode().boundsInWindow
+        val density = screen.activity.resources.displayMetrics.density
+        val size = (16 * density).roundToInt()
+        val left = (bounds.left + 4 * density).roundToInt()
+        val top = (bounds.center.y - size / 2f).roundToInt()
+        val window = screen.runOnIdle { screen.activity.window.decorView.drawToBitmap() }
+        val reference = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        requireNotNull(screen.activity.getDrawable(expected)).apply {
+            setBounds(0, 0, size, size)
+            draw(Canvas(reference))
+        }
+        val background = Color.red(window.getPixel(bounds.left.roundToInt(), top))
+        var intersection = 0
+        var union = 0
+        for (y in 0 until size) for (x in 0 until size) {
+            val painted = abs(Color.red(window.getPixel(left + x, top + y)) - background) > 80
+            val wanted = Color.alpha(reference.getPixel(x, y)) > 120
+            if (painted && wanted) intersection++
+            if (painted || wanted) union++
+        }
+        assertTrue("$name glyph overlap $intersection/$union", union > 0 && intersection > union * .85)
     }
 
     private fun wire(index: Int, array: String, model: String): List<Pair<String, String>> {
