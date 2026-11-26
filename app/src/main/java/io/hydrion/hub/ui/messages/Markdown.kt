@@ -53,7 +53,7 @@ internal fun highlighted(value: String, query: String): AnnotatedString {
 }
 
 @Composable
-private fun richText(value: String, query: String, chat: Boolean): AnnotatedString {
+internal fun richText(value: String, query: String, chat: Boolean): AnnotatedString {
     val colors = MaterialTheme.colorScheme
     val style = LocalMessageStyle.current.renderPalette.assistant
     return remember(value, query, colors, style, chat) {
@@ -126,25 +126,30 @@ private val headingScales = floatArrayOf(1.45f, 1.27f, 1.13f, 1f, .94f, .88f)
 private val headingLeads = floatArrayOf(1.3f, 1.35f, 1.4f, 1.45f, 1.45f, 1.45f)
 
 @Composable
-internal fun MarkdownBody(value: String, query: String, modifier: Modifier, body: TextStyle = MaterialTheme.typography.bodyLarge, chat: Boolean = false) {
+internal fun MarkdownBody(value: String, query: String, modifier: Modifier, body: TextStyle = MaterialTheme.typography.bodyLarge, chat: Boolean = false,
+    fragments: Map<Int, RichFragment> = emptyMap(), images: Map<Int, RichImage> = emptyMap()) {
     val parsed = remember(value) { markdownBlocks(value) }
     SelectionContainer {
         Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            parsed.forEach { block ->
+            parsed.forEachIndexed { index, block ->
+                val rich = fragments[index]
                 when (block) {
-                    is MarkdownBlock.Paragraph -> Paragraph(block.value, query, body, chat)
-                    is MarkdownBlock.Heading -> Text(
-                        richText(block.value, query, chat),
-                        style = if (chat) body.copy(fontSize = body.fontSize * headingScales[block.level - 1],
+                    is MarkdownBlock.Paragraph -> if (rich == null) Paragraph(block.value, query, body, chat)
+                        else RichBlock(rich, block, images, query, body)
+                    is MarkdownBlock.Heading -> {
+                        val style = if (chat) body.copy(fontSize = body.fontSize * headingScales[block.level - 1],
                             lineHeight = headingLeads[block.level - 1].em) else if (block.level < 3)
-                            MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
-                        fontWeight = if (!chat) FontWeight.SemiBold else if (block.level <= 3) FontWeight.Medium else FontWeight.Normal
-                    )
+                            MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium
+                        val weight = if (!chat) FontWeight.SemiBold else if (block.level <= 3) FontWeight.Medium else FontWeight.Normal
+                        if (rich == null) Text(richText(block.value, query, chat), style = style, fontWeight = weight)
+                        else RichBlock(rich, block, images, query, style.copy(fontWeight = weight))
+                    }
                     is MarkdownBlock.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
                         Spacer(Modifier.width(3.dp).fillMaxHeight().background(LocalMessageStyle.current.renderPalette.assistant.border.messageColor()))
-                        Text(richText(block.value, query, chat), Modifier.padding(start = 12.dp), color = LocalContentColor.current, style = body)
+                        if (rich == null) Text(richText(block.value, query, chat), Modifier.padding(start = 12.dp), color = LocalContentColor.current, style = body)
+                        else Box(Modifier.padding(start = 12.dp)) { RichBlock(rich, block, images, query, body) }
                     }
-                    is MarkdownBlock.Code -> CodeBlock(block, query, chat)
+                    is MarkdownBlock.Code -> if (rich == null) CodeBlock(block, query, chat) else RichBlock(rich, block, images, query, body)
                     MarkdownBlock.Rule -> HorizontalDivider()
                 }
             }

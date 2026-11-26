@@ -9,7 +9,7 @@ internal sealed interface MarkdownBlock {
     data class Paragraph(val value: String) : MarkdownBlock
     data class Heading(val value: String, val level: Int) : MarkdownBlock
     data class Quote(val value: String) : MarkdownBlock
-    data class Code(val language: String, val value: String) : MarkdownBlock
+    data class Code(val language: String, val value: String, val closed: Boolean = true) : MarkdownBlock
     data object Rule : MarkdownBlock
 }
 
@@ -55,17 +55,21 @@ internal fun markdownBlocks(markdown: String): List<MarkdownBlock> = buildList {
                 // Deeper fences can occur in existing list messages. Keep their literal indentation.
                 val indent = if (margin.isFenceMargin()) margin.length else 0
                 val code = mutableListOf<String>()
+                var closed = false
                 while (pos < lines.size) {
                     val bodyLine = lines[pos++]
                     val end = closingFence.matchEntire(bodyLine)
                     if (end != null) {
                         val (endMargin, endMarker) = end.destructured
-                        if ((endMargin.isFenceMargin() || endMargin == margin) && endMarker.startsWith(marker)) break
+                        if ((endMargin.isFenceMargin() || endMargin == margin) && endMarker.startsWith(marker)) {
+                            closed = true
+                            break
+                        }
                     }
                     code += bodyLine.withoutFenceIndent(indent)
                 }
                 val language = info.trimStart().takeWhile { !it.isWhitespace() }
-                add(MarkdownBlock.Code(language, code.joinToString("\n")))
+                add(MarkdownBlock.Code(language, code.joinToString("\n"), closed))
             }
             title != null -> {
                 flush()

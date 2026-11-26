@@ -207,8 +207,17 @@ internal fun ReplyTimeline(msg: Message, query: String, chatId: String? = null, 
             Text(highlighted(name, query), style = MaterialTheme.typography.labelMedium)
         }
     }
-    for (block in blocks) when (block) {
-        is ReplyBlock.Body -> AssistantBody(block.text, query, Mode.Chat)
+    val plan = remember(blocks, msg.status.isActive) { if (msg.status.isActive) null else richMessagePlan(blocks) }
+    val graphics = remember(plan) { plan?.let { RichImages() } }
+    for ((index, block) in blocks.withIndex()) when (block) {
+        is ReplyBlock.Body -> {
+            val fragments = plan?.bodies?.get(index)
+            if (plan == null || graphics == null || fragments == null) AssistantBody(block.text, query, Mode.Chat)
+            else if (index == plan.bodies.keys.first()) BoxWithConstraints {
+                AssistantBody(block.text, query, Mode.Chat, fragments, graphics.entries)
+                RichRenderHost(plan, (maxWidth.value / LocalDensity.current.fontScale).toInt(), graphics)
+            } else AssistantBody(block.text, query, Mode.Chat, fragments, graphics.entries)
+        }
         is ReplyBlock.Chain -> key(msg.id, block.steps.first().slot, block.steps.first() is ReplyStep.Thought) {
             ReplyToolChain(block, calls, query, msg.thought, forms.keys, answerCard = { call ->
                 if (inbox != null) AskUserCard(call, forms[call.slot], inbox)

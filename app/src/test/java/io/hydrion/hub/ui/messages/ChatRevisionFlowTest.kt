@@ -70,7 +70,7 @@ class ChatRevisionFlowTest {
         condition()
     }
 
-    private fun open(protocol: ChatProtocol, stream: ((Message) -> Flow<Message>)? = null) {
+    private fun open(protocol: ChatProtocol, raster: RichRaster? = null, stream: ((Message) -> Flow<Message>)? = null) {
         val host = screen.activity
         val directory = Files.createTempDirectory(host.cacheDir.toPath(), "revision-flow-").toFile()
         val app = object : Application() {
@@ -109,7 +109,10 @@ class ChatRevisionFlowTest {
         screen.activityRule.scenario.onActivity { activity ->
             vm.providers.save(provider, "offline-fixture", currentModel.id)
             vm.openConversation(chat.id)
-            activity.setContent { CompositionLocalProvider(LocalViewModelStoreOwner provides owner) { HydrionApp() } }
+            activity.setContent {
+                CompositionLocalProvider(LocalViewModelStoreOwner provides owner,
+                    LocalRichRaster provides (raster ?: LocalRichRaster.current)) { HydrionApp() }
+            }
         }
     }
 
@@ -126,6 +129,46 @@ class ChatRevisionFlowTest {
     private fun send(text: String) {
         screen.onNodeWithContentDescription("消息输入框").performClick().performTextReplacement(text)
         screen.onNodeWithContentDescription("发送消息").assertIsEnabled().performClick()
+    }
+
+    @Test fun richReplyRendersOnceAfterStreamingAndKeepsUnrenderableSourceCopyable() {
+        val continueStream = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val jobs = CopyOnWriteArrayList<RichRequest>()
+        val partial = "Two gardens \\(a+b\\).\n\n~~~mermaid\nflowchart LR\nA --> B"
+        val completed = partial + "\n~~~\n\n| Name | Formula |\n| --- | --- |\n| Water | \\(\\ce{H2O}\\) |" +
+            "\n\n\\[y=1\\label{eq:garden}\\]\n\nSee \\(\\eqref{eq:garden}\\)." +
+            "\n\n~~~mermaid\nunrecognized diagram\n~~~"
+        open(ChatProtocol.ResponsesHttp, raster = { _, request, _ ->
+            jobs += request
+            val image = RichImage(androidx.compose.ui.graphics.ImageBitmap(24, 12), 24f, 12f)
+            request.items.indices.filterNot { request.items[it].source == "unrecognized diagram" }.associateWith { image }
+        }) { pending -> flow {
+            emit(pending.copy(text = partial, status = Generation.Generating))
+            continueStream.await()
+            emit(pending.copy(text = completed, status = Generation.Generating))
+            finish.await()
+            emit(pending.copy(text = completed, status = Generation.Completed))
+        } }
+        send("Compare gardens")
+        awaitHost { vm.state.value.current.messages.last().text == partial }
+        screen.onNodeWithText("flowchart LR\nA --> B").assertExists()
+        screen.runOnIdle { continueStream.complete(Unit) }
+        awaitHost { vm.state.value.current.messages.last().text == completed }
+        screen.onNodeWithTag("rich-diagram").assertDoesNotExist()
+        assertTrue(jobs.isEmpty())
+        screen.runOnIdle { finish.complete(Unit) }
+        awaitHost { jobs.size == 1 }
+        screen.onNodeWithTag("rich-math-table").assertExists()
+        screen.onNodeWithTag("rich-diagram").assertExists()
+        screen.onNodeWithTag("rich-display-math").assertExists()
+        screen.onAllNodesWithTag("rich-inline-math", useUnmergedTree = true).assertCountEquals(3)
+        assertEquals(listOf("inline", "mermaid", "inline", "display", "inline", "mermaid"), jobs.single().items.map { it.kind })
+        val copy = screen.activity.getString(R.string.turn_copy_code)
+        screen.onNodeWithContentDescription(copy).performScrollTo().performClick()
+        val clipboard = screen.activity.getSystemService(android.content.ClipboardManager::class.java)
+        assertEquals("unrecognized diagram", clipboard.primaryClip?.getItemAt(0)?.text.toString())
+        assertEquals(1, jobs.size)
     }
 
     @Test fun sentReplyKeepsAdjacentFunctionsTogetherAsFramesArriveAndBodySeparatesTheNextGroup() {

@@ -10,7 +10,7 @@ class MessageFormattingTest {
         assertEquals(listOf(
             MarkdownBlock.Heading("示例", 1),
             MarkdownBlock.Paragraph("• 粗体\n• 行内代码"),
-            MarkdownBlock.Code("kotlin", "fun hello() =")
+            MarkdownBlock.Code("kotlin", "fun hello() =", closed = false)
         ), markdownBlocks(text))
     }
 
@@ -26,7 +26,7 @@ class MessageFormattingTest {
     @Test fun streamingCodePreservesTheLanguageAndUnfinishedBody() {
         val body = "\tval a = 1  \n  val b = "
         val text = "```\tKotlIN title=Sample.kt\n$body"
-        assertEquals(listOf(MarkdownBlock.Code("KotlIN", body)), markdownBlocks(text))
+        assertEquals(listOf(MarkdownBlock.Code("KotlIN", body, closed = false)), markdownBlocks(text))
     }
 
     @Test fun fourBackticksCanEncloseAMarkdownCodeExample() {
@@ -48,7 +48,7 @@ class MessageFormattingTest {
     @Test fun indentedTildeFencePreservesTheBodyAsStreamingCompletes() {
         val partial = "  ~~~Js title=example\n\tconst value = 1;  \n  ```\n ~"
         val block = MarkdownBlock.Code("Js", "  const value = 1;  \n```\n~")
-        assertEquals(listOf(block), markdownBlocks(partial))
+        assertEquals(listOf(block.copy(closed = false)), markdownBlocks(partial))
         assertEquals(listOf(block, MarkdownBlock.Paragraph("After")),
             markdownBlocks("$partial\n ~~~~\t\nAfter"))
     }

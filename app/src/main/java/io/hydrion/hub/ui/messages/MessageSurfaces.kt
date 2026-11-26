@@ -173,7 +173,8 @@ internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content:
 }
 
 @Composable
-internal fun AssistantBody(text: String, query: String, mode: Mode) {
+internal fun AssistantBody(text: String, query: String, mode: Mode,
+    fragments: Map<Int, RichFragment> = emptyMap(), images: Map<Int, RichImage> = emptyMap()) {
     val style = LocalMessageStyle.current
     val colors = style.renderPalette.assistant
     val chat = mode == Mode.Chat
@@ -183,11 +184,11 @@ internal fun AssistantBody(text: String, query: String, mode: Mode) {
         val shape = RoundedCornerShape(if (chat) 16.dp else 19.dp)
         MessageCard(colors, Modifier.testTag("message-assistant-body"), shape = shape) {
             Box(Modifier.padding(horizontal = if (chat) 12.dp else 14.dp, vertical = if (chat) 12.dp else 10.dp)) {
-                MarkdownBody(text, query, if (chat) Modifier else Modifier.fillMaxWidth(), body, chat)
+                MarkdownBody(text, query, if (chat) Modifier else Modifier.fillMaxWidth(), body, chat, fragments, images)
             }
         }
     } else CompositionLocalProvider(LocalContentColor provides colors.text.messageColor()) {
-        Box(Modifier.testTag("message-assistant-body")) { MarkdownBody(text, query, Modifier.fillMaxWidth(), body, chat) }
+        Box(Modifier.testTag("message-assistant-body")) { MarkdownBody(text, query, Modifier.fillMaxWidth(), body, chat, fragments, images) }
     }
 }
 
