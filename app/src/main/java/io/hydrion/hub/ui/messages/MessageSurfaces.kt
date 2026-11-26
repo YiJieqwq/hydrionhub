@@ -110,7 +110,7 @@ internal fun MessageCard(
     }
 }
 
-internal enum class ChatSurface { UserBubble, ThoughtAndTools, Translation }
+internal enum class ChatSurface { UserBubble, ThoughtAndTools, ToolPanel, Translation }
 
 private val chatTintedShape = RoundedCornerShape(16.dp)
 private val darkThoughtToolFill = defaultMessagePalette(MessageTone.Dark).assistant.background.messageColor()
@@ -140,7 +140,7 @@ internal fun ToolPanelCard(modifier: Modifier, content: @Composable () -> Unit) 
     val scheme = timelineScheme(tone)
     MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
         val backing = if (tone == MessageTone.Light) modifier.clip(chatTintedShape).background(scheme.background) else modifier
-        ChatTintedSurface(ChatSurface.ThoughtAndTools, backing, content)
+        ChatTintedSurface(ChatSurface.ToolPanel, backing, content)
     }
 }
 
@@ -148,7 +148,7 @@ internal fun ToolPanelCard(modifier: Modifier, content: @Composable () -> Unit) 
 internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content: @Composable () -> Unit) {
     val style = LocalMessageStyle.current
     val user = target == ChatSurface.UserBubble
-    val thoughtOrTools = target == ChatSurface.ThoughtAndTools
+    val thoughtOrTools = target == ChatSurface.ThoughtAndTools || target == ChatSurface.ToolPanel
     val dark = style.tone == MessageTone.Dark
     val fixedDarkCard = thoughtOrTools && dark
     val palette = if (user) style.renderPalette.user else style.renderPalette.assistant
@@ -160,11 +160,14 @@ internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content:
         return
     }
     val scheme = MaterialTheme.colorScheme
-    val fill = if (fixedDarkCard) darkThoughtToolFill
+    val fill = if (dark && target == ChatSurface.ThoughtAndTools) Color(0xFF262B2E)
+        else if (fixedDarkCard) darkThoughtToolFill
         else if (user) uneditedUserFill(scheme, dark)
         else scheme.primaryContainer.copy(alpha = if (dark) .25f else .30f)
     Box(modifier.clip(shape).background(fill)) {
-        CompositionLocalProvider(LocalContentColor provides (if (fixedDarkCard) Color.White else scheme.onSurface), content = content)
+        val ink = if (dark && target == ChatSurface.ThoughtAndTools) Color(0xFFB5CAD7)
+            else if (fixedDarkCard) Color.White else scheme.onSurface
+        CompositionLocalProvider(LocalContentColor provides ink, content = content)
     }
 }
 

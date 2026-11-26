@@ -11,18 +11,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.hydrion.hub.R
 import io.hydrion.hub.model.*
 import org.json.JSONArray
 import org.json.JSONObject
 
 @Composable
-internal fun AskUserCard(chatId: String, replyId: String, call: ReplyToolCall, inbox: AskUserInbox) {
-    val pending by inbox.pending.collectAsStateWithLifecycle()
-    val form = pending.values.find {
-        it.ticket.turn.chatId == chatId && it.ticket.turn.replyId == replyId && it.ticket.slot == call.slot
-    }
+internal fun AskUserCard(call: ReplyToolCall, form: PendingAsk?, inbox: AskUserInbox) {
     if (form == null) {
         if (call.state == ToolCallState.Completed && call.result != null) AnswerSummary(call)
         return

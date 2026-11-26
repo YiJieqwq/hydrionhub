@@ -14,6 +14,7 @@ import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.foundation.IndicationNodeFactory
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
@@ -28,9 +29,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role as UiRole
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -45,6 +48,8 @@ import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -147,10 +152,12 @@ private fun UsageCountRow(@DrawableRes icon: Int, label: Int, tokens: Long?) {
 @Composable
 private fun UsageDurationRow(@DrawableRes icon: Int, label: Int, millis: Long?) {
     if (millis == null) return
-    val value = if (millis < 1000L) stringResource(R.string.turn_millis, millis)
-        else stringResource(R.string.turn_seconds, BigDecimal.valueOf(millis, 3))
-    UsageRow(icon, label, value)
+    UsageRow(icon, label, localizedDuration(millis))
 }
+
+@Composable
+private fun localizedDuration(millis: Long) = if (millis < 1000L) stringResource(R.string.turn_millis, millis)
+    else stringResource(R.string.turn_seconds, BigDecimal.valueOf(millis, 3))
 
 private class UsagePosition(val gap: Int) : PopupPositionProvider {
     override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection,
@@ -177,7 +184,7 @@ private fun UsageRow(@DrawableRes icon: Int, label: Int, value: String) {
 }
 
 @Composable
-internal fun ReplyTimeline(msg: Message, query: String, answerCard: @Composable (ReplyToolCall) -> Unit = {}) {
+internal fun ReplyTimeline(msg: Message, query: String, chatId: String? = null, inbox: AskUserInbox? = null) {
     var selected by rememberSaveable(msg.id) { mutableStateOf<Int?>(null) }
     var expansions by rememberSaveable(msg.id, query) { mutableStateOf(mapOf<Int, Boolean>()) }
     val calls = remember(msg.toolCalls) {
@@ -185,6 +192,13 @@ internal fun ReplyTimeline(msg: Message, query: String, answerCard: @Composable 
         msg.toolCalls.withIndex().associate { (i, call) -> (call.slot ?: -1 - i) to call }
     }
     val blocks = remember(msg.replySteps, msg.text, msg.thought, calls, msg.status.isActive) { msg.replyBlocks(calls) }
+    val forms = if (inbox != null && msg.status.isActive && calls.values.any { it.name == ASK_USER }) {
+        val pending by inbox.pending.collectAsStateWithLifecycle()
+        remember(pending, chatId, msg.id) {
+            pending.values.filter { it.ticket.turn.chatId == chatId && it.ticket.turn.replyId == msg.id }
+                .associateBy { it.ticket.slot }
+        }
+    } else emptyMap()
     val liveThought = if (msg.remoteModel != null && msg.status.isActive)
         (blocks.lastOrNull() as? ReplyBlock.Chain)?.steps?.lastOrNull() as? ReplyStep.Thought else null
     msg.tool?.let { name ->
@@ -197,12 +211,14 @@ internal fun ReplyTimeline(msg: Message, query: String, answerCard: @Composable 
     }
     for (block in blocks) when (block) {
         is ReplyBlock.Body -> AssistantBody(block.text, query, Mode.Chat)
-        is ReplyBlock.Chain -> key(block.steps.first().slot, block.steps.first() is ReplyStep.Thought) {
-            ReplyToolChain(block, calls, query, answerCard, openRecord = { selected = it }) { step, index ->
+        is ReplyBlock.Chain -> key(msg.id, block.steps.first().slot, block.steps.first() is ReplyStep.Thought) {
+            ReplyToolChain(block, calls, query, msg.thought, forms.keys, answerCard = { call ->
+                if (inbox != null) AskUserCard(call, forms[call.slot], inbox)
+            }, openRecord = { selected = it }) { step, index, count ->
                 val detail = remember(msg.thought, step.start, step.end) { msg.thought.substring(step.start, step.end) }
                 val open = expansions[step.slot] ?: (step == liveThought || (query.isNotEmpty() && detail.contains(query, ignoreCase = true)))
-                TimelineStep(R.drawable.thinking_idea, stringResource(R.string.turn_thinking), query, index, block.steps.size,
-                    detail = detail, open = open, toggle = { expansions = expansions + (step.slot to !open) })
+                TimelineStep(R.drawable.thinking_idea, stringResource(R.string.turn_thinking), query, index, count,
+                    observedMs = step.observedMs, detail = detail, open = open, toggle = { expansions = expansions + (step.slot to !open) })
             }
         }
     }
@@ -229,33 +245,78 @@ private fun toolStatus(state: ToolCallState): Int = when (state) {
 }
 
 @Composable
-private fun ReplyToolChain(block: ReplyBlock.Chain, calls: Map<Int, ReplyToolCall>, query: String,
+private fun ReplyToolChain(block: ReplyBlock.Chain, calls: Map<Int, ReplyToolCall>, query: String, thought: String, pendingSlots: Set<Int>,
     answerCard: @Composable (ReplyToolCall) -> Unit, openRecord: (Int) -> Unit,
-    thoughtRow: @Composable (ReplyStep.Thought, Int) -> Unit) {
+    thoughtRow: @Composable (ReplyStep.Thought, Int, Int) -> Unit) {
     val hasThought = block.steps.any { it is ReplyStep.Thought }
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val hidden = remember(block.steps, pendingSlots, calls, query, thought) {
+        val tail = (block.steps.size - 2).coerceAtLeast(0)
+        if (pendingSlots.isEmpty() && query.isBlank()) return@remember tail
+        // Keep the first actionable form or highlighted search hit and everything following it.
+        (0 until tail).firstOrNull { i ->
+            when (val step = block.steps[i]) {
+                is ReplyStep.Tool -> step.slot in pendingSlots ||
+                    (query.isNotBlank() && calls[step.slot]?.name?.contains(query, ignoreCase = true) == true)
+                is ReplyStep.Thought -> query.isNotBlank() && thought.substring(step.start, step.end).contains(query, ignoreCase = true)
+            }
+        } ?: tail
+    }
+    val start = if (expanded) 0 else hidden
+    val count = block.steps.size - start
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (block.unplaced) Text(stringResource(R.string.turn_tool_position_unknown), fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         ChatTintedSurface(ChatSurface.ThoughtAndTools,
             Modifier.fillMaxWidth().testTag(if (hasThought) "message-thought" else "message-tool-chain")) {
             Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                for ((index, step) in block.steps.withIndex()) key(step.slot, step is ReplyStep.Thought) {
-                    when (step) {
-                        is ReplyStep.Thought -> thoughtRow(step, index)
-                        is ReplyStep.Tool -> {
-                            val call = calls.getValue(step.slot)
-                            val asking = call.name == ASK_USER
-                            val label = if (asking) stringResource(R.string.panel_ask_user)
-                                else call.name.ifBlank { stringResource(R.string.turn_unnamed_tool) }
-                            val icon = remember(call.name, call.arguments) { replyToolIcon(call.name, call.arguments) }
-                            TimelineStep(icon, label, query, index, block.steps.size, status = stringResource(toolStatus(call.state)),
-                                detail = call.result.takeUnless { asking }, open = !asking && call.result != null, toggle = { openRecord(step.slot) })
-                            if (asking) Box(Modifier.stepContinuation(index < block.steps.lastIndex)) { answerCard(call) }
+                if (hidden > 0) ChainFoldControl(expanded, hidden) { expanded = !expanded }
+                for (index in 0 until count) {
+                    val step = block.steps[start + index]
+                    key(step.slot, step is ReplyStep.Thought) {
+                        when (step) {
+                            is ReplyStep.Thought -> thoughtRow(step, index, count)
+                            is ReplyStep.Tool -> RecordedToolStep(calls.getValue(step.slot), step.observedMs, query, index, count,
+                                answerCard = answerCard, openRecord = { openRecord(step.slot) })
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun RecordedToolStep(call: ReplyToolCall, observedMs: Long?, query: String, index: Int, count: Int,
+    answerCard: @Composable (ReplyToolCall) -> Unit, openRecord: () -> Unit) {
+    val asking = call.name == ASK_USER
+    val argument = remember(call.name, call.arguments) { call.titleArgument() }
+    val label = when {
+        asking -> stringResource(R.string.panel_ask_user)
+        argument != null -> stringResource(if (call.name in shellToolNames) R.string.turn_shell_title else R.string.turn_search_title, argument)
+        else -> call.name.ifBlank { stringResource(R.string.turn_unnamed_tool) }
+    }
+    val icon = remember(call.name, call.arguments) { replyToolIcon(call.name, call.arguments) }
+    val shell = remember(call.name, call.result) { call.shellPreview() }
+    TimelineStep(icon, label, query, index, count, status = stringResource(toolStatus(call.state)), observedMs = observedMs,
+        showStatusWithTime = call.state != ToolCallState.Completed, detail = call.result.takeUnless { asking }, shell = shell,
+        open = !asking && call.result != null, toggle = openRecord)
+    if (asking) Box(Modifier.stepContinuation(index + 1 < count)) { answerCard(call) }
+}
+
+@Composable
+private fun ChainFoldControl(expanded: Boolean, hidden: Int, toggle: () -> Unit) {
+    val ink = if (LocalMessageStyle.current.tone == MessageTone.Dark) Color(0xFF91D0EE) else MaterialTheme.colorScheme.primary
+    val state = stringResource(if (expanded) R.string.turn_expanded else R.string.turn_collapsed)
+    val label = if (expanded) stringResource(R.string.turn_collapse_steps)
+        else pluralStringResource(R.plurals.turn_show_steps, hidden, hidden)
+    Row(Modifier.fillMaxWidth().clickable(interactionSource = null, indication = StepIndication, role = UiRole.Button, onClick = toggle)
+        .semantics { stateDescription = state }.heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.width(24.dp), contentAlignment = Alignment.Center) {
+            Icon(painterResource(if (expanded) R.drawable.lucide_chevron_up else R.drawable.lucide_chevron_down),
+                null, Modifier.size(16.dp), tint = ink)
+        }
+        Text(label, Modifier.padding(start = 8.dp), color = ink, fontSize = 13.sp, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -294,15 +355,22 @@ private fun ExpandingCardBody(visible: Boolean, content: @Composable () -> Unit)
 
 @Composable
 private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, index: Int, count: Int,
-    status: String? = null, detail: String? = null, open: Boolean = false, toggle: (() -> Unit)? = null) {
+    status: String? = null, observedMs: Long? = null, showStatusWithTime: Boolean = false, detail: String? = null, shell: ShellPreview? = null,
+    open: Boolean = false, toggle: (() -> Unit)? = null) {
     val ink = LocalContentColor.current
     val dark = LocalMessageStyle.current.tone == MessageTone.Dark
     val line = ink.copy(alpha = .16f)
     val state = stringResource(if (open) R.string.turn_expanded else R.string.turn_collapsed)
+    val duration = observedMs?.let { localizedDuration(it) }
+    val rowState = when {
+        status == null -> state
+        duration != null -> stringResource(R.string.turn_step_duration, status, duration)
+        else -> null
+    }
     val interaction = if (toggle == null) Modifier else Modifier.clickable(
         interactionSource = null, indication = StepIndication, role = UiRole.Button,
         onClickLabel = if (status != null) stringResource(R.string.turn_tool_details) else null, onClick = toggle
-    ).then(if (status == null) Modifier.semantics { stateDescription = state } else Modifier)
+    ).then(if (rowState != null) Modifier.semantics { stateDescription = rowState } else Modifier)
     Row(Modifier.fillMaxWidth().drawBehind {
         val x = 12.dp.toPx()
         val middle = size.height / 2
@@ -316,7 +384,13 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
         Spacer(Modifier.width(8.dp))
         Text(highlighted(label, query), Modifier.weight(1f), fontWeight = FontWeight.Medium, fontSize = 13.sp,
             lineHeight = 1.43.em, letterSpacing = 0.sp, color = ink, overflow = TextOverflow.Ellipsis, maxLines = 2)
-        if (status != null) Text(status, Modifier.padding(start = 8.dp), fontSize = 11.sp, lineHeight = 14.sp,
+        if (duration != null) {
+            Column(Modifier.padding(start = 8.dp), horizontalAlignment = Alignment.End) {
+                if (showStatusWithTime && status != null) Text(status, fontSize = 11.sp, lineHeight = 14.sp, color = ink)
+                Text(duration, softWrap = false,
+                    fontSize = 11.sp, lineHeight = 14.sp, letterSpacing = 0.sp, color = ink)
+            }
+        } else if (status != null) Text(status, Modifier.padding(start = 8.dp), fontSize = 11.sp, lineHeight = 14.sp,
             letterSpacing = 0.sp, color = if (dark) ink else ink.copy(alpha = .65f))
         if (toggle != null) Icon(painterResource(if (status != null) R.drawable.lucide_chevron_right
             else if (open) R.drawable.lucide_chevron_up else R.drawable.lucide_chevron_down),
@@ -325,15 +399,29 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
     ExpandingCardBody(open && detail != null) {
         if (detail == null) return@ExpandingCardBody
         Box(Modifier.fillMaxWidth().stepContinuation(index + 1 < count).padding(start = 32.dp, top = 4.dp, bottom = 8.dp)) {
-            val bodyInk = if (dark) ink else ink.copy(alpha = .8f)
+            val bodyInk = if (dark) Color(0xFFDCE2E5) else ink.copy(alpha = .8f)
+            val previewAction = Modifier.fillMaxWidth().clickable(interactionSource = null, indication = StepIndication,
+                role = UiRole.Button, onClickLabel = stringResource(R.string.turn_tool_details), onClick = { toggle?.invoke() })
             if (status == null) SelectionContainer {
                 Text(highlighted(detail, query), Modifier.fillMaxWidth(), fontSize = 12.5.sp,
                     lineHeight = 16.5.sp, letterSpacing = 0.sp, color = bodyInk)
+            } else if (shell != null) {
+                Column(previewAction, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    shell.exitCode?.let { code ->
+                        val tint = if (code != 0) MaterialTheme.colorScheme.error else if (dark) Color(0xFF73C878) else Color(0xFF23652D)
+                        Text(stringResource(R.string.turn_shell_exit, code), fontSize = 12.sp, lineHeight = 16.sp, color = tint)
+                    }
+                    shell.stdout?.let { stdout ->
+                        val desc = stringResource(R.string.turn_shell_stdout)
+                        Text(highlighted(stdout, query), Modifier.fillMaxWidth().background(Color(0xFF1B2023), RoundedCornerShape(8.dp))
+                            .semantics { stateDescription = desc }.padding(horizontal = 8.dp, vertical = 6.dp),
+                            fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp, letterSpacing = 0.sp,
+                            color = Color(0xFFDCE2E5), maxLines = 8, overflow = TextOverflow.Ellipsis)
+                    }
+                }
             } else {
-                Text(highlighted(detail, query), Modifier.fillMaxWidth().clickable(interactionSource = null,
-                    indication = StepIndication, role = UiRole.Button, onClickLabel = stringResource(R.string.turn_tool_details),
-                    onClick = { toggle?.invoke() }), fontSize = 12.sp, lineHeight = 16.8.sp, letterSpacing = 0.sp,
-                    color = bodyInk, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                Text(highlighted(detail, query), previewAction, fontSize = 12.sp, lineHeight = 16.8.sp, letterSpacing = 0.sp,
+                    color = if (dark) Color(0xFFBFE5F6) else bodyInk, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
         }
     }

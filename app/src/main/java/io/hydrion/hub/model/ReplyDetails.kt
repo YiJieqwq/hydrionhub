@@ -21,8 +21,11 @@ data class ReplyTranslation(val language: String, val text: String)
  * Tool slots point at the existing record so later status/results never create another step. */
 sealed interface ReplyStep {
     val slot: Int
-    data class Thought(override val slot: Int, val bodyOffset: Int, val start: Int, val end: Int) : ReplyStep
-    data class Tool(override val slot: Int) : ReplyStep
+    /** Client-observed interval between two lifecycle events for this specific item. */
+    val observedMs: Long?
+    data class Thought(override val slot: Int, val bodyOffset: Int, val start: Int, val end: Int,
+        override val observedMs: Long? = null) : ReplyStep
+    data class Tool(override val slot: Int, override val observedMs: Long? = null) : ReplyStep
 }
 
 internal class ReplyObservation(private val clockMs: () -> Long) {

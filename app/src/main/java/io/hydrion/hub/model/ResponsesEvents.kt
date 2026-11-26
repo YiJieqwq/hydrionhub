@@ -32,10 +32,11 @@ internal data class ResponsesUpdate(val snapshot: Message? = null, val failure: 
 }
 
 /** Each collected turn owns its own reducer, regardless of the framing transport. */
-internal class ResponsesEventAccumulator(request: Message, privacy: ToolRecordText = ToolRecordText(), private val questions: AskWireRound? = null) {
+internal class ResponsesEventAccumulator(request: Message, privacy: ToolRecordText = ToolRecordText(),
+    private val questions: AskWireRound? = null, clockMs: () -> Long = { System.nanoTime() / 1_000_000L }) {
     var message = request.copy(status = Generation.Generating, tool = null, totalTokens = null, usage = null)
         private set
-    private val parts = ResponseParts(privacy)
+    private val parts = ResponseParts(privacy, clockMs)
 
     fun accept(data: String, eventName: String): ResponsesUpdate {
         try {
@@ -118,13 +119,36 @@ private fun JSONObject.tokenUsage(): TokenUsage? {
 }
 
 /** Full .done parts and output snapshots replace deltas at the same indices. */
-private class ResponseParts(private val privacy: ToolRecordText) {
+private class ResponseParts(private val privacy: ToolRecordText, private val clockMs: () -> Long) {
     private class Item {
         var tool: ReplyToolCall? = null
         var fragments: ToolArgumentFragments? = null
         val answer = sortedMapOf<Int, StringBuilder>()
         val reasoning = sortedMapOf<Int, StringBuilder>()
         val summary = sortedMapOf<Int, StringBuilder>()
+        private var startedMs: Long? = null
+        private var ended = false
+        var observedMs: Long? = null
+            private set
+
+        // A completion-only snapshot, repeated start or replayed final must never manufacture a duration.
+        fun observe(running: Boolean, clock: () -> Long) {
+            if (ended) return
+            if (running) {
+                if (startedMs == null) startedMs = clock()
+            } else {
+                ended = true
+                observedMs = startedMs?.let { (clock() - it).takeIf { elapsed -> elapsed >= 0 } }
+            }
+        }
+
+        fun observeTool(state: ToolCallState?, clock: () -> Long) {
+            when (state) {
+                ToolCallState.Running -> observe(true, clock)
+                ToolCallState.Completed, ToolCallState.Failed, ToolCallState.Incomplete -> observe(false, clock)
+                else -> Unit
+            }
+        }
 
         fun thought(): String {
             val publicSummary = summary.values.filter { it.isNotEmpty() }.joinToString("\n\n")
@@ -151,10 +175,10 @@ private class ResponseParts(private val privacy: ToolRecordText) {
                 if (thought.isNotEmpty()) thought.append("\n\n")
                 val start = thought.length
                 thought.append(detail)
-                steps += ReplyStep.Thought(index, body.length, start, thought.length)
+                steps += ReplyStep.Thought(index, body.length, start, thought.length, item.observedMs)
             }
             item.tool?.let {
-                steps += ReplyStep.Tool(index)
+                steps += ReplyStep.Tool(index, item.observedMs)
                 calls += it.copy(bodyOffset = body.length)
             }
             for (part in item.answer.values) body.append(part)
@@ -166,6 +190,7 @@ private class ResponseParts(private val privacy: ToolRecordText) {
         if (type !in partEvents && (type.removePrefix("response.").substringBefore('.') !in hostedToolTypes ||
                 toolState(type.substringAfterLast('.')) == null)) return false
         val itemId = event.opt("item_id") as? String ?: event.optJSONObject("item")?.opt("id") as? String
+        val identified = event.has("output_index") || !itemId.isNullOrBlank()
         val index = if (event.has("output_index")) event.getInt("output_index") else indicesById[itemId]
             ?: if (itemId == null || items.isEmpty()) 0 else (items.lastKey() + 1)
         if (index < 0) throw JSONException("output_index")
@@ -198,11 +223,13 @@ private class ResponseParts(private val privacy: ToolRecordText) {
                 }
             }
             "response.content_part.added", "response.content_part.done" -> item.content(part, event.getJSONObject("part"))
-            "response.output_item.added", "response.output_item.done" -> output(index, event.getJSONObject("item"), final = type.endsWith(".done"))
+            "response.output_item.added", "response.output_item.done" ->
+                output(index, event.getJSONObject("item"), final = type.endsWith(".done"), identified = identified)
             else -> {
                 val kind = type.removePrefix("response.").substringBefore('.')
                 if (kind !in hostedToolTypes) return false
                 val state = toolState(type.substringAfterLast('.')) ?: return false
+                if (identified) item.observeTool(state, clockMs)
                 item.tool = (item.tool ?: ReplyToolCall(kind, state, slot = index)).copy(state = state)
             }
         }
@@ -218,10 +245,15 @@ private class ResponseParts(private val privacy: ToolRecordText) {
         }
     }
 
-    private fun output(index: Int, json: JSONObject, preservePartial: Boolean = false, final: Boolean = false) {
+    private fun output(index: Int, json: JSONObject, preservePartial: Boolean = false, final: Boolean = false,
+        identified: Boolean = true) {
         (json.opt("id") as? String)?.let { indicesById[it] = index }
         val item = items.getOrPut(index) { Item() }
         val kind = json.optString("type")
+        if (identified && kind == "reasoning") {
+            val status = toolState(json.optString("status"))
+            item.observe(!final && (status == null || status == ToolCallState.Running), clockMs)
+        }
         val callId = (json.opt("call_id") as? String)?.takeIf(String::isNotBlank)
         if (kind == "function_call_output" || kind == "custom_tool_call_output") {
             if (callId == null) return
@@ -236,7 +268,9 @@ private class ResponseParts(private val privacy: ToolRecordText) {
             val previous = item.tool ?: ReplyToolCall(kind, ToolCallState.Requested, slot = index)
             val name = (json.opt("name") as? String)?.let(privacy::name) ?: previous.name
             // An assembled client request alone is never evidence of execution.
-            val state = if (kind in clientToolTypes) previous.state else toolState(json.optString("status")) ?: previous.state
+            val recordedState = toolState(json.optString("status")).takeIf { kind in hostedToolTypes }
+            if (identified && (!final || recordedState != ToolCallState.Running)) item.observeTool(recordedState, clockMs)
+            val state = recordedState ?: previous.state
             val args = when (kind) {
                 "web_search_call" -> json.optJSONObject("action")?.let { action ->
                     val params = JSONObject()

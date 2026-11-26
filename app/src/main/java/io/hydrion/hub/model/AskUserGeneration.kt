@@ -38,9 +38,9 @@ internal fun questionRounds(protocol: ChatProtocol, initial: LocalModelRequest, 
                     call.copy(slot = firstSlot + (call.slot ?: i), bodyOffset = call.bodyOffset?.plus(base.text.length))
                 }, replySteps = base.replySteps + part.replySteps.map { step ->
                     when (step) {
-                        is ReplyStep.Tool -> ReplyStep.Tool(firstSlot + step.slot)
-                        is ReplyStep.Thought -> ReplyStep.Thought(firstThought + step.slot, base.text.length + step.bodyOffset,
-                            base.thought.length + step.start, base.thought.length + step.end)
+                        is ReplyStep.Tool -> step.copy(slot = firstSlot + step.slot)
+                        is ReplyStep.Thought -> step.copy(slot = firstThought + step.slot, bodyOffset = base.text.length + step.bodyOffset,
+                            start = base.thought.length + step.start, end = base.thought.length + step.end)
                     }
                 })
             if (snapshot.status == Generation.Completed) terminal = snapshot else emit(snapshot)

@@ -2,17 +2,13 @@ package io.hydrion.hub.ui.messages
 
 import androidx.annotation.DrawableRes
 import io.hydrion.hub.R
-import io.hydrion.hub.json.JsonSyntax
 import io.hydrion.hub.model.ASK_USER
 import io.hydrion.hub.model.CUSTOM_IMAGE_TOOL
-import io.hydrion.hub.model.ToolRecordText
-import org.json.JSONException
-import org.json.JSONObject
 
 /** Presentation of recorded names. Older local replies store the selected tool's display label. */
 @DrawableRes
 internal fun replyToolIcon(name: String, arguments: String? = null): Int = when (name) {
-    "shell", "local_shell_call", "bash_code_execution" -> R.drawable.lucide_terminal
+    in shellToolNames -> R.drawable.lucide_terminal
     "code_interpreter_call", "code_interpreter", "code_execution", "text_editor_code_execution" -> R.drawable.lucide_code
     "computer_call" -> R.drawable.lucide_monitor
 
@@ -52,15 +48,12 @@ internal fun replyToolIcon(name: String, arguments: String? = null): Int = when 
     else -> R.drawable.lucide_wrench
 }
 
+internal val shellToolNames = setOf("shell", "local_shell_call", "bash_code_execution", "workspace_shell")
+
 @DrawableRes
 private fun clipboardIcon(arguments: String?): Int {
-    if (arguments == null || arguments.length > ToolRecordText.limit) return R.drawable.lucide_clipboard
     // A saved record may be truncated. Only a complete top-level action distinguishes read and write.
-    val action = try {
-        JsonSyntax(arguments) { throw JSONException("Invalid clipboard arguments") }.check()
-        JSONObject(arguments).opt("action")
-    } catch (_: JSONException) { null }
-    return when (action) {
+    return when (recordedObject(arguments)?.opt("action")) {
         "read" -> R.drawable.lucide_clipboard_check
         "write" -> R.drawable.lucide_clipboard_pen
         else -> R.drawable.lucide_clipboard

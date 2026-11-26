@@ -187,8 +187,8 @@ class ReplyBubbleInteractionTest {
         val style = MessageStyle(tone = tone, light = MessagePalette(custom, defaultMessagePalette(MessageTone.Light).user),
             dark = MessagePalette(custom, defaultMessagePalette(MessageTone.Dark).user), assistantBubble = true)
         val dark = tone == MessageTone.Dark
-        val fill = parseColor(if (dark) "#242628" else custom.background)
-        val ink = parseColor(if (dark) "#FFFFFF" else custom.text)
+        val fill = parseColor(if (dark) "#262B2E" else custom.background)
+        val ink = parseColor(if (dark) "#B5CAD7" else custom.text)
         val thought = label(R.string.turn_thinking)
         val tool = "file_search"
         val position = screen.activity.getString(R.string.turn_tool_position, body.length)
@@ -217,8 +217,9 @@ class ReplyBubbleInteractionTest {
         screen.onNodeWithText(position).assertIsDisplayed()
         screen.onNodeWithContentDescription(label(R.string.turn_close_details)).performClick()
         checkCards()
-        val detailInk = if (dark) ink else Color(ink).copy(alpha = .8f).toArgb()
         for ((tag, text) in listOf("message-thought" to reply.thought, "message-tool-chain" to "One public match.")) {
+            val detailInk = if (!dark) Color(ink).copy(alpha = .8f).toArgb()
+                else parseColor(if (tag == "message-thought") "#DCE2E5" else "#BFE5F6")
             assertEquals(detailInk, textInk(text))
             val card = screen.onNodeWithTag(tag).fetchSemanticsNode().boundsInWindow
             val detail = screen.onNodeWithText(text, useUnmergedTree = true).fetchSemanticsNode().boundsInWindow
@@ -230,8 +231,8 @@ class ReplyBubbleInteractionTest {
             for (material in CardMaterial.entries) {
                 setStyle(style.copy(material = material))
                 checkCards()
-                assertEquals(ink, textInk(reply.thought))
-                assertEquals(ink, textInk("One public match."))
+                assertEquals(parseColor("#DCE2E5"), textInk(reply.thought))
+                assertEquals(parseColor("#BFE5F6"), textInk("One public match."))
             }
         }
         screen.onNodeWithText(thought).performClick()
@@ -261,11 +262,11 @@ class ReplyBubbleInteractionTest {
         val tag = "message-thought"
         val thinking = label(R.string.turn_thinking)
         screen.onNodeWithTag(tag).performScrollTo()
-        assertFlatCard(tag, parseColor("#242628"))
+        assertFlatCard(tag, parseColor("#262B2E"))
         screen.onNodeWithText(thinking).performClick()
         screen.onNodeWithText("这里展示思考内容。").performScrollTo().assertIsDisplayed()
-        assertFlatCard(tag, parseColor("#242628"))
-        assertEquals(Color.White.toArgb(), textInk("这里展示思考内容。"))
+        assertFlatCard(tag, parseColor("#262B2E"))
+        assertEquals(parseColor("#DCE2E5"), textInk("这里展示思考内容。"))
     }
 
     @Test @Config(qualifiers = "en-rUS-w393dp-h880dp-xhdpi")
@@ -887,6 +888,7 @@ class ReplyBubbleInteractionTest {
         val title = label(R.string.turn_thinking)
         val position = label(R.string.turn_tool_before_body)
         val density = screen.density.density
+        screen.onNodeWithText("Show 1 more step").performClick()
         val original = card.fetchSemanticsNode().boundsInWindow
         assertThoughtFillsReply()
         fun checkBody(headerText: String, bodyText: String, next: String?) {
@@ -900,7 +902,7 @@ class ReplyBubbleInteractionTest {
             assertEquals(8 * density, bottom - body.bottom, 1f)
             val bitmap = snapshot("message-thought")
             val x = (20 * density).roundToInt()
-            val fill = parseColor("#242628")
+            val fill = parseColor("#262B2E")
             for (y in headerBox.bottom.roundToInt() until bottom.roundToInt()) {
                 val row = y - bounds.top.roundToInt()
                 val hasRail = (x - 1..x + 1).any { bitmap.getPixel(it, row) != fill }
@@ -1223,6 +1225,11 @@ class ReplyBubbleInteractionTest {
         session.send("Fixture", emptyMap(), null, null, remoteModel = RemoteModel("fixture", "chat"))
         val saved = session.state.first { !it.isGenerating }.current
         val vm = open(initial = saved)
+        fun expandChain() {
+            val button = screen.onAllNodesWithText("Show 2 more steps")
+            if (button.fetchSemanticsNodes().isNotEmpty()) button[0].performClick()
+        }
+        expandChain()
         val thoughts = screen.onAllNodes(hasText(label(R.string.turn_thinking)) and hasClickAction())
         thoughts.assertCountEquals(2)
         thoughts[1].performClick()
@@ -1236,6 +1243,7 @@ class ReplyBubbleInteractionTest {
             screen.runOnIdle { vm.openConversation(recorded.id) }
             screen.onNodeWithText("Answer").assertIsDisplayed()
             screen.runOnIdle { vm.openConversation(saved.id) }
+            expandChain()
             steps[i].performClick()
             val expected = if (i == 0) first else second
             for (text in listOf(name, inputs[i].toString(2), expected,

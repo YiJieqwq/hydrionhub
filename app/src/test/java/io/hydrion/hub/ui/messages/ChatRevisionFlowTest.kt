@@ -8,6 +8,10 @@ import android.graphics.Color
 import android.os.Looper
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.core.view.drawToBitmap
@@ -125,6 +129,8 @@ class ChatRevisionFlowTest {
 
     @Test fun sentReplyKeepsAdjacentFunctionsTogetherAsFramesArriveAndBodySeparatesTheNextGroup() {
         val appendCalls = CompletableDeferred<Unit>()
+        val secondCall = CompletableDeferred<Unit>()
+        val nextThought = CompletableDeferred<Unit>()
         val finish = CompletableDeferred<Unit>()
         open(ChatProtocol.ResponsesHttp) { pending -> flow {
             val fixture = if (pending.prompt == "Check inventory") "continuous-functions" else "deepseek-reasoning-text"
@@ -132,6 +138,8 @@ class ChatRevisionFlowTest {
             readResponsesEvents(wire.reader().buffered(), pending) { part ->
                 emit(part)
                 if (part.thought == "Check the lamp." && part.toolCalls.isEmpty()) appendCalls.await()
+                if (part.toolCalls.size == 1) secondCall.await()
+                if (part.toolCalls.size == 2 && part.thought == "Check the lamp.") nextThought.await()
                 if (part.thought.endsWith("Compare both.") && part.text.isEmpty()) finish.await()
             }
         } }
@@ -145,12 +153,28 @@ class ChatRevisionFlowTest {
         // Compose collections retain the IDs from their first fetch. Query each live frame afresh.
         fun cards() = screen.onAllNodes(turn and card)
         cards().assertCountEquals(1)
+        screen.onNodeWithText("Show 1 more step").assertDoesNotExist()
         val single = cards()[0].getUnclippedBoundsInRoot()
         thoughts[0].performScrollTo().performClick()
         screen.onNodeWithText("Check the lamp.").assertDoesNotExist()
         screen.runOnIdle { appendCalls.complete(Unit) }
+        awaitHost { vm.state.value.current.messages.last().toolCalls.size == 1 }
+        screen.onNode(turn and hasText("ping_a")).assertExists()
+        screen.onNodeWithText("Show 1 more step").assertDoesNotExist()
+        screen.runOnIdle { secondCall.complete(Unit) }
+        awaitHost { vm.state.value.current.messages.last().toolCalls.size == 2 }
+        screen.onNode(turn and hasText(title)).assertDoesNotExist()
+        screen.onNode(turn and hasText("ping_a")).assertExists()
+        screen.onNode(turn and hasText("ping_b")).assertExists()
+        screen.onNodeWithText("Show 1 more step").performScrollTo().performClick()
+        screen.runOnIdle { nextThought.complete(Unit) }
         awaitHost { vm.state.value.current.messages.last().thought.endsWith("Compare both.") }
         cards().assertCountEquals(1)
+        screen.onNodeWithText("Collapse").performScrollTo().performClick()
+        screen.onNode(turn and hasText("ping_a")).assertDoesNotExist()
+        screen.onNode(turn and hasText("ping_b")).assertExists()
+        screen.onAllNodes(turn and hasText(title) and hasClickAction()).assertCountEquals(1)
+        screen.onNodeWithText("Show 2 more steps").performScrollTo().performClick()
         val rows = screen.onAllNodes(turn and hasAnyAncestor(card) and hasClickAction() and
             (hasText(title) or hasText("ping_a") or hasText("ping_b")))
         rows.assertCountEquals(4)
@@ -206,6 +230,65 @@ class ChatRevisionFlowTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w393dp-h842dp-night-xhdpi")
+    fun sentShellStepsReserveTimeAndShowOnlyRecordedExitAndOutput() {
+        open(ChatProtocol.ResponsesHttp) { pending -> flow { playPaletteSteps(pending) { emit(it) } } }
+        send("Check the monthly swatches")
+        awaitHost { !vm.state.value.isGenerating && vm.state.value.current.messages.last().text == "The six monthly swatches are ready." }
+        val reply = vm.state.value.current.messages.last()
+        val scope = hasAnyAncestor(hasTestTag("message-turn-" + reply.id))
+        fun text(label: String) = screen.onNode(scope and hasText(label), useUnmergedTree = true)
+        fun layout(node: SemanticsNodeInteraction): TextLayoutResult {
+            val results = mutableListOf<TextLayoutResult>()
+            node.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(results) }
+            return results.single()
+        }
+        assertEquals(listOf(250L, null, 750L, 1250L), reply.replySteps.map { it.observedMs })
+        val stored = encodeWorkspace(SavedWorkspace(listOf(vm.state.value.current)))
+        val reopened = decodeWorkspace(stored).history.first().messages.last()
+        assertEquals(reply.replySteps, reopened.replySteps)
+        text("exit 2").assertDoesNotExist()
+        text("exit 0").performScrollTo().assertIsDisplayed()
+        val title = screen.onNode(scope and hasText("Shell: printf", substring = true), useUnmergedTree = true)
+        val label = layout(title)
+        assertEquals(2, label.lineCount)
+        assertTrue(label.isLineEllipsized(1))
+        val time = text("1.25 s").getUnclippedBoundsInRoot()
+        assertTrue(title.getUnclippedBoundsInRoot().right <= time.left)
+        val timeLayout = layout(text("1.25 s"))
+        val lastGlyph = timeLayout.getBoundingBox(timeLayout.layoutInput.text.lastIndex)
+        assertEquals(1, timeLayout.lineCount)
+        assertFalse(timeLayout.isLineEllipsized(0))
+        assertTrue("Duration glyph $lastGlyph outside measured " + timeLayout.size,
+            lastGlyph.right <= timeLayout.size.width && lastGlyph.bottom <= timeLayout.size.height)
+        val stdoutField = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Standard output")
+        val out = screen.onNode(scope and stdoutField, useUnmergedTree = true)
+        screen.onNode(scope and hasText("Shell: printf", substring = true) and hasClickAction())
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Completed, observed step duration 1.25 s"))
+        val stdout = "April: mint\nMay: amber\nJune: lilac\nJuly: blue\nAugust: pine\nSeptember: plum"
+        val output = text(stdout)
+        assertEquals(FontFamily.Monospace, layout(output).layoutInput.style.fontFamily)
+        val panel = out.performScrollTo().fetchSemanticsNode().boundsInWindow
+        val window = screen.runOnIdle { screen.activity.window.decorView.drawToBitmap() }
+        assertEquals(Color.rgb(27, 32, 35), window.getPixel(panel.center.x.roundToInt(), panel.top.roundToInt() + 2))
+        screen.onNode(scope and hasText(stdout) and hasClickAction()).performScrollTo().performClick()
+        val sheet = hasAnyAncestor(hasTestTag("turn-action-sheet"))
+        screen.onNode(sheet and hasText("Result")).assertExists()
+        val recorded = requireNotNull(reply.toolCalls.single { it.name == "workspace_shell" }.result)
+        assertEquals(stdout, JSONObject(recorded).getString("stdout"))
+        screen.onNode(sheet and hasText(recorded)).assertExists()
+        screen.onNodeWithContentDescription("Close details").performClick()
+        screen.onNodeWithText("Show 2 more steps").performScrollTo().performClick()
+        text("250 ms").assertExists()
+        text("750 ms").assertExists()
+        text("exit 2").performScrollTo().assertIsDisplayed()
+        assertNotEquals(layout(text("exit 0")).layoutInput.style.color, layout(text("exit 2")).layoutInput.style.color)
+        screen.onAllNodes(scope and stdoutField, useUnmergedTree = true).assertCountEquals(1)
+        screen.onNodeWithText("Collapse").performScrollTo().performClick()
+        text("exit 2").assertDoesNotExist()
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w393dp-h842dp-xhdpi")
     fun sentReplyPaintsTheRecordedToolIconsAndKeepsDetailsClickable() {
         open(ChatProtocol.ResponsesHttp) { pending -> flow {
@@ -214,14 +297,18 @@ class ChatRevisionFlowTest {
         } }
         send("Show recorded tool calls")
         awaitHost { vm.state.value.current.messages.last().text == "已按顺序整理工具记录。" && !vm.state.value.isGenerating }
-        val turn = hasAnyAncestor(hasTestTag("message-turn-" + vm.state.value.current.messages.last().id))
+        val replyId = vm.state.value.current.messages.last().id
+        val turn = hasAnyAncestor(hasTestTag("message-turn-" + replyId))
         fun row(name: String) = screen.onNode(turn and hasText(name) and hasClickAction())
         val expected = mapOf("shell" to R.drawable.lucide_terminal, "search_web" to R.drawable.lucide_earth,
             "web_search_call" to R.drawable.lucide_search, "fetch_url" to R.drawable.lucide_link,
             "read_file" to R.drawable.lucide_file_text, "clipboard_tool" to R.drawable.lucide_clipboard_check,
             "get_time_info" to R.drawable.lucide_clock, "catalog_lookup" to R.drawable.lucide_wrench)
+        screen.onNodeWithText("Show 7 more steps").performScrollTo().performClick()
+        // Align the expanded reply below the floating header before sampling actual window pixels.
+        screen.onNodeWithTag("message-timeline").performScrollToKey(replyId)
         for ((name, icon) in expected) {
-            assertRowIcon(name, row(name).performScrollTo().assertIsDisplayed(), icon)
+            assertRowIcon(name, row(name).assertIsDisplayed(), icon)
         }
         row("shell").performScrollTo().performClick()
         screen.onNode(hasAnyAncestor(hasTestTag("turn-action-sheet")) and hasText("shell")).assertIsDisplayed()
@@ -241,15 +328,19 @@ class ChatRevisionFlowTest {
             draw(Canvas(reference))
         }
         val background = Color.red(window.getPixel(bounds.left.roundToInt(), top))
+        val glyph = IntArray(size * size)
+        window.getPixels(glyph, 0, size, left, top, size, size)
+        val contrast = glyph.maxOf { abs(Color.red(it) - background) }
+        assertTrue("$name glyph contrast $contrast", contrast > 48)
         var intersection = 0
         var union = 0
         for (y in 0 until size) for (x in 0 until size) {
-            val painted = abs(Color.red(window.getPixel(left + x, top + y)) - background) > 80
+            val painted = abs(Color.red(glyph[y * size + x]) - background) * 255 > contrast * 120
             val wanted = Color.alpha(reference.getPixel(x, y)) > 120
             if (painted && wanted) intersection++
             if (painted || wanted) union++
         }
-        assertTrue("$name glyph overlap $intersection/$union", union > 0 && intersection > union * .85)
+        assertTrue("$name glyph overlap $intersection/$union at $bounds, contrast $contrast", union > 0 && intersection > union * .85)
     }
 
     private fun wire(index: Int, array: String, model: String): List<Pair<String, String>> {

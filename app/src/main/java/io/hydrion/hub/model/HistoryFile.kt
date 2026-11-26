@@ -159,7 +159,7 @@ private fun writeMessage(m: Message): JSONObject = JSONObject().put("id", m.id).
             is ReplyStep.Tool -> JSONObject().put("tool", step.slot)
             is ReplyStep.Thought -> JSONObject().put("thought", step.slot).put("bodyOffset", step.bodyOffset)
                 .put("start", step.start).put("end", step.end)
-        }
+        }.put("observedMs", step.observedMs)
     }) })
     .put("translation", m.translation?.let { JSONObject().put("language", it.language).put("text", it.text) })
     .put("continuesAssistant", m.continuesAssistant.takeIf { it })
@@ -206,7 +206,7 @@ private fun Message.withSavedSteps(array: JSONArray?): Message {
         if (step.has("tool")) {
             val slot = step.optInt("tool", -1)
             if (!remainingCalls.remove(slot)) return this
-            steps += ReplyStep.Tool(slot)
+            steps += ReplyStep.Tool(slot, step.count("observedMs"))
         } else {
             val slot = step.optInt("thought", -1)
             val offset = step.optInt("bodyOffset", -1)
@@ -215,7 +215,7 @@ private fun Message.withSavedSteps(array: JSONArray?): Message {
             if (slot < 0 || !thoughts.add(slot) || offset !in 0..text.length ||
                 start < lastEnd || end <= start || end > thought.length ||
                 (lastEnd until start).any { !thought[it].isWhitespace() }) return this
-            steps += ReplyStep.Thought(slot, offset, start, end)
+            steps += ReplyStep.Thought(slot, offset, start, end, step.count("observedMs"))
             lastEnd = end
         }
     }

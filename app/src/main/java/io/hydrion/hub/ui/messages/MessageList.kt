@@ -353,7 +353,7 @@ internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: 
             }
         }
         if (mode == Mode.Chat) {
-            ReplyTimeline(msg, query) { call -> AskUserCard(chat.id, msg.id, call, vm.questions) }
+            ReplyTimeline(msg, query, chat.id, vm.questions)
             ReplyTranslationBody(chat.id, msg, query, vm.translations)
         } else if (msg.text.isNotBlank()) AssistantBody(msg.text, query, mode)
         if (msg.imageKeys.isNotEmpty()) ImageResult(msg, query, vm, busy, showRegenerate = mode == Mode.Image)

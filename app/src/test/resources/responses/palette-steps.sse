@@ -1,0 +1,25 @@
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"plan","status":"in_progress"}}
+
+data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"plan","status":"completed","summary":[{"type":"summary_text","text":"Check the palette entries in order."}]}}
+
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"mcp_call","id":"missing","name":"shell","arguments":"{\"command\":\"read-palette Autumn\"}","output":"{\"exitCode\":2,\"stderr\":\"No autumn swatch in this fixture.\"}","status":"completed"}}
+
+data: {"type":"response.output_item.added","output_index":2,"item":{"type":"web_search_call","id":"swatches","status":"in_progress"}}
+
+data: {"type":"response.output_item.added","output_index":3,"item":{"type":"mcp_call","id":"listing","name":"workspace_shell","arguments":"{\"command\":\"printf '%s\\\\n' 'April: mint' 'May: amber' 'June: lilac' 'July: blue' 'August: pine' 'September: plum'\"}","status":"in_progress"}}
+
+data: {"type":"response.web_search_call.searching","output_index":2,"item_id":"swatches"}
+
+data: {"type":"response.output_item.done","output_index":2,"item":{"type":"web_search_call","id":"swatches","status":"completed","action":{"type":"search","query":"Spring palette swatches"}}}
+
+data: {"type":"response.mcp_call.in_progress","output_index":3,"item_id":"listing"}
+
+data: {"type":"response.in_progress","response":{"status":"in_progress"}}
+
+data: {"type":"response.output_item.done","output_index":3,"item":{"type":"mcp_call","id":"listing","name":"workspace_shell","status":"completed","output":"{\"exitCode\":0,\"stdout\":\"April: mint\\nMay: amber\\nJune: lilac\\nJuly: blue\\nAugust: pine\\nSeptember: plum\",\"stderr\":\"\"}"}}
+
+data: {"type":"response.output_text.done","output_index":4,"text":"The six monthly swatches are ready."}
+
+data: {"type":"response.completed","response":{"status":"completed"}}
+
+: end

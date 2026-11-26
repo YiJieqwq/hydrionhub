@@ -59,7 +59,12 @@ internal class QuestionPeer {
         val output = JSONArray()
         if (answer != null) output.put(JSONObject().put("type", "reasoning").put("summary",
             JSONArray().put(JSONObject().put("type", "summary_text").put("text", "After"))))
+        output.put(item)
+        if (prompt == "Chat A" && answer == null) {
+            for (note in listOf("Labels", "Shades")) output.put(JSONObject().put("type", "reasoning").put("summary",
+                JSONArray().put(JSONObject().put("type", "summary_text").put("text", note))))
+        }
         return frame(JSONObject().put("type", "response.completed").put("response",
-            JSONObject().put("status", "completed").put("output", output.put(item))))
+            JSONObject().put("status", "completed").put("output", output)))
     }
 }

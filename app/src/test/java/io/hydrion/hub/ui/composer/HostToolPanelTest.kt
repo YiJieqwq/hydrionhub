@@ -433,15 +433,19 @@ class HostToolPanelTest {
                 assertEquals("tool", result.getString("role"))
                 assertEquals("shared-call", result.getString("tool_call_id"))
             } else {
-                assertEquals("function_call", original.getString("type"))
+                val call = (0 until input.length() - 1).map(input::getJSONObject).single { it.optString("type") == "function_call" }
                 assertEquals("function_call_output", result.getString("type"))
-                assertEquals("shared-call", original.getString("call_id"))
+                assertEquals("shared-call", call.getString("call_id"))
                 assertEquals("shared-call", result.getString("call_id"))
             }
         }
 
         localPanel(); localSwitch().performScrollTo().assertIsOff().performClick().assertIsOn(); back()
         send("Chat A"); expectQuestion("Chat A")
+        assertEquals(3, vm.state.value.current.messages.last().replySteps.size)
+        // The real unanswered form is before both tail steps. Its action must still be reachable.
+        screen.onNodeWithText("Show 1 more step").assertDoesNotExist()
+        form().performScrollTo().assertIsDisplayed()
         option("Blue").performClick().assertIsSelected()
         val aId = vm.state.value.current.id
         val replyId = vm.state.value.current.messages.last().id
@@ -471,7 +475,9 @@ class HostToolPanelTest {
         assertEquals(listOf(Role.User, Role.Assistant), finishedA.messages.map { it.role })
         assertEquals(replyId, finishedA.messages.last().id)
         assertEquals(ToolCallState.Completed, finishedA.messages.last().toolCalls.single().state)
-        assertEquals(listOf(ReplyStep.Tool(0), ReplyStep.Thought(0, 0, 0, 5)), finishedA.messages.last().replySteps)
+        assertEquals(listOf(ReplyStep.Tool(0), ReplyStep.Thought(1, 0, 0, 6), ReplyStep.Thought(2, 0, 8, 14),
+            ReplyStep.Thought(3, 0, 14, 19)), finishedA.messages.last().replySteps)
+        screen.onNodeWithText("Show 2 more steps").assertExists()
         checkExchange("Chat A", "questions-a.invalid", "Blue", false)
 
         visit("Chat B"); send("B stop"); expectQuestion("B stop")

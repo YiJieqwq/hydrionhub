@@ -12,6 +12,32 @@ class ToolRecordTest {
     private val privacy = ToolRecordText(mapOf("Authorization" to "Bearer $marker"))
     private val request = Message(role = Role.Assistant)
 
+    @Test fun pairedLifecycleEventsPreserveMeasuredZeroAndNeverTimeACompletionOnlyOrReplayedStep() {
+        var clock = 100L
+        val turn = ResponsesEventAccumulator(request, clockMs = { clock })
+        fun item(slot: Int, phase: String, state: String) {
+            val record = JSONObject().put("type", "mcp_call").put("id", "swatch-$slot").put("name", "lookup").put("status", state)
+            turn.accept(JSONObject().put("output_index", slot).put("item", record).toString(), "response.output_item.$phase")
+        }
+        item(0, "added", "in_progress")
+        item(0, "done", "completed")
+        item(1, "done", "completed")
+        clock += 900
+        item(1, "added", "in_progress")
+        item(1, "done", "completed")
+        item(0, "done", "completed")
+        assertEquals(listOf(0L, null), turn.message.replySteps.map { it.observedMs })
+        val json = encodeWorkspace(SavedWorkspace(listOf(Conversation(messages = listOf(turn.message)))))
+        assertEquals(turn.message.replySteps, decodeWorkspace(json).history.single().messages.single().replySteps)
+        val unkeyed = ResponsesEventAccumulator(request, clockMs = { clock })
+        for ((phase, state) in listOf("added" to "in_progress", "done" to "completed")) {
+            clock += 300
+            val anonymous = JSONObject().put("type", "mcp_call").put("name", "lookup").put("status", state)
+            unkeyed.accept(JSONObject().put("item", anonymous).toString(), "response.output_item.$phase")
+        }
+        assertNull(unkeyed.message.replySteps.single().observedMs)
+    }
+
     @Test fun interleavedFunctionOutputsJoinOnlyTheirCallAndSecretsStayOutOfSnapshotsAndHistory() {
         val turn = ResponsesEventAccumulator(request, privacy)
         val snapshots = mutableListOf<Message>()
