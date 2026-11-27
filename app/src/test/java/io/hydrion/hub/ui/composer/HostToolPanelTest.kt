@@ -31,8 +31,10 @@ import io.hydrion.hub.ui.messages.MessageTone
 import io.hydrion.hub.ui.settings.assistantFeatureDirectory
 import io.hydrion.hub.provider.*
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -335,48 +337,77 @@ class HostToolPanelTest {
     }
 
     @Test fun toolSectionsShareOneOpaqueSurfaceInDarkAndLightThemes() {
+        fun composerFill(): Int {
+            val box = screen.onNodeWithTag("composer-capsule", true).fetchSemanticsNode().boundsInWindow
+            return screen.runOnIdle {
+                screen.activity.window.decorView.drawToBitmap().getPixel(
+                    (box.left + 4 * screen.density.density).roundToInt(), box.center.y.roundToInt())
+            }
+        }
+        val darkFill = composerFill()
+        assertEquals("Default composer backing", android.graphics.Color.rgb(48, 48, 48), darkFill)
         open()
         screen.onNodeWithTag("chat-tools-card:environment", true).assertDoesNotExist()
         screen.onNodeWithTag("chat-tools-group:environment").performScrollTo().assertIsDisplayed()
-        fun checkSurface(id: String, light: Boolean = false) {
+        fun sectionFill(id: String): Int {
             val header = screen.onNodeWithTag("chat-tools-group:$id", true).performScrollTo()
             header.assert(hasAnyAncestor(hasTestTag("chat-tools-section:$id")))
             screen.onNodeWithTag("chat-tools-card:$id", true).assertDoesNotExist()
             val box = header.fetchSemanticsNode().boundsInWindow
             val x = box.left.roundToInt()
             val y = box.center.y.roundToInt()
-            screen.runOnIdle {
+            return screen.runOnIdle {
                 val image = screen.activity.window.decorView.drawToBitmap()
                 val fill = image.getPixel(x + 2, y)
-                if (light) assertTrue(android.graphics.Color.luminance(fill) > .6f)
-                else assertEquals(android.graphics.Color.rgb(29, 29, 29), fill)
                 assertEquals("Group flows into the outer gutter", fill, image.getPixel(x - 4, y))
-                val top = box.top.roundToInt() + 1
-                val outer = image.getPixel(x - 4, top)
-                val inner = image.getPixel(x + 1, top)
-                // A dithered gradient can move a channel by one level across adjacent pixels.
-                for (shift in listOf(0, 8, 16)) {
-                    assertEquals("Header feather crosses the flat section and gutter",
-                        ((outer ushr shift) and 255).toFloat(), ((inner ushr shift) and 255).toFloat(), 1f)
-                }
+                fill
             }
         }
-        for (id in listOf("local", "mcp", "web", "image")) checkSurface(id)
+        fun checkScrolledFeather(fill: Int) {
+            val list = screen.onNodeWithTag("chat-tools-page")
+            val density = screen.density.density
+            screen.onNodeWithTag("chat-tools-group:web").performScrollTo()
+            val track = screen.onNodeWithTag("chat-tools-track-fill:web", true).fetchSemanticsNode().boundsInWindow
+            val viewportTop = list.fetchSemanticsNode().boundsInWindow.top
+            list.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, track.top - viewportTop + 4f * density) }
+            val node = list.fetchSemanticsNode()
+            assertTrue(node.config[SemanticsProperties.VerticalScrollAxisRange].value() >= 7f * density)
+            val x = node.boundsInWindow.left.roundToInt()
+            val y = node.boundsInWindow.top.roundToInt() + 1
+            screen.runOnIdle {
+                val image = screen.activity.window.decorView.drawToBitmap()
+                assertEquals("Gutter beside the active feather", fill, image.getPixel(x - 4, y))
+                val inner = image.getPixel(x + 2, y)
+                // A dithered gradient can move a channel by one level across adjacent pixels.
+                for (shift in listOf(0, 8, 16)) {
+                    assertEquals("Scrolled header feather uses the composer backing",
+                        ((fill ushr shift) and 255).toFloat(), ((inner ushr shift) and 255).toFloat(), 1f)
+                }
+                // Sample the track away from its text, across and below the seven-dp feather.
+                val trackX = (track.left + track.width / 3 + 2f * density).roundToInt()
+                fun differenceAt(y: Int) = abs(android.graphics.Color.red(image.getPixel(trackX, y)) - android.graphics.Color.red(fill))
+                assertTrue("Scrolled track fades towards the header",
+                    differenceAt(y) < differenceAt((viewportTop + 9f * density).roundToInt()))
+            }
+        }
+        for (id in listOf("local", "mcp", "web", "image")) assertEquals(darkFill, sectionFill(id))
         screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
         screen.onNodeWithTag("panel-switch:Time", true).assert(hasAnyAncestor(hasTestTag("chat-tools-section:local")))
         enable("Time")
+        checkScrolledFeather(darkFill)
         screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
         screen.onNodeWithTag("panel-switch:Time").assertDoesNotExist()
-        checkSurface("local")
+        assertEquals(darkFill, sectionFill("local"))
         screen.onNodeWithTag("chat-tools-group:image").performScrollTo().performClick()
         screen.onNodeWithTag("chat-tools-option:image:" + CUSTOM_IMAGE_TOOL, true).assert(hasAnyAncestor(hasTestTag("chat-tools-section:image")))
         val styles = MessageStyleStore.shared(screen.activity)
         val original = styles.style.value
         try {
             screen.runOnIdle { styles.update { it.copy(tone = MessageTone.Light) } }
-            checkSurface("image", light = true)
-            for (id in listOf("web", "mcp", "local")) checkSurface(id, light = true)
+            val lightFill = sectionFill("image")
+            for (id in listOf("web", "mcp", "local")) assertEquals(lightFill, sectionFill(id))
             screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
+            checkScrolledFeather(lightFill)
             fun textInk(text: String): Int {
                 val layouts = mutableListOf<TextLayoutResult>()
                 screen.onNodeWithText(text, useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
@@ -390,10 +421,11 @@ class HostToolPanelTest {
             val rowLuminance = android.graphics.Color.luminance(plainInk)
             val secondaryLuminance = android.graphics.Color.luminance(secondaryInk)
             assertTrue("Light row=$rowLuminance, secondary=$secondaryLuminance", rowLuminance < secondaryLuminance && secondaryLuminance < .25f)
+            screen.onNodeWithTag("composer-panel-dismiss").performClick()
+            assertEquals("Light message tone uses the actual composer backing", composerFill(), lightFill)
         } finally {
             screen.runOnIdle { styles.update { original } }
         }
-        screen.onNodeWithTag("composer-panel-dismiss").performClick()
         assertEquals("Panel draft", vm.state.value.draft.text)
     }
 

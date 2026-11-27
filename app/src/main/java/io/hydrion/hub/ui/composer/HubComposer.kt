@@ -539,8 +539,6 @@ internal fun HubComposer(
             }
             else -> HubShapes.Large
         }
-        val fill = if (toolsPull > 0f) androidx.compose.ui.graphics.lerp(colors.surfaceContainerHigh,
-            toolPanelScheme().surface, toolsPull) else colors.surfaceContainerHigh
         Surface(
             modifier = Modifier.fillMaxWidth().testTag("composer-capsule")
                 .then(if (chatPicker != null) Modifier.pickerCapsuleBounds() else Modifier)
@@ -550,7 +548,7 @@ internal fun HubComposer(
                 .then(if (toolsPull >= 1f) Modifier else Modifier.border(0.66.dp,
                     HubStyle.ComposerBorder.copy(alpha = HubStyle.ComposerBorder.alpha * (1f - toolsPull)), shape)),
             shape = shape,
-            color = fill,
+            color = colors.surfaceContainerHigh,
         ) {
             ComposerPanelBody(panelClock, panelRequested, returningToEditor, sideInset, expandedSide, bottomGap,
                 if (entryImeHeight > 0) 0.dp else lastEditorGap - panelGap, 34.dp,

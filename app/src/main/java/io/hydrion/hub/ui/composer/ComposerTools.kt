@@ -122,13 +122,14 @@ internal fun ChatToolsPage(
     val browsing = rememberScrollState()
     val count = if (modelToolsEnabled) listOf(search, imageTool).count { it != Disabled } else 0
     val countLabel = stringResource(R.string.chat_tools_enabled_count, count)
+    val composerSurface = MaterialTheme.colorScheme.surfaceContainerHigh
     val scheme = toolPanelScheme()
     MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
         CompositionLocalProvider(LocalContentColor provides scheme.onSurface) {
             Column(modifier.fillMaxWidth()) {
                 ToolPanelHeading(onBack, countLabel)
                 Spacer(Modifier.height(4.dp))
-                PanelViewport(Modifier.weight(1f, fill = false).fillMaxWidth().padding(horizontal = 16.dp), scheme.surface, { browsing.value }) {
+                PanelViewport(Modifier.weight(1f, fill = false).fillMaxWidth().padding(horizontal = 16.dp), composerSurface, { browsing.value }) {
                     BoxWithConstraints {
                         val rowWidth = maxWidth
                         Column(Modifier.fillMaxWidth().testTag("chat-tools-page").verticalScroll(browsing).padding(bottom = 16.dp),

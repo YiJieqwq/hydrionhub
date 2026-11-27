@@ -130,6 +130,9 @@ class ComposerPanelJourneyTest {
         File(path, "$name.png").outputStream().use { frame.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
+    private fun backingPixel(box: Rect): Int = windowFrame().getPixel(
+        (box.left + 4 * ui.density.density).roundToInt(), box.center.y.roundToInt())
+
     private fun tapOutside(at: Offset) = ui.onRoot().performTouchInput { click(at) }
 
     private fun scrollMax(id: String) = tag(id).fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue()
@@ -544,6 +547,7 @@ class ComposerPanelJourneyTest {
                 ui.mainClock.advanceTimeBy(400)
                 ui.waitForIdle()
             }
+            val editorFill = backingPixel(shell)
             open()
             val expanded = shell
             val grip = bounds("chat-$panel-grip").center
@@ -568,6 +572,7 @@ class ComposerPanelJourneyTest {
                 move(grip, dy)
                 assertEquals("$panel shell follows the held finger at $fraction", expanded.top + dy, shell.top, 2f)
                 assertEquals("$panel grip stays under the held finger", grip.y + dy, bounds("chat-$panel-grip").center.y, 2f)
+                if (i == 8) assertEquals("$panel backing while held", editorFill, backingPixel(shell))
                 capture("grip-$panel-" + i.toString().padStart(2, '0'))
             }
             assertEquals("Crossing the threshold while held does not dismiss", expanded, shell)
@@ -639,6 +644,7 @@ class ComposerPanelJourneyTest {
         val wide = shell
         keyboard(0)
         val parked = shell
+        val editorFill = backingPixel(parked)
         assertTrue(parked.width < wide.width)
         val titleChip = bounds("conversation-chip")
         val restingActions = drawn("composer-action-row")
@@ -664,6 +670,7 @@ class ComposerPanelJourneyTest {
                 ui.waitForIdle()
                 capture("$name-" + (i + 1).toString().padStart(2, '0'))
                 val current = shell
+                if (i == 8 || i == 25) assertEquals("$name backing at frame $i", editorFill, backingPixel(current))
                 val prev = path.last()
                 assertEquals("$name frame $i bottom", parked.bottom, current.bottom, 1f)
                 assertEquals("$name frame $i center", parked.center.x, current.center.x, 1f)
