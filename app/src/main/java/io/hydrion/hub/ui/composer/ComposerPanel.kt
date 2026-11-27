@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
@@ -156,14 +157,26 @@ private fun BlockPanelTouches(modifier: Modifier) {
     })
 }
 
-/** The provider strip travels one strip height through the current lower edge.
- * Its layout slot still reserves room below the list, including when the list is short. */
+private fun GraphicsLayerScope.panelItemAppearance(sourceScale: Float, depth: Float, reveal: Float, edge: Float = 1f) {
+    val small = sourceScale - .12f * depth
+    scaleX = (small + (1f - small) * reveal) * (.86f + .14f * edge)
+    scaleY = scaleX
+    alpha = reveal * edge
+    transformOrigin = TransformOrigin(.5f, 0f)
+}
+
+/** The provider strip shares the items' scale and fade, with its own clip at the moving bottom. */
 @Composable
 internal fun PanelBottomRail(content: @Composable () -> Unit) {
     val pull = LocalPanelPull.current
     Box(Modifier.fillMaxWidth().offset { IntOffset(0, -(pull?.hiddenHeight ?: 0)) }.clipToBounds()) {
-        Box(Modifier.fillMaxWidth().graphicsLayer { translationY = size.height * (1f - (pull?.progress?.invoke() ?: 1f)) }
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(bottom = 6.dp)) { content() }
+        Box(Modifier.fillMaxWidth().graphicsLayer {
+            if (pull != null) {
+                val progress = pull.progress()
+                panelItemAppearance(pull.sourceScale, depth = 1f, reveal = progress)
+                translationY = size.height * (1f - progress)
+            }
+        }.background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(bottom = 6.dp)) { content() }
     }
 }
 
@@ -198,11 +211,7 @@ internal fun PanelStep(modifier: Modifier = Modifier, inheritGroupPull: Boolean 
             val p = pull.progress()
             val reveal = if (inheritGroupPull) 1f else ((p - .48f * depth) / .52f).coerceIn(0f, 1f)
             val edge = 1f - (1f - visibility) * p
-            alpha = reveal * edge
-            val small = pull.sourceScale - .12f * depth
-            scaleX = (small + (1f - small) * reveal) * (.86f + .14f * edge)
-            scaleY = scaleX
-            transformOrigin = TransformOrigin(.5f, 0f)
+            panelItemAppearance(pull.sourceScale, depth, reveal, edge)
             translationY = if (inheritGroupPull) 0f else (12.dp.toPx() - top * .72f) * (1f - p)
         }) { content() }
     }

@@ -12,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.SoftwareKeyboardController
@@ -20,6 +21,8 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -30,6 +33,8 @@ import io.hydrion.hub.R
 import io.hydrion.hub.model.*
 import io.hydrion.hub.provider.*
 import io.hydrion.hub.ui.HydrionApp
+import io.hydrion.hub.ui.messages.MessageStyleStore
+import io.hydrion.hub.ui.messages.MessageTone
 import java.io.File
 import org.junit.Assert.*
 import org.junit.Before
@@ -202,7 +207,9 @@ class ComposerPanelJourneyTest {
                 ui.waitForIdle()
                 capture("reverse-" + (i + 9).toString().padStart(2, '0'))
             }
-            assertTrue("The strip retreats through the lower edge", drawn("chat-model-providers").top > middleRail.top)
+            val retreatingRail = drawn("chat-model-providers")
+            assertTrue("The strip retreats through the lower edge", retreatingRail.top > middleRail.top)
+            assertTrue("The strip shrinks back towards its center", retreatingRail.width < middleRail.width && retreatingRail.height < middleRail.height)
             assertTrue("The old buttons return from below", drawn("composer-action-row").center.y < middleTools.center.y)
             assertTrue("The drawn shell recedes from $intermediate", shellInkHeight(x, ink) < intermediate)
         } finally { clock.autoAdvance = true }
@@ -241,7 +248,7 @@ class ComposerPanelJourneyTest {
         tag("chat-model-list-back").assertDoesNotExist()
         tag("chat-model-title").assertDoesNotExist()
         tag("chat-model-providers").performScrollToNode(hasTestTag("chat-model-provider:c"))
-        tag("chat-model-provider:c").performClick()
+        tag("chat-model-provider:c").performTouchInput { click(center) }
         tag("chat-model-option:c/model-0").assertIsDisplayed()
         results.performScrollToNode(hasTestTag("chat-model-option:c/model-17"))
         tag("chat-model-option:c/model-17").assertIsDisplayed()
@@ -445,9 +452,19 @@ class ComposerPanelJourneyTest {
         println("Selection before invoking either panel, after parking IME: $parkedSelection")
         val noNewKeyboard = shows
         val clock = ui.mainClock
+        fun firstProviderInk(): Int {
+            val text = ui.onAllNodes(hasAnyAncestor(hasTestTag("chat-model-providers")) and
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.Text), useUnmergedTree = true).fetchSemanticsNodes().first().boundsInRoot
+            val frame = windowFrame()
+            return (text.top.roundToInt() until text.bottom.roundToInt()).maxOf { y ->
+                (text.left.roundToInt() until text.right.roundToInt()).maxOf { x -> Color.red(frame.getPixel(x, y)) }
+            }
+        }
         fun frames(name: String, start: Rect, opening: Boolean): List<Rect> {
             val path = mutableListOf(start)
-            var railSize: Rect? = null
+            var previousRailScale: Float? = null
+            var middleInk: Int? = null
+            var fullInk: Int? = null
             repeat(22) { i ->
                 clock.advanceTimeByFrame()
                 ui.waitForIdle()
@@ -471,18 +488,29 @@ class ComposerPanelJourneyTest {
                 }
                 if (name.contains("model") && fraction > .01f) {
                     val rail = drawn("chat-model-providers")
-                    railSize?.let {
-                        assertEquals("Provider chips stay full width", it.width, rail.width, 1f)
-                        assertEquals("Provider chips stay full height", it.height, rail.height, 1f)
+                    val size = tag("chat-model-providers").fetchSemanticsNode().layoutInfo.coordinates.size
+                    val scale = rail.width / size.width
+                    assertEquals("Uniform provider scale", scale, rail.height / size.height, .005f)
+                    assertEquals("Strip stays centered", current.center.x, rail.center.x, 1f)
+                    if (fraction in 0.05f..0.85f) assertTrue("Partly expanded strip still scales: $scale", scale in 0.55f..0.99f)
+                    if (fraction >= .999f) assertEquals(1f, scale, .005f)
+                    previousRailScale?.let { previous ->
+                        assertTrue("Scale follows the direction of travel", if (opening) scale >= previous - .001f else scale <= previous + .001f)
                     }
-                    railSize = rail
+                    previousRailScale = scale
                     val inset = 6f * host.resources.displayMetrics.density
                     assertEquals("Provider strip crosses the live lower edge on the shell clock",
-                        (rail.height + inset) * fraction, current.bottom - rail.top, 3f)
+                        (size.height + inset) * fraction, current.bottom - rail.top, 3f)
+                    assertTrue("Provider hit bounds stay clipped", bounds("chat-model-providers").bottom <= current.bottom + 1f)
+                    if (opening && middleInk == null && fraction in 0.60f..0.75f) middleInk = firstProviderInk()
+                    if (opening && fullInk == null && fraction >= .999f) fullInk = firstProviderInk()
                 }
                 path += current
             }
             assertTrue("$name shows intermediate widths", path.map { it.width }.distinct().size > 4)
+            if (name == "parked-model") {
+                assertTrue("Painted provider label fades in: $middleInk to $fullInk", checkNotNull(fullInk) - checkNotNull(middleInk) > 15)
+            }
             return path
         }
         for (id in listOf("model", "tools")) {
@@ -560,7 +588,17 @@ class ComposerPanelJourneyTest {
         verify("模型内置搜索")
         rail.performTouchInput { click(Offset(4f, centerY)) }
         verify("禁用")
-        rail.performTouchInput { swipe(Offset(5f, centerY), center, 220) }
+        val trackBounds = bounds("chat-tools-track:web")
+        val sampleX = (trackBounds.left + trackBounds.width * .4f).roundToInt()
+        val sampleY = (trackBounds.top + 7f * ui.density.density).roundToInt()
+        val unselected = windowFrame().getPixel(sampleX, sampleY)
+        rail.performTouchInput { down(Offset(width / 6f, centerY)); moveTo(Offset(width / 3f, centerY), 80) }
+        try {
+            verify("禁用")
+            assertNotEquals("Thumb moves behind the labels before commit", unselected, windowFrame().getPixel(sampleX, sampleY))
+        } finally {
+            rail.performTouchInput { moveTo(center, 100); up() }
+        }
         verify("自定义搜索")
         rail.performTouchInput { down(center); moveTo(Offset(right - 6f, centerY)); cancel() }
         verify("自定义搜索")
@@ -578,6 +616,15 @@ class ComposerPanelJourneyTest {
         imageTrack.performSemanticsAction(SemanticsActions.SetProgress) { it(1f) }
         assertEquals(afterSearch, ui.runOnIdle { vm.state.value.draft })
         ui.onAllNodes(hasAnyAncestor(hasTestTag("chat-tools-section:image")) and isSelectable()).assertCountEquals(2)
+        group("local").performScrollTo().performClick()
+        rail.performScrollTo()
+        val list = tag("chat-tools-page")
+        fun scrollY() = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+        val oldY = scrollY()
+        rail.performTouchInput { swipe(center, center - Offset(0f, height * 2f), 240) }
+        assertTrue("Vertical gesture over a rail scrolls the tool list", scrollY() > oldY + 8f)
+        assertEquals(afterSearch, ui.runOnIdle { vm.state.value.draft })
+        group("local").performScrollTo().performClick()
         group("web").performScrollTo()
         capture("tools-search-modes")
         back()
@@ -587,6 +634,93 @@ class ComposerPanelJourneyTest {
         for (mode in listOf("禁用", "自定义搜索", "模型内置搜索")) tag("chat-tools-option:web:$mode").assertIsNotSelected()
         tag("chat-tools-track:web").performTouchInput { click(Offset(5f, centerY)) }
         verify("禁用")
+    }
+
+    @Test @Config(qualifiers = "en-rUS-w320dp-h740dp-night-xhdpi", fontScale = 1.5f)
+    fun longModeLabelsShareOnePaintedTrackAndMoveItsSelection() {
+        ui.onNodeWithContentDescription("打开工具箱").performClick()
+        tag("chat-tools-group:image").performScrollTo().performClick()
+        val rail = tag("chat-tools-track:image").performScrollTo()
+        val area = bounds("chat-tools-track:image")
+        capture("modes-en-large-start")
+        val selections = listOf("禁用" to "Off", CUSTOM_IMAGE_TOOL to "Custom image generation")
+        val cells = selections.map { (key, label) ->
+            val id = "chat-tools-option:image:$key"
+            val text = ui.onNode(hasText(label) and hasAnyAncestor(hasTestTag(id)), useUnmergedTree = true)
+            val layouts = mutableListOf<TextLayoutResult>()
+            text.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            val layout = layouts.single()
+            val cell = bounds(id)
+            val glyphs = text.fetchSemanticsNode().boundsInRoot
+            assertTrue("$label text=$glyphs cell=$cell",
+                glyphs.left >= cell.left - 1 && glyphs.right <= cell.right + 1 && glyphs.top >= cell.top - 1 &&
+                    glyphs.bottom <= cell.bottom + 1)
+            assertEquals(label.length, layout.getLineEnd(layout.lineCount - 1, visibleEnd = true))
+            val frame = windowFrame()
+            val ink = layout.layoutInput.style.color.toArgb()
+            for (line in 0 until layout.lineCount) {
+                assertFalse("Full label on line $line", layout.isLineEllipsized(line))
+                val left = (glyphs.left + layout.getLineLeft(line)).roundToInt()
+                val right = (glyphs.left + layout.getLineRight(line)).roundToInt()
+                val top = (glyphs.top + layout.getLineTop(line)).roundToInt()
+                val bottom = (glyphs.top + layout.getLineBottom(line)).roundToInt()
+                assertTrue("Line inside its slot", left >= cell.left - 1 && right <= cell.right + 1 && top >= cell.top - 1 && bottom <= cell.bottom + 1)
+                assertTrue("Line paints ink in the actual track", (top until bottom).any { y ->
+                    (left until right).any { x -> ColorUtils.calculateContrast(ink, frame.getPixel(x, y)) < 1.2 }
+                })
+            }
+            assertEquals(area.top, cell.top, 1f)
+            assertEquals(area.bottom, cell.bottom, 1f)
+            if (key == CUSTOM_IMAGE_TOOL) assertTrue("Long label wraps at larger font scale", layout.lineCount > 1)
+            cell to text
+        }
+        assertEquals(area.left, cells.first().first.left, 1f)
+        assertEquals(cells.first().first.right, cells.last().first.left, 1f)
+        assertEquals(area.right, cells.last().first.right, 1f)
+        fun fills(): List<Int> {
+            ui.waitForIdle()
+            val currentArea = bounds("chat-tools-track:image")
+            val image = windowFrame()
+            val y = (currentArea.top + 3 * ui.density.density).roundToInt()
+            val outside = image.getPixel(currentArea.left.roundToInt() - 2, currentArea.center.y.roundToInt())
+            val seam = cells.first().first.right.roundToInt()
+            for (x in seam - 2..seam + 2) assertNotEquals("No gap through to the panel", outside, image.getPixel(x, currentArea.center.y.roundToInt()))
+            return cells.map { (cell, text) ->
+                val layouts = mutableListOf<TextLayoutResult>()
+                text.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+                val ink = layouts.single().layoutInput.style.color.toArgb()
+                val fill = image.getPixel(cell.center.x.roundToInt(), y)
+                assertTrue("Label contrast on its painted background", ColorUtils.calculateContrast(ink, fill) >= 4.5)
+                fill
+            }
+        }
+        tag("chat-tools-option:image:禁用").assertIsSelected()
+        val before = fills()
+        assertNotEquals(before.first(), before.last())
+        rail.performTouchInput { click(Offset(width * .78f, centerY)) }
+        tag("chat-tools-option:image:$CUSTOM_IMAGE_TOOL").assertIsSelected()
+        assertEquals(before.reversed(), fills())
+        assertEquals(CUSTOM_IMAGE_TOOL, ui.runOnIdle { vm.state.value.draft.imageTool })
+        capture("modes-en-large")
+        val styles = MessageStyleStore.shared(ui.activity)
+        val original = styles.style.value
+        try {
+            ui.runOnIdle { styles.update { it.copy(tone = MessageTone.Light) } }
+            val light = fills()
+            assertNotEquals(light.first(), light.last())
+            assertNotEquals(before.reversed(), light)
+            ui.runOnIdle {
+                vm.providers.save(deepSeekProvider, "", null)
+                vm.providers.configure(Mode.Chat, deepSeekProvider.models.first().id, emptyMap())
+            }
+            rail.performScrollTo().assertIsNotEnabled()
+            assertNotEquals("Disabled palette stays legible", light, fills())
+            ui.runOnIdle { styles.update { original } }
+            rail.performScrollTo().assertIsNotEnabled()
+            assertNotEquals(before.reversed(), fills())
+        } finally {
+            ui.runOnIdle { styles.update { original } }
+        }
     }
 
     @Test @Config(qualifiers = "zh-rCN-w393dp-h851dp-night-xhdpi")

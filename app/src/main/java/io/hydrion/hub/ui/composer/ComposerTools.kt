@@ -5,11 +5,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -38,6 +40,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -53,6 +60,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -181,9 +189,9 @@ internal fun ImageComposerTools(
 @Composable
 private fun ToolModeSection(id: String, title: String, choices: List<ToolChoice>, value: String, visible: Boolean,
     initiallyOpen: Boolean, filtering: Boolean, enabled: Boolean, onSelect: (String) -> Unit) {
-    val label = choices.firstOrNull { it.value == value }?.label ?: value
-    val summary = if (enabled) label else stringResource(R.string.panel_model_unavailable)
-    PanelSection(id, title, summary, visible, initiallyOpen, filtering) {
+    val selected = choices.firstOrNull { it.value == value }
+    val summary = if (enabled) selected?.label ?: value else stringResource(R.string.panel_model_unavailable)
+    PanelSection(id, title, summary, visible, initiallyOpen, filtering, summaryOnCollapseOnly = enabled && selected != null) {
         ToolModeTrack(id, title, choices, value, enabled, onSelect)
     }
 }
@@ -192,25 +200,27 @@ private fun ToolModeSection(id: String, title: String, choices: List<ToolChoice>
 private fun ToolModeTrack(id: String, title: String, choices: List<ToolChoice>, value: String, enabled: Boolean, onSelect: (String) -> Unit) {
     val colors = MaterialTheme.colorScheme
     val values = choices.map { it.value }
-    Column(Modifier.fillMaxWidth()) {
-        DiscreteChoiceTrack(values, value, title, { selected -> choices.first { it.value == selected }.label }, onSelect,
-            modifier = Modifier.testTag("chat-tools-track:$id"), enabled = enabled, inScrollingPanel = true)
-        Row(Modifier.fillMaxWidth().selectableGroup()) {
-            choices.forEachIndexed { index, choice ->
-                val selected = choice.value == value
-                val align = when (index) {
-                    0 -> Alignment.CenterStart
-                    choices.lastIndex -> Alignment.CenterEnd
-                    else -> Alignment.Center
+    val track = colors.surfaceContainerHighest
+    val thumb = colors.primary.copy(alpha = if (enabled) .36f else .12f).compositeOver(track)
+    val ink = if (enabled) colors.onSurface else colors.onSurface.copy(alpha = .8f).compositeOver(track)
+    DiscreteChoiceTrack(values, value, title, { selected -> choices.first { it.value == selected }.label }, onSelect,
+        modifier = Modifier.testTag("chat-tools-track:$id"), enabled = enabled) { position ->
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).height(IntrinsicSize.Min)
+            .clip(HubShapes.Large).drawBehind {
+                drawRect(track)
+                position()?.let { thumbPosition ->
+                    val fraction = if (layoutDirection == LayoutDirection.Rtl) 1f - thumbPosition else thumbPosition
+                    val width = size.width / choices.size
+                    val radius = minOf(HubShapes.LargeRadius.toPx(), size.height / 2f, width / 2f)
+                    drawRoundRect(thumb, Offset(fraction * (size.width - width), 0f), Size(width, size.height), CornerRadius(radius))
                 }
-                Box(Modifier.weight(1f).heightIn(min = 36.dp).keepToolEditorFocus().testTag("chat-tools-option:$id:${choice.value}")
-                    .selectable(selected, enabled = enabled, role = Role.RadioButton) { onSelect(choice.value) }
-                    .padding(horizontal = 12.dp), contentAlignment = align) {
-                    Text(choice.label, color = when {
-                        !enabled -> colors.onSurface.copy(alpha = .38f)
-                        selected -> colors.primary
-                        else -> colors.onSurfaceVariant
-                    }, style = MaterialTheme.typography.labelMedium)
+            }.selectableGroup()) {
+            for (choice in choices) {
+                Box(Modifier.weight(1f).fillMaxHeight().keepToolEditorFocus().testTag("chat-tools-option:$id:${choice.value}")
+                    .selectable(choice.value == value, enabled = enabled, role = Role.RadioButton) { onSelect(choice.value) }
+                    .padding(horizontal = 6.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
+                    Text(choice.label, Modifier.fillMaxWidth(), color = ink, textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelLarge)
                 }
             }
         }

@@ -28,8 +28,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -122,9 +122,11 @@ internal fun EffortTrack(
 @Composable
 internal fun DiscreteChoiceTrack(
     choices: List<String>, value: String, label: String, labelFor: @Composable (String) -> String, onChoose: (String) -> Unit,
-    modifier: Modifier = Modifier, enabled: Boolean = true, inScrollingPanel: Boolean = false,
+    modifier: Modifier = Modifier, enabled: Boolean = true,
     highestIndex: Int = -1, accelerated: Boolean = false, onPreview: (String?) -> Unit = {},
+    segments: (@Composable (position: () -> Float?) -> Unit)? = null,
 ) {
+    val segmented = segments != null
     val last = choices.lastIndex
     val stored = choices.indexOf(value)
     val index = stored.coerceAtLeast(0)
@@ -134,28 +136,23 @@ internal fun DiscreteChoiceTrack(
     val preview by rememberUpdatedState(onPreview)
     val choose by rememberUpdatedState(onChoose)
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-    val thumbScale = animateFloatAsState(
-        targetValue = if (thumb.pressed) 1.16f else 1f,
-        animationSpec = if (thumb.pressed) tween(140, easing = CubicBezierEasing(.2f, .9f, .3f, 1.2f))
-            else tween(340, easing = CubicBezierEasing(.34f, 1.56f, .64f, 1f)),
-        label = "effortThumbScale",
-    )
     LaunchedEffect(thumb, index) { thumb.settle(scope, stopFraction(index, last)) }
 
     val nearest by remember(thumb) { derivedStateOf { (thumb.position * last).roundToInt().coerceIn(0, last) } }
     val announced = if (thumb.pressed) nearest else index
-    val known = stored >= 0 || !inScrollingPanel || thumb.pressed
+    val known = stored >= 0 || !segmented || thumb.pressed
     val level = if (known) labelFor(choices[announced]) else value
     fun select(i: Int) {
         thumb.settle(scope, stopFraction(i, last))
-        if ((stored < 0 && inScrollingPanel) || i != currentIndex) choose(choices[i])
+        if ((stored < 0 && segmented) || i != currentIndex) choose(choices[i])
     }
 
-    val touch = if (!enabled) Modifier else Modifier.pointerInput(thumb, stored, rtl, inScrollingPanel) {
-        val inset = (RailMargin + EffortThumbRadius).toPx()
+    val touch = if (!enabled) Modifier else Modifier.pointerInput(thumb, stored, rtl, segmented) {
+        val pass = if (segmented) PointerEventPass.Initial else PointerEventPass.Main
         awaitEachGesture {
-            val down = awaitFirstDown()
-            if (!inScrollingPanel) down.consume()
+            val down = awaitFirstDown(pass = pass)
+            val inset = if (segmented) size.width / (2f * choices.size) else (RailMargin + EffortThumbRadius).toPx()
+            if (!segmented) down.consume()
             var previewIndex = -1
             fun follow(x: Float) {
                 thumb.position = effortPointerFraction(x, size.width.toFloat(), inset, rtl, thumb.position)
@@ -166,21 +163,22 @@ internal fun DiscreteChoiceTrack(
                 }
             }
 
-            if (!inScrollingPanel) {
+            if (!segmented) {
                 thumb.grab()
                 follow(down.position.x)
             }
             try {
                 while (true) {
-                    val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                    val change = awaitPointerEvent(pass).changes.firstOrNull { it.id == down.id } ?: break
                     // A cancelled pointer is delivered as consumed. Never commit the last preview in that case.
                     if (change.isConsumed) break
                     if (!thumb.pressed) {
-                        if (!inScrollingPanel) break
+                        // Leave an ordinary tap to the label, and a vertical drag to the scrolling panel.
+                        if (!segmented || !change.pressed) break
                         val distance = change.position - down.position
-                        if (change.pressed && kotlin.math.abs(distance.y) > viewConfiguration.touchSlop &&
+                        if (kotlin.math.abs(distance.y) > viewConfiguration.touchSlop &&
                             kotlin.math.abs(distance.y) > kotlin.math.abs(distance.x)) break
-                        if (change.pressed && kotlin.math.abs(distance.x) <= viewConfiguration.touchSlop) continue
+                        if (kotlin.math.abs(distance.x) <= viewConfiguration.touchSlop) continue
                         thumb.grab()
                     }
                     follow(change.position.x)
@@ -208,9 +206,18 @@ internal fun DiscreteChoiceTrack(
             true
         }
     }, contentAlignment = Alignment.Center) {
-        Box(Modifier.fillMaxWidth().padding(horizontal = RailMargin).alpha(if (enabled) 1f else .38f), contentAlignment = Alignment.Center) {
-            if (!known) Spacer(Modifier.fillMaxWidth().height(EffortRailHeight).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape))
-            else EffortRail({ thumb.position }, { thumbScale.value }, choices, highestIndex, index, accelerated)
+        if (segments != null) {
+            segments { if (known) thumb.position else null }
+        } else {
+            val thumbScale = animateFloatAsState(
+                targetValue = if (thumb.pressed) 1.16f else 1f,
+                animationSpec = if (thumb.pressed) tween(140, easing = CubicBezierEasing(.2f, .9f, .3f, 1.2f))
+                    else tween(340, easing = CubicBezierEasing(.34f, 1.56f, .64f, 1f)),
+                label = "effortThumbScale",
+            )
+            Box(Modifier.fillMaxWidth().padding(horizontal = RailMargin), contentAlignment = Alignment.Center) {
+                EffortRail({ thumb.position }, { thumbScale.value }, choices, highestIndex, index, accelerated)
+            }
         }
     }
 }
