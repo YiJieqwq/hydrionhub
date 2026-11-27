@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.BasicTextField
@@ -53,6 +52,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.HubShapes
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.ui.profile.LocalProfileStore
@@ -252,7 +252,7 @@ internal fun ConversationDrawer(
                 }
                 Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 16.dp, top = 2.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically) {
-                    Row(Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
+                    Row(Modifier.weight(1f).clip(HubShapes.Small)
                         .combinedClickable(enabled = assistantsReady, role = Role.Button,
                             onLongClick = { assistantMenu = assistantId }, onClick = { showAssistants = !showAssistants })
                         .semantics { stateDescription = assistantState }.heightIn(min = 48.dp)
@@ -373,7 +373,7 @@ internal fun DrawerSearch(query: String, onQuery: (String) -> Unit, modifier: Mo
     global: Boolean = false, onToggleScope: (() -> Unit)? = null, onSubmit: () -> Unit = {}) {
     val colors = MaterialTheme.colorScheme
     val hint = stringResource(if (global) R.string.drawer_global_search else R.string.drawer_search)
-    Row(modifier.drawerSearchSwipe(onToggleScope, query.isBlank()).clip(RoundedCornerShape(16.dp))
+    Row(modifier.drawerSearchSwipe(onToggleScope, query.isBlank()).clip(HubShapes.Small)
         .background(colors.surfaceContainerHigh).heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
         if (onToggleScope != null) {
             IconButton(onToggleScope, Modifier.size(44.dp)) {
@@ -417,7 +417,7 @@ internal fun DrawerConversation(item: Conversation, current: Boolean, hasDraft: 
         selected == null && current -> colors.primary.copy(alpha = .12f)
         else -> colors.surface
     }
-    Row(Modifier.fillMaxWidth().padding(bottom = 4.dp).clip(RoundedCornerShape(16.dp)).background(background)
+    Row(Modifier.fillMaxWidth().padding(bottom = 4.dp).clip(HubShapes.Small).background(background)
         .combinedClickable(onLongClickLabel = stringResource(R.string.drawer_manage, item.title),
             onLongClick = onLongClick, onClick = onClick)
         .semantics { this.selected = selected ?: current; contentDescription = item.mode.name }

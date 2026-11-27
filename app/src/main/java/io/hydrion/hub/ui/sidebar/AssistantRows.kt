@@ -9,7 +9,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Check
@@ -31,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
 import io.hydrion.hub.model.LocalAssistant
+import io.hydrion.hub.ui.theme.HubShapes
 import io.hydrion.hub.ui.theme.IonMark
 
 @Composable
@@ -56,7 +56,7 @@ internal fun AssistantAvatar(assistant: LocalAssistant, size: Dp = 32.dp) {
 internal fun AssistantRow(assistant: LocalAssistant, selected: Boolean, enabled: Boolean, showSelection: Boolean = false,
     loading: Boolean = false, onMenu: (() -> Unit)? = null, onSelect: () -> Unit, onEdit: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+    Row(Modifier.fillMaxWidth().clip(HubShapes.Small)
         .then(if (onMenu != null) Modifier.background(colors.surface) else Modifier)
         .testTag("assistant-row-${assistant.id}")
         .then(if (onMenu == null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onSelect)

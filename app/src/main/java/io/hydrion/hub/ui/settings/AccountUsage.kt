@@ -1,7 +1,6 @@
 package io.hydrion.hub.ui.settings
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +17,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.HubShapes
 import java.text.NumberFormat
 import java.time.Instant
 import java.time.ZoneId
@@ -49,7 +49,7 @@ internal fun AccountUsage(accounts: List<SignedInAccountUsage>) {
     val percentFormat = remember(locale) { NumberFormat.getPercentInstance(locale).apply { maximumFractionDigits = 1 } }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         for (account in accounts) {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            Column(Modifier.fillMaxWidth().clip(HubShapes.Large)
                 .background(MaterialTheme.colorScheme.surface).padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {

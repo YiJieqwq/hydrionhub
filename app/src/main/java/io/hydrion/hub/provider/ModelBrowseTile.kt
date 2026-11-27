@@ -8,7 +8,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -32,6 +31,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.HubShapes
 
 // Default mobile picker palette. Scope these roles to the list so they cannot recolor the composer.
 internal class BrowseColors(val dark: Boolean, val primary: Color, val secondary: Color, val tertiary: Color, val text: Color) {
@@ -61,7 +61,7 @@ internal fun BrowseTile(
     modifier: Modifier, onEdit: (() -> Unit)? = null, favoriteButton: (@Composable () -> Unit)? = null, onPick: () -> Unit,
 ) {
     val colors = browseColors()
-    val shape = RoundedCornerShape(14.dp)
+    val shape = HubShapes.Small
     val action = modifier.focusProperties { canFocus = false }
         .semantics { selected = checked }
         .combinedClickable(role = Role.RadioButton,

@@ -33,6 +33,7 @@ import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.ui.continueEditedReply
 import io.hydrion.hub.ui.sendEditedBranch
+import io.hydrion.hub.ui.theme.HubShapes
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
 
@@ -52,7 +53,7 @@ internal fun TurnActionSheet(close: () -> Unit, containerColor: Color = Material
     content: @Composable ColumnScope.() -> Unit) {
     ModalBottomSheet(onDismissRequest = close, modifier = Modifier.testTag("turn-action-sheet"),
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        shape = HubShapes.Sheet,
         containerColor = containerColor,
         dragHandle = {
             Box(Modifier.padding(vertical = 6.dp).size(40.dp, 4.dp)
@@ -62,7 +63,7 @@ internal fun TurnActionSheet(close: () -> Unit, containerColor: Color = Material
 
 @Composable
 private fun SheetGroup(content: @Composable ColumnScope.() -> Unit) {
-    Surface(shape = RoundedCornerShape(12.dp), color = Color.Transparent) {
+    Surface(shape = HubShapes.Small, color = Color.Transparent) {
         Column(content = content)
     }
 }

@@ -27,6 +27,7 @@ import io.hydrion.hub.R
 import io.hydrion.hub.model.HubViewModel
 import io.hydrion.hub.model.WorkspaceLoad
 import io.hydrion.hub.runtime.*
+import io.hydrion.hub.ui.theme.HubShapes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -152,8 +153,8 @@ private fun RuntimeHeading(label: String) {
 @Composable
 private fun RuntimeRow(icon: Int, label: String, subtitle: String?, enabled: Boolean, onClick: () -> Unit,
                        first: Boolean = true, last: Boolean = true, trailing: (@Composable () -> Unit)? = null) {
-    val top = if (first) 16.dp else 0.dp
-    val bottom = if (last) 16.dp else 0.dp
+    val top = if (first) HubShapes.LargeRadius else 0.dp
+    val bottom = if (last) HubShapes.LargeRadius else 0.dp
     Surface(onClick = onClick, enabled = enabled, color = MaterialTheme.colorScheme.surfaceContainer,
         shape = RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)) {
         Column {

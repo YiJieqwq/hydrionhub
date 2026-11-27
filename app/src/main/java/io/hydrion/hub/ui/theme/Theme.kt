@@ -15,6 +15,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
+internal object HubShapes {
+    val LargeRadius = 24.dp
+    val SmallRadius = 14.dp
+    val Large = RoundedCornerShape(LargeRadius)
+    val Small = RoundedCornerShape(SmallRadius)
+    val Sheet = RoundedCornerShape(topStart = LargeRadius, topEnd = LargeRadius)
+}
+
 object HubStyle {
     val Background = Color.Black
     val Surface = Color(0xFF222222)
@@ -27,7 +35,6 @@ object HubStyle {
     val PageMargin = 16.dp
     val ControlIcon = 20.dp
     val ComposerActionDiameter = 32.dp
-    val CardRadius = 24.dp
 }
 
 private val NightColors = darkColorScheme(
@@ -72,10 +79,11 @@ fun HydrionTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = NightColors,
         shapes = Shapes(
-            small = RoundedCornerShape(12.dp),
-            medium = RoundedCornerShape(18.dp),
-            large = RoundedCornerShape(HubStyle.CardRadius),
-            extraLarge = RoundedCornerShape(30.dp)
+            extraSmall = HubShapes.Small,
+            small = HubShapes.Small,
+            medium = HubShapes.Small,
+            large = HubShapes.Large,
+            extraLarge = HubShapes.Large
         ),
         content = content
     )

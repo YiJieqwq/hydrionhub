@@ -3,6 +3,11 @@
     <string name="tools_search_hint">Search tools…</string>
     <string name="chat_tools_back">Back to message</string>
     <string name="chat_tools_clear">Clear search</string>
+    <string name="chat_panel_web_search">Web search</string>
+    <string name="chat_mode_off">Off</string>
+    <string name="chat_mode_local_search">Local search</string>
+    <string name="chat_mode_custom_image">Custom image generation</string>
+    <string name="chat_mode_model_search">Model search</string>
     <string name="chat_tools_web">Web search</string>
     <string name="chat_tools_image">Image generation</string>
     <string name="chat_tools_builtin_search">Built-in model search</string>

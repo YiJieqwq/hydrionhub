@@ -56,11 +56,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.shape.RoundedCornerShape
 import io.hydrion.hub.R
 import io.hydrion.hub.model.*
 import io.hydrion.hub.provider.chatProtocol
 import io.hydrion.hub.provider.route
+import io.hydrion.hub.ui.theme.HubShapes
 import kotlinx.coroutines.flow.filterNot
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
@@ -112,7 +112,7 @@ internal fun ReplyUsageButton(msg: Message, modifier: Modifier = Modifier) {
             val duration = if (chatMotionEnabled()) 180 else 0
             AnimatedVisibility(visibleState = visible, enter = fadeIn(tween(duration, easing = EaseOutCubic)),
                 exit = fadeOut(tween(duration, easing = EaseInCubic))) {
-                Surface(modifier = Modifier.testTag("turn-usage-panel"), shape = RoundedCornerShape(10.dp), color = colors.surface, shadowElevation = 4.dp) {
+                Surface(modifier = Modifier.testTag("turn-usage-panel"), shape = HubShapes.Large, color = colors.surface, shadowElevation = 4.dp) {
                     Column(Modifier.widthIn(max = 280.dp).width(IntrinsicSize.Max)
                         .heightIn(max = (LocalConfiguration.current.screenHeightDp.dp - 16.dp).coerceAtLeast(1.dp))
                         .verticalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 8.dp),
@@ -426,7 +426,7 @@ private fun TimelineStep(@DrawableRes icon: Int, label: String, query: String, i
                     shell.exitCode?.let { ShellExitLabel(it) }
                     shell.stdout?.let { stdout ->
                         val desc = stringResource(R.string.turn_shell_stdout)
-                        Box(Modifier.fillMaxWidth().background(Color(0xFF1B2023), RoundedCornerShape(8.dp))
+                        Box(Modifier.fillMaxWidth().background(Color(0xFF1B2023), HubShapes.Small)
                             .semantics { stateDescription = desc }.padding(horizontal = 8.dp, vertical = 6.dp)) {
                             Text(highlighted(stdout, query), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp, lineHeight = 14.sp, color = Color(0xFFDCE2E5), maxLines = 8, overflow = TextOverflow.Ellipsis)

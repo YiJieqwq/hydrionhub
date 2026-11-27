@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material3.*
@@ -37,6 +36,7 @@ import com.patrykandpatrick.vico.compose.component.shapeComponent
 import com.patrykandpatrick.vico.core.axis.AxisItemPlacer
 import com.patrykandpatrick.vico.core.chart.values.AxisValuesOverrider
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.HubShapes
 import java.io.IOException
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -72,7 +72,7 @@ internal fun MessageChartCard(data: MessageChart) {
         Color(0xffd8893a), Color(0xff748bd4), Color(0xffc66d8f), Color(0xff5597a1))
     val inks = data.series.mapIndexed { index, s -> s.color?.let { Color(android.graphics.Color.parseColor(it)) } ?: defaults[index] }
     val title = data.title ?: stringResource(R.string.turn_chart)
-    Surface(Modifier.fillMaxWidth().testTag("message-chart"), shape = RoundedCornerShape(14.dp),
+    Surface(Modifier.fillMaxWidth().testTag("message-chart"), shape = HubShapes.Small,
         color = colors.surfaceContainer) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

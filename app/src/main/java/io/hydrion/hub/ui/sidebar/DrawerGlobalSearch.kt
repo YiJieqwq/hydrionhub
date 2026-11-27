@@ -5,7 +5,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -21,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.ui.messages.searchableBody
+import io.hydrion.hub.ui.theme.HubShapes
 
 internal data class DrawerSearchState(
     val query: String = "",
@@ -110,7 +110,7 @@ internal fun DrawerSearchResult(hit: DrawerHit, tokens: List<String>, selected: 
             }
         }
     }
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(background.value)
+    Column(Modifier.fillMaxWidth().clip(HubShapes.Small).background(background.value)
         .clickable(onClick = open).semantics { this.selected = selected }
         .heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 9.dp)) {
         Text(marked(hit.title), fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)

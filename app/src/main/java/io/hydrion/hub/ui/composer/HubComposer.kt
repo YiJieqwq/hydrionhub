@@ -59,6 +59,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -130,6 +131,7 @@ import io.hydrion.hub.ui.messages.BitmapPreview
 import io.hydrion.hub.ui.messages.PicturePreview
 import io.hydrion.hub.ui.messages.rememberAttachmentPreview
 import io.hydrion.hub.ui.messages.rememberGeneratedPreview
+import io.hydrion.hub.ui.theme.HubShapes
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.capsuleEdge
 import kotlinx.coroutines.delay
@@ -381,6 +383,10 @@ internal fun HubComposer(
     val rowGate = rememberDraftRowMotion(hasContent).fraction
     val chatToolbar = maxOf(expansion, rowGate)
     val toolbar = chatToolbar * (1f - pageProgress)
+    var lastToolbar by remember { mutableFloatStateOf(chatToolbar) }
+    if (!morphingEditor) SideEffect { lastToolbar = chatToolbar }
+    val actionRow = if (morphingEditor) lastToolbar else chatToolbar
+    val draftFade = if (morphingEditor) Modifier.graphicsLayer { alpha = (1f - pageProgress / .45f).coerceIn(0f, 1f) } else Modifier
     val overlay: Any? = if (chatPicker == null || !allowImeReturn) null
         else chatPicker.page ?: tools?.takeIf { it.targetOpen }
     val effortAtEditor = overlay == ChatModelPickerState.Page.Controls && !morphingEditor
@@ -472,11 +478,11 @@ internal fun HubComposer(
         val shape = when {
             !morphingEditor && (dictating || toolbar == 0f) -> CircleShape
             toolsPull > 0f -> {
-                val top = lerp(24.dp, 20.dp, toolsPull)
-                val bottom = lerp(24.dp, 0.dp, toolsPull)
+                val top = lerp(HubShapes.LargeRadius, 20.dp, toolsPull)
+                val bottom = lerp(HubShapes.LargeRadius, 0.dp, toolsPull)
                 RoundedCornerShape(top, top, bottom, bottom)
             }
-            else -> RoundedCornerShape(24.dp)
+            else -> HubShapes.Large
         }
         val fill = if (toolsPull > 0f) androidx.compose.ui.graphics.lerp(colors.surfaceContainerHigh,
             toolPanelScheme().surface, toolsPull) else colors.surfaceContainerHigh
@@ -498,7 +504,7 @@ internal fun HubComposer(
                         // Let the editor and toolbar measure first in short windows above the IME.
                         BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth()
                             .then(when {
-                                morphingEditor -> Modifier.clearAndSetSemantics { }.revealHeight(1f - pageProgress, 0.dp)
+                                morphingEditor -> draftFade.clearAndSetSemantics { }.revealHeight(1f - pageProgress, 0.dp)
                                 else -> Modifier
                             })
                             .padding(start = 8.dp, end = 8.dp, top = 3.dp, bottom = if (imageAndText) 0.dp else 3.dp)) {
@@ -521,7 +527,7 @@ internal fun HubComposer(
                         // Keep the native input connection alive beneath the one-line voice controls.
                         val editorLayer = if (dictating) Modifier.height(48.dp)
                             .clearAndSetSemantics { }.drawWithContent { } else Modifier
-                        Column(editorLayer) {
+                        Column(editorLayer.then(draftFade)) {
                             ComposerEditorSlot(
                                 editorFocus = editorFocus, modelEditorBridge = modelEditorBridge,
                                 readDraft = { fieldValue },
@@ -603,15 +609,20 @@ internal fun HubComposer(
                             hasClearableTools = false, generating = active, canSend = canSend, chat = chat,
                             onAttach = { if (acceptsDraftInput()) pick() }, onSend = onAction, onClear = {}, onBack = {},
                             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                                .height(lerp(editorMinHeight, controlRowHeight, toolbar))
-                                .padding(start = ToolbarTouchOutset, end = ToolbarTouchOutset +
-                                    if (chat) 2.dp * (1f - pageProgress) else 0.dp),
+                                .height(lerp(editorMinHeight, controlRowHeight, actionRow))
+                                .graphicsLayer {
+                                    translationY = size.height * pageProgress
+                                    scaleX = 1f - .36f * pageProgress
+                                    scaleY = scaleX
+                                    alpha = 1f - pageProgress
+                                }.testTag("composer-action-row")
+                                .padding(start = ToolbarTouchOutset, end = ToolbarTouchOutset + if (chat) 2.dp else 0.dp),
                         ) { leading, trailing ->
-                            if (toolbar > 0f) {
+                            if (actionRow > 0f) {
                                 val interactive = chatToolbar >= 0.6f && !morphingEditor
                                 val reveal = Modifier.graphicsLayer {
-                                    alpha = toolbar
-                                    translationX = -8.dp.toPx() * (1f - toolbar)
+                                    alpha = actionRow
+                                    translationX = -8.dp.toPx() * (1f - actionRow)
                                 }.then(if (interactive) Modifier else Modifier.clearAndSetSemantics { })
                                 Row(leading.then(reveal), verticalAlignment = Alignment.CenterVertically) {
                                     ComposerIconButton("打开工具箱", onClick = {
@@ -853,7 +864,7 @@ private fun DraftAttachment(attachment: Attachment, maxWidth: Dp, maxHeight: Dp,
         val width = minOf(maxWidth, maxOf(32.dp, maxHeight * ratio))
         val height = minOf(maxHeight, maxOf(32.dp, maxWidth / ratio))
         Box(Modifier.size(width, height)
-            .testTag("draftImage:${attachment.id}").clip(RoundedCornerShape(12.dp))) {
+            .testTag("draftImage:${attachment.id}").clip(HubShapes.Small)) {
             BitmapPreview(preview, if (key != null) "参考图缩略图" else "图片附件", Modifier.matchParentSize(), fit = true)
             IconButton(onClick = onRemove, modifier = Modifier.align(Alignment.TopEnd).size(32.dp)) {
                 Box(Modifier.size(22.dp).capsuleEdge().background(Color.Black.copy(alpha = .68f), CircleShape),
@@ -866,7 +877,8 @@ private fun DraftAttachment(attachment: Attachment, maxWidth: Dp, maxHeight: Dp,
         return
     }
     Row(
-        Modifier.capsuleEdge().background(colors.surfaceContainerHighest, CircleShape).clip(CircleShape).padding(start = 10.dp),
+        Modifier.capsuleEdge(HubShapes.Small).background(colors.surfaceContainerHighest, HubShapes.Small)
+            .clip(HubShapes.Small).padding(start = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {

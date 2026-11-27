@@ -7,7 +7,6 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,6 +31,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.ui.theme.HubShapes
 
 @Composable
 internal fun ProviderConfigTab(
@@ -43,7 +43,7 @@ internal fun ProviderConfigTab(
     Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         GroupTitle(stringResource(R.string.model_provider_management))
-        Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow, shape = RoundedCornerShape(16.dp)) {
+        Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow, shape = HubShapes.Large) {
             Column {
                 ManageSwitch(stringResource(R.string.model_provider_enable), Icons.Outlined.PowerSettingsNew, provider.enabled) { onUpdate(provider.copy(enabled = it)) }
                 if (provider.mode == Mode.Chat && provider.id != DEEPSEEK_PROVIDER_ID) {
@@ -164,7 +164,7 @@ private fun ConfigField(
             singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
             placeholder = placeholder?.let { { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
             trailingIcon = action, visualTransformation = transformation,
-            shape = RoundedCornerShape(12.dp), colors = fieldColors())
+            shape = HubShapes.Small, colors = fieldColors())
     }
 }
 
@@ -181,13 +181,13 @@ private fun TemplateField(value: String, sample: Map<String, Any>, onChange: (St
     GroupTitle(stringResource(R.string.model_json_body))
     val templateLabel = stringResource(R.string.model_json_template)
     TextField(value, onChange, Modifier.fillMaxWidth().semantics { contentDescription = templateLabel },
-        minLines = 4, maxLines = 10, shape = RoundedCornerShape(12.dp), colors = fieldColors(),
+        minLines = 4, maxLines = 10, shape = HubShapes.Small, colors = fieldColors(),
         textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
     Text(sample.keys.joinToString("  ") { "{{$it}}" },
         color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     OutlinedButton(onClick = { result = RequestTemplate.preview(value, sample) }) { Text(stringResource(R.string.model_preview_body)) }
     result?.fold(onSuccess = { json ->
-        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Surface(shape = HubShapes.Small, color = MaterialTheme.colorScheme.surfaceContainerLow) {
             Text(json, Modifier.fillMaxWidth().padding(12.dp),
                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
         }

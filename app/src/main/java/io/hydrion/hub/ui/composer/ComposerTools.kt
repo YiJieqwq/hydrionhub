@@ -16,23 +16,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
-import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.automirrored.outlined.ManageSearch
-import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -75,7 +68,9 @@ import io.hydrion.hub.ui.messages.MessageTone
 import io.hydrion.hub.ui.messages.timelineScheme
 import io.hydrion.hub.model.CUSTOM_IMAGE_TOOL
 import io.hydrion.hub.model.Draft
+import io.hydrion.hub.provider.DiscreteChoiceTrack
 import io.hydrion.hub.model.HubViewModel
+import io.hydrion.hub.ui.theme.HubShapes
 import kotlinx.coroutines.delay
 
 // Some keyboards never acknowledge a hide request. Keep the tools reachable in that case.
@@ -94,7 +89,7 @@ internal fun AwaitToolsImeDismissal(imeActive: Boolean, eligible: Boolean, onFin
 }
 
 private const val Disabled = "禁用"
-private data class ToolChoice(val value: String, val label: String, val icon: () -> ImageVector)
+private data class ToolChoice(val value: String, val label: String)
 
 @Composable
 internal fun toolPanelScheme(): androidx.compose.material3.ColorScheme {
@@ -137,22 +132,19 @@ private fun ChatToolGroups(
     search: String, imageTool: String, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit, vm: HubViewModel,
     modelToolsEnabled: Boolean,
 ) {
-    val disabled = ToolChoice(Disabled, stringResource(R.string.chat_tools_disabled)) { Icons.Outlined.Block }
-    val web = listOf(
-        ToolChoice("模型内置搜索", stringResource(R.string.chat_tools_builtin_search)) { Icons.Outlined.Language },
-        ToolChoice("自定义搜索", stringResource(R.string.chat_tools_custom_search)) { Icons.AutoMirrored.Outlined.ManageSearch },
-        disabled,
-    )
-    val image = listOf(ToolChoice(CUSTOM_IMAGE_TOOL, stringResource(R.string.chat_tools_custom_image)) { Icons.Outlined.Palette }, disabled)
-    val webTitle = stringResource(R.string.chat_tools_web)
+    val off = ToolChoice(Disabled, stringResource(R.string.chat_mode_off))
+    val web = listOf(off, ToolChoice("自定义搜索", stringResource(R.string.chat_mode_local_search)),
+        ToolChoice("模型内置搜索", stringResource(R.string.chat_mode_model_search)))
+    val image = listOf(off, ToolChoice(CUSTOM_IMAGE_TOOL, stringResource(R.string.chat_mode_custom_image)))
+    val webTitle = stringResource(R.string.chat_panel_web_search)
     val imageTitle = stringResource(R.string.chat_tools_image)
-    val webMatches = matchingToolChoices(query, webTitle, web) { it.label }
-    val imageMatches = matchingToolChoices(query, imageTitle, image) { it.label }
-    HostToolGroups(vm, query, webMatches.isNotEmpty() || imageMatches.isNotEmpty())
-    ToolGroup("web", webTitle, web, webMatches, search, initiallyOpen = true,
+    val webVisible = matchingToolChoices(query, webTitle, web) { it.label }.isNotEmpty()
+    val imageVisible = matchingToolChoices(query, imageTitle, image) { it.label }.isNotEmpty()
+    ToolModeSection("web", webTitle, web, search, webVisible, initiallyOpen = true,
         filtering = query.isNotEmpty(), enabled = modelToolsEnabled, onSelect = onSearch)
-    ToolGroup("image", imageTitle, image, imageMatches, imageTool, initiallyOpen = false,
+    ToolModeSection("image", imageTitle, image, imageTool, imageVisible, initiallyOpen = false,
         filtering = query.isNotEmpty(), enabled = modelToolsEnabled, onSelect = onImageTool)
+    HostToolGroups(vm, query, webVisible || imageVisible)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -169,7 +161,7 @@ internal fun ImageComposerTools(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = colors.surfaceContainer,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        shape = HubShapes.Sheet,
     ) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
@@ -187,34 +179,38 @@ internal fun ImageComposerTools(
 }
 
 @Composable
-private fun ToolGroup(
-    id: String, title: String, choices: List<ToolChoice>, matches: List<ToolChoice>, selected: String,
-    initiallyOpen: Boolean, filtering: Boolean, enabled: Boolean, onSelect: (String) -> Unit,
-) {
-    val inputMode = LocalInputModeManager.current
-    val keepEditorFocus = Modifier.focusProperties { canFocus = inputMode.inputMode != InputMode.Touch }
-    val detail = if (enabled) choices.find { it.value == selected }?.label ?: selected else stringResource(R.string.panel_model_unavailable)
-    PanelSection(id, title, detail, matches.isNotEmpty(), initiallyOpen, filtering) {
-        val colors = MaterialTheme.colorScheme
-        Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            matches.forEach { choice ->
-                val checked = selected == choice.value
-                PanelStep(Modifier.fillMaxWidth(), inheritGroupPull = true) {
-                    Row(
-                        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).then(keepEditorFocus)
-                            .testTag("chat-tools-option:$id:${choice.value}")
-                            .selectable(selected = checked, enabled = enabled, role = Role.RadioButton, onClick = { onSelect(choice.value) })
-                            .heightIn(min = 48.dp).padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Icon(choice.icon(), null, Modifier.size(20.dp),
-                            tint = if (choice.value == Disabled) colors.onSurface.copy(alpha = .38f) else colors.onSurfaceVariant)
-                        Text(choice.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontSize = 15.sp,
-                            color = if (!enabled) colors.onSurface.copy(alpha = .5f) else if (checked && choice.value != Disabled) colors.primary else colors.onSurface)
-                        RadioButton(selected = checked, onClick = null, enabled = enabled,
-                            colors = RadioButtonDefaults.colors(selectedColor = colors.primary, unselectedColor = colors.outline))
-                    }
+private fun ToolModeSection(id: String, title: String, choices: List<ToolChoice>, value: String, visible: Boolean,
+    initiallyOpen: Boolean, filtering: Boolean, enabled: Boolean, onSelect: (String) -> Unit) {
+    val label = choices.firstOrNull { it.value == value }?.label ?: value
+    val summary = if (enabled) label else stringResource(R.string.panel_model_unavailable)
+    PanelSection(id, title, summary, visible, initiallyOpen, filtering) {
+        ToolModeTrack(id, title, choices, value, enabled, onSelect)
+    }
+}
+
+@Composable
+private fun ToolModeTrack(id: String, title: String, choices: List<ToolChoice>, value: String, enabled: Boolean, onSelect: (String) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val values = choices.map { it.value }
+    Column(Modifier.fillMaxWidth()) {
+        DiscreteChoiceTrack(values, value, title, { selected -> choices.first { it.value == selected }.label }, onSelect,
+            modifier = Modifier.testTag("chat-tools-track:$id"), enabled = enabled, inScrollingPanel = true)
+        Row(Modifier.fillMaxWidth().selectableGroup()) {
+            choices.forEachIndexed { index, choice ->
+                val selected = choice.value == value
+                val align = when (index) {
+                    0 -> Alignment.CenterStart
+                    choices.lastIndex -> Alignment.CenterEnd
+                    else -> Alignment.Center
+                }
+                Box(Modifier.weight(1f).heightIn(min = 36.dp).keepToolEditorFocus().testTag("chat-tools-option:$id:${choice.value}")
+                    .selectable(selected, enabled = enabled, role = Role.RadioButton) { onSelect(choice.value) }
+                    .padding(horizontal = 12.dp), contentAlignment = align) {
+                    Text(choice.label, color = when {
+                        !enabled -> colors.onSurface.copy(alpha = .38f)
+                        selected -> colors.primary
+                        else -> colors.onSurfaceVariant
+                    }, style = MaterialTheme.typography.labelMedium)
                 }
             }
         }

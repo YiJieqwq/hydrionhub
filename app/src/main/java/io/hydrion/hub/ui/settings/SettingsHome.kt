@@ -29,6 +29,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.res.painterResource
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.ui.chrome.ChatHeaderLayout
+import io.hydrion.hub.ui.theme.HubShapes
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.messages.ChatEdgeBrushes
 import io.hydrion.hub.ui.messages.ChatEdgeFade
@@ -232,11 +234,11 @@ private fun HeaderButton(icon: ImageVector, description: String, onClick: () -> 
 }
 
 @Composable
-private fun Modifier.searchCapsule(): Modifier {
+private fun Modifier.searchCapsule(shape: Shape): Modifier {
     val colors = MaterialTheme.colorScheme
     val dark = colors.onSurface.luminance() > colors.surface.luminance()
-    return border(HubStyle.SettingsOutline.width, if (dark) HubStyle.ComposerBorder else colors.outlineVariant, CircleShape)
-        .clip(CircleShape).background(if (dark) HubStyle.Raised else colors.surfaceContainerHigh)
+    return border(HubStyle.SettingsOutline.width, if (dark) HubStyle.ComposerBorder else colors.outlineVariant, shape)
+        .clip(shape).background(if (dark) HubStyle.Raised else colors.surfaceContainerHigh)
 }
 
 @Composable
@@ -247,7 +249,7 @@ private fun searchInk(): Color {
 
 @Composable
 private fun RoundButton(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    IconButton(onClick = onClick, modifier = modifier.size(48.dp).searchCapsule()) {
+    IconButton(onClick = onClick, modifier = modifier.size(48.dp).searchCapsule(CircleShape)) {
         Icon(icon, description, Modifier.size(22.dp), tint = searchInk())
     }
 }
@@ -305,7 +307,7 @@ private fun SearchDock(
     Row(modifier.padding(start = side, end = side, top = DockTopPadding, bottom = bottomGap),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         BasicTextField(value = search, onValueChange = onSearch, singleLine = true,
-            modifier = Modifier.weight(1f).height(SettingsButtonSize).searchCapsule()
+            modifier = Modifier.weight(1f).height(SettingsButtonSize).searchCapsule(HubShapes.Large)
                 .onFocusChanged { onFocus(it.isFocused) }.semantics { contentDescription = hint },
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = ink),
             cursorBrush = SolidColor(ink), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),

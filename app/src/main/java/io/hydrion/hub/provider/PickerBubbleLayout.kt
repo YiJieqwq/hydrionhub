@@ -44,6 +44,7 @@ import io.hydrion.hub.ui.ChatPanelMotionMillis
 import io.hydrion.hub.ui.LocalPickerModelTravelX
 import io.hydrion.hub.ui.LocalPickerModelLabelBounds
 import io.hydrion.hub.ui.LocalPickerComposerBounds
+import io.hydrion.hub.ui.theme.HubShapes
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -149,7 +150,7 @@ internal fun PickerBubbleLayout(
                 translate(end.left + scene.travelX + travel, end.top + travelY) { drawLayer(ink) }
             }
             if ((face != PickerBubbleFace.Effort && w.x > 0f) || (face != PickerBubbleFace.List && w.y > 0f)) {
-                val radius = bubbleRadius(rect, 14.dp.toPx(), w.x + w.y)
+                val radius = bubbleRadius(rect, HubShapes.SmallRadius.toPx(), w.x + w.y)
                 clipPath(Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }) {
                     ghost(PickerBubbleFace.Effort, effortInk, scene.effort, w.x)
                     ghost(PickerBubbleFace.List, listInk, scene.list, w.y)
@@ -210,7 +211,7 @@ internal fun PickerBubbleLayout(
                     alpha = if (hideForReturn) 0f else if (face == PickerBubbleFace.Effort) w.x else w.y
                     val rect = scene.bounds(w)
                     shape = BubbleClip(rect.translate(-panel.left - scene.travelX - shift, -panel.top - translationY),
-                        bubbleRadius(rect, 14.dp.toPx(), w.x + w.y))
+                        bubbleRadius(rect, HubShapes.SmallRadius.toPx(), w.x + w.y))
                     clip = true
                 }
             }
@@ -238,13 +239,13 @@ private fun BubbleSurface(
         val cover = (w.x + w.y).coerceIn(0f, 1f)
         val edge = lerp(effortBorder, listBorder, if (cover > 0f) (w.y / cover).coerceIn(0f, 1f) else 0f)
         drawPickerEdgeTrail(rect, scene.label, scene.effort, scene.list, speed,
-            bubbleRadius(rect, 14.dp.toPx(), cover), edge, trailPath)
+            bubbleRadius(rect, HubShapes.SmallRadius.toPx(), cover), edge, trailPath)
     }, content = {
         Spacer(Modifier.testTag("chat-picker-bubble").drawBehind {
             val w = weights()
             val cover = (w.x + w.y).coerceIn(0f, 1f)
             val listPart = if (cover > 0f) (w.y / cover).coerceIn(0f, 1f) else 0f
-            val radius = CornerRadius(bubbleRadius(Rect(Offset.Zero, size), 14.dp.toPx(), cover))
+            val radius = CornerRadius(bubbleRadius(Rect(Offset.Zero, size), HubShapes.SmallRadius.toPx(), cover))
             val surface = lerp(highlight, lerp(effort, list, listPart), cover)
             drawRoundRect(surface, cornerRadius = radius)
             // The effort outline is two device pixels; the capability menu uses its original dp width.
@@ -272,7 +273,7 @@ private fun BubbleSurface(
         val hitEnd = if (scene.above) minOf(y + shell.height, scene.composer.top) else y + shell.height
         val hit = children.getOrNull(1)?.measure(Constraints.fixed(shell.width, (hitEnd - hitY).coerceAtLeast(0)))
         val cover = w.x + w.y
-        val radius = bubbleRadius(rect, 14.dp.toPx(), cover)
+        val radius = bubbleRadius(rect, HubShapes.SmallRadius.toPx(), cover)
         layout(limits.maxWidth, limits.maxHeight) {
             if (!hidden) {
                 shell.placeWithLayer(x, y) {

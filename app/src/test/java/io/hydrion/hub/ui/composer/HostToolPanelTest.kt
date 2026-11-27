@@ -270,7 +270,7 @@ class HostToolPanelTest {
         val localTag = "chat-tools-group:local"
         val localHeader = bounds(localTag)
         near(32f, localHeader.bottom - localHeader.top)
-        near(14f, localHeader.top - group.getUnclippedBoundsInRoot().bottom)
+        near(14f, localHeader.top - bounds("chat-tools-section:image").bottom)
         screen.onNodeWithTag(localTag).performClick()
         val toggle = screen.onNodeWithTag("panel-switch:Time")
         toggle.assertIsOff().performClick().assertIsOn()
@@ -337,7 +337,7 @@ class HostToolPanelTest {
     @Test fun toolSectionsShareOneOpaqueSurfaceInDarkAndLightThemes() {
         open()
         screen.onNodeWithTag("chat-tools-card:environment", true).assertDoesNotExist()
-        screen.onNodeWithTag("chat-tools-group:environment").assertIsDisplayed()
+        screen.onNodeWithTag("chat-tools-group:environment").performScrollTo().assertIsDisplayed()
         fun checkSurface(id: String, light: Boolean = false) {
             val header = screen.onNodeWithTag("chat-tools-group:$id", true).performScrollTo()
             header.assert(hasAnyAncestor(hasTestTag("chat-tools-section:$id")))
@@ -351,7 +351,14 @@ class HostToolPanelTest {
                 if (light) assertTrue(android.graphics.Color.luminance(fill) > .6f)
                 else assertEquals(android.graphics.Color.rgb(29, 29, 29), fill)
                 assertEquals("Group flows into the outer gutter", fill, image.getPixel(x - 4, y))
-                assertEquals("No separate corners around the group", fill, image.getPixel(x + 1, box.top.roundToInt() + 1))
+                val top = box.top.roundToInt() + 1
+                val outer = image.getPixel(x - 4, top)
+                val inner = image.getPixel(x + 1, top)
+                // A dithered gradient can move a channel by one level across adjacent pixels.
+                for (shift in listOf(0, 8, 16)) {
+                    assertEquals("Header feather crosses the flat section and gutter",
+                        ((outer ushr shift) and 255).toFloat(), ((inner ushr shift) and 255).toFloat(), 1f)
+                }
             }
         }
         for (id in listOf("local", "mcp", "web", "image")) checkSurface(id)
@@ -542,6 +549,12 @@ class HostToolPanelTest {
         }
         open()
         screen.onNodeWithTag("chat-tools-option:web:模型内置搜索").assertIsNotEnabled()
+        val beforeModes = screen.runOnIdle { vm.state.value.draft }
+        screen.onNodeWithTag("chat-tools-track:web", true).performScrollTo().assertIsNotEnabled().performTouchInput { swipeRight() }
+        screen.onNodeWithTag("chat-tools-group:image").performScrollTo().performClick()
+        screen.onNodeWithTag("chat-tools-track:image", true).performScrollTo().assertIsNotEnabled().performTouchInput { click() }
+        screen.onNodeWithTag("chat-tools-group:image").performScrollTo().performClick()
+        assertEquals(beforeModes, screen.runOnIdle { vm.state.value.draft })
         screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
         act("AskUser").assertIsNotEnabled()
         act("Time").assertIsNotEnabled()

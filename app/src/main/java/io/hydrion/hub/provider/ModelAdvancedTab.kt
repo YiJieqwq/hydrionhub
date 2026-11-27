@@ -2,10 +2,10 @@ package io.hydrion.hub.provider
 
 import androidx.compose.ui.res.stringResource
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.HubShapes
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
@@ -111,7 +111,7 @@ private fun HeaderEditor(index: Int, header: HeaderDraft, update: (HeaderDraft) 
         ModelField(stringResource(R.string.model_header_name), header.key, { update(header.copy(key = it)) })
         CompositionLocalProvider(LocalSaveableStateRegistry provides null) {
             OutlinedTextField(header.value, { update(header.copy(value = it)) }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.model_header_value)) }, shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.model_header_value)) }, shape = HubShapes.Small,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 visualTransformation = if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
                 trailingIcon = {
@@ -154,7 +154,7 @@ private fun BodyDialog(initial: String, onDismiss: () -> Unit, onApply: (String)
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(json, { json = it; error = null }, modifier = Modifier.fillMaxWidth().semantics {
                 contentDescription = jsonLabel
-            }, minLines = 4, maxLines = 8, label = { Text(stringResource(R.string.model_json_object)) }, shape = RoundedCornerShape(12.dp))
+            }, minLines = 4, maxLines = 8, label = { Text(stringResource(R.string.model_json_object)) }, shape = HubShapes.Small)
             error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             if (initial.isNotEmpty()) TextButton(onClick = { onApply("") }) { Text(stringResource(R.string.model_delete_body)) }
         }

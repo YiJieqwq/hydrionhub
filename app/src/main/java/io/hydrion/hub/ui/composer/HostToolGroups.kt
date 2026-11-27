@@ -127,29 +127,6 @@ internal fun HostToolGroups(vm: HubViewModel, query: String, legacyMatches: Bool
     val workTitle = stringResource(R.string.panel_work)
     val work = matches(workTitle, envRows)
     val browsing = query.isEmpty()
-    PanelSection("environment", workTitle, selectedName, work.isNotEmpty(), true, !browsing, summaryOnCollapseOnly = true) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (entry in work) {
-                val page = entry.page
-                val title = stringResource(page.label)
-                if (browsing && page == HostToolPage.Environment) {
-                    PanelToolRow(selectedName, entry.icon, enabled = entry.enabled, id = page.name,
-                        chevron = false, compactActions = true, controls = {
-                            for (action in envRows.filter { it.page == HostToolPage.Files || it.page == HostToolPage.Terminal ||
-                                (env != null && it.page == HostToolPage.Settings) }) {
-                                InlinePanelAction(stringResource(action.page.label), action.icon, action.enabled, action.page.name) { show(action.page) }
-                            }
-                        }) { show(page) }
-                } else if (!browsing || page !in setOf(HostToolPage.Settings, HostToolPage.Files, HostToolPage.Terminal)) {
-                    val explanation = if (page == HostToolPage.Permissions)
-                        stringResource(if (denied) R.string.panel_permission_deny_detail else R.string.panel_permission_ask_detail)
-                    else null
-                    PanelToolRow(title, entry.icon, explanation, entry.enabled, page.name,
-                        value = entry.detail) { show(page) }
-                }
-            }
-        }
-    }
     val localTitle = stringResource(R.string.panel_local)
     val local = matches(localTitle, localRows)
     val choices = state.assistants.find { it.id == chat.assistantId }?.manualPanelTools.orEmpty()
@@ -226,6 +203,29 @@ internal fun HostToolGroups(vm: HubViewModel, query: String, legacyMatches: Bool
             if (saveError) Text(stringResource(R.string.runtime_error), color = MaterialTheme.colorScheme.error)
             if (showManage) PanelToolRow(manageTitle, R.drawable.lucide_settings2, enabled = canUse, id = "Mcp",
                 value = state.assistants.find { it.id == chat.assistantId }?.name) { show(HostToolPage.Mcp) }
+        }
+    }
+    PanelSection("environment", workTitle, selectedName, work.isNotEmpty(), true, !browsing, summaryOnCollapseOnly = true) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (entry in work) {
+                val page = entry.page
+                val title = stringResource(page.label)
+                if (browsing && page == HostToolPage.Environment) {
+                    PanelToolRow(selectedName, entry.icon, enabled = entry.enabled, id = page.name,
+                        chevron = false, compactActions = true, controls = {
+                            for (action in envRows.filter { it.page == HostToolPage.Files || it.page == HostToolPage.Terminal ||
+                                (env != null && it.page == HostToolPage.Settings) }) {
+                                InlinePanelAction(stringResource(action.page.label), action.icon, action.enabled, action.page.name) { show(action.page) }
+                            }
+                        }) { show(page) }
+                } else if (!browsing || page !in setOf(HostToolPage.Settings, HostToolPage.Files, HostToolPage.Terminal)) {
+                    val explanation = if (page == HostToolPage.Permissions)
+                        stringResource(if (denied) R.string.panel_permission_deny_detail else R.string.panel_permission_ask_detail)
+                    else null
+                    PanelToolRow(title, entry.icon, explanation, entry.enabled, page.name,
+                        value = entry.detail) { show(page) }
+                }
+            }
         }
     }
     if (!legacyMatches && work.isEmpty() && local.isEmpty() && !mcpVisible) {

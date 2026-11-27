@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -31,6 +30,7 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.HubShapes
 
 private fun AnnotatedString.Builder.markMatches(query: String, highlight: Color) {
     if (query.isBlank()) return
@@ -162,7 +162,7 @@ internal fun CodeBlock(block: MarkdownBlock.Code, query: String, chat: Boolean,
     code: AnnotatedString = highlighted(block.value, query), labelColor: Color = Color.Unspecified) {
     val copyText = rememberPlainTextCopier(R.string.turn_code_copied)
     val palette = LocalMessageStyle.current.renderPalette.assistant
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(palette.background.messageColor())) {
+    Column(Modifier.fillMaxWidth().clip(HubShapes.Small).background(palette.background.messageColor())) {
         Row(Modifier.fillMaxWidth().background(palette.border.messageColor().copy(alpha = .35f)).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(highlighted(block.language.ifEmpty { stringResource(R.string.turn_code_label) }, query), Modifier.weight(1f), color = labelColor,
                 style = if (chat) MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp, letterSpacing = 0.sp) else MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)

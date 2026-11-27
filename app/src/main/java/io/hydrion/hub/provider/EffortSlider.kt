@@ -28,11 +28,13 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
@@ -112,8 +114,20 @@ internal fun EffortTrack(
         FixedEffortTrack()
         return
     }
+    DiscreteChoiceTrack(choices, value, chatCapabilityLabel(cap), { chatOptionLabel(cap, it) }, onChoose,
+        modifier = Modifier.testTag("chat-model-effort"), highestIndex = highestIndex, accelerated = accelerated, onPreview = onPreview)
+}
+
+/** One continuous rail shared by the effort chooser and the chat panel's mutually exclusive modes. */
+@Composable
+internal fun DiscreteChoiceTrack(
+    choices: List<String>, value: String, label: String, labelFor: @Composable (String) -> String, onChoose: (String) -> Unit,
+    modifier: Modifier = Modifier, enabled: Boolean = true, inScrollingPanel: Boolean = false,
+    highestIndex: Int = -1, accelerated: Boolean = false, onPreview: (String?) -> Unit = {},
+) {
     val last = choices.lastIndex
-    val index = choices.indexOf(value).coerceAtLeast(0)
+    val stored = choices.indexOf(value)
+    val index = stored.coerceAtLeast(0)
     val thumb = remember(choices) { EffortThumb(stopFraction(index, last)) }
     val scope = rememberCoroutineScope()
     val currentIndex by rememberUpdatedState(index)
@@ -130,18 +144,18 @@ internal fun EffortTrack(
 
     val nearest by remember(thumb) { derivedStateOf { (thumb.position * last).roundToInt().coerceIn(0, last) } }
     val announced = if (thumb.pressed) nearest else index
-    val level = chatOptionLabel(cap, choices[announced])
-    val label = chatCapabilityLabel(cap)
+    val known = stored >= 0 || !inScrollingPanel || thumb.pressed
+    val level = if (known) labelFor(choices[announced]) else value
     fun select(i: Int) {
         thumb.settle(scope, stopFraction(i, last))
-        if (i != currentIndex) choose(choices[i])
+        if ((stored < 0 && inScrollingPanel) || i != currentIndex) choose(choices[i])
     }
 
-    val touch = Modifier.pointerInput(thumb, index, rtl) {
+    val touch = if (!enabled) Modifier else Modifier.pointerInput(thumb, stored, rtl, inScrollingPanel) {
         val inset = (RailMargin + EffortThumbRadius).toPx()
         awaitEachGesture {
             val down = awaitFirstDown()
-            down.consume()
+            if (!inScrollingPanel) down.consume()
             var previewIndex = -1
             fun follow(x: Float) {
                 thumb.position = effortPointerFraction(x, size.width.toFloat(), inset, rtl, thumb.position)
@@ -152,13 +166,23 @@ internal fun EffortTrack(
                 }
             }
 
-            thumb.grab()
-            try {
+            if (!inScrollingPanel) {
+                thumb.grab()
                 follow(down.position.x)
+            }
+            try {
                 while (true) {
                     val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
                     // A cancelled pointer is delivered as consumed. Never commit the last preview in that case.
-                    if (change.isConsumed || !thumb.pressed) break
+                    if (change.isConsumed) break
+                    if (!thumb.pressed) {
+                        if (!inScrollingPanel) break
+                        val distance = change.position - down.position
+                        if (change.pressed && kotlin.math.abs(distance.y) > viewConfiguration.touchSlop &&
+                            kotlin.math.abs(distance.y) > kotlin.math.abs(distance.x)) break
+                        if (change.pressed && kotlin.math.abs(distance.x) <= viewConfiguration.touchSlop) continue
+                        thumb.grab()
+                    }
                     follow(change.position.x)
                     change.consume()
                     if (!change.pressed) {
@@ -173,19 +197,20 @@ internal fun EffortTrack(
         }
     }
 
-    Box(Modifier.fillMaxWidth().heightIn(min = EffortRailHitHeight).testTag("chat-model-effort").then(touch).semantics {
+    Box(modifier.fillMaxWidth().heightIn(min = EffortRailHitHeight).then(touch).semantics {
         contentDescription = label
         stateDescription = level
-        progressBarRangeInfo = ProgressBarRangeInfo(announced.toFloat(), 0f..last.toFloat(), last - 1)
-        setProgress { requested ->
+        if (known) progressBarRangeInfo = ProgressBarRangeInfo(announced.toFloat(), 0f..last.toFloat(), last - 1)
+        if (!enabled) disabled() else setProgress { requested ->
             val next = accessibleEffortIndex(requested, currentIndex, last)
-            if (next == currentIndex) return@setProgress false
+            if (known && next == currentIndex) return@setProgress false
             select(next)
             true
         }
     }, contentAlignment = Alignment.Center) {
-        Box(Modifier.fillMaxWidth().padding(horizontal = RailMargin), contentAlignment = Alignment.Center) {
-            EffortRail({ thumb.position }, { thumbScale.value }, choices, highestIndex, index, accelerated)
+        Box(Modifier.fillMaxWidth().padding(horizontal = RailMargin).alpha(if (enabled) 1f else .38f), contentAlignment = Alignment.Center) {
+            if (!known) Spacer(Modifier.fillMaxWidth().height(EffortRailHeight).background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape))
+            else EffortRail({ thumb.position }, { thumbScale.value }, choices, highestIndex, index, accelerated)
         }
     }
 }

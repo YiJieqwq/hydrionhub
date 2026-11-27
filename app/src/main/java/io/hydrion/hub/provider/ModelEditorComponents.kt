@@ -1,11 +1,11 @@
 package io.hydrion.hub.provider
 
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.HubShapes
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -26,7 +26,7 @@ internal fun ModelGroup(title: String, content: @Composable ColumnScope.() -> Un
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
         if (title.isNotBlank()) Text(title, style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Medium)
-        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Surface(Modifier.fillMaxWidth(), shape = HubShapes.Large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
             Column(Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
                 verticalArrangement = Arrangement.spacedBy(3.dp), content = content)
         }
@@ -44,7 +44,7 @@ internal fun ModelField(
         TextField(value, onChange, Modifier.fillMaxWidth().semantics { contentDescription = label },
             singleLine = singleLine, maxLines = if (singleLine) 1 else 8, trailingIcon = trailingIcon,
             placeholder = placeholder?.let { hint -> { Text(hint) } },
-            keyboardOptions = KeyboardOptions(keyboardType = keyboard), shape = RoundedCornerShape(12.dp),
+            keyboardOptions = KeyboardOptions(keyboardType = keyboard), shape = HubShapes.Small,
             colors = TextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
@@ -87,7 +87,7 @@ internal fun ModelChips(options: List<Pair<String, String>>, selected: Set<Strin
     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         options.forEach { (id, label) ->
             FilterChip(selected = id in selected, onClick = { onClick(id) }, label = { Text(label) },
-                shape = RoundedCornerShape(12.dp), colors = FilterChipDefaults.filterChipColors(
+                shape = HubShapes.Small, colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer))
         }

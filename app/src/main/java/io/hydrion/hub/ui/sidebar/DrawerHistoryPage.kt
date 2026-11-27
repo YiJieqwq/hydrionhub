@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.*
@@ -27,6 +26,7 @@ import androidx.compose.material.icons.outlined.*
 import io.hydrion.hub.model.LocalAssistant
 import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.model.isActive
+import io.hydrion.hub.ui.theme.HubShapes
 
 internal fun List<HistorySection>.visibleConversation(id: String): Conversation? =
     firstNotNullOfOrNull { section -> section.rows.find { it.id == id } }
@@ -202,7 +202,7 @@ internal fun ConfirmHistoryArchive(
 private fun ArchivedConversationCard(item: Conversation, hasDraft: Boolean, ownerName: String?, onRestore: () -> Unit) {
     val restore = stringResource(R.string.history_restore)
     Surface(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-        shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        shape = HubShapes.Small, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Row(Modifier.fillMaxWidth().testTag("history-row-${item.id}").clickable(onClickLabel = restore, onClick = onRestore)
             .heightIn(min = 48.dp).padding(start = 14.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -243,7 +243,7 @@ private fun HistoryConversationCard(
             if (swipe.dismissDirection != SwipeToDismissBoxValue.Settled) {
                 Box(
                     Modifier.fillMaxSize().padding(bottom = 4.dp)
-                        .background(colors.errorContainer, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp),
+                        .background(colors.errorContainer, HubShapes.Small).padding(horizontal = 16.dp),
                     contentAlignment = Alignment.CenterEnd,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

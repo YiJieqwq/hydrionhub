@@ -3,8 +3,13 @@
     <string name="tools_search_hint">搜索工具…</string>
     <string name="chat_tools_back">返回消息输入框</string>
     <string name="chat_tools_clear">清除搜索</string>
+    <string name="chat_panel_web_search">联网搜索</string>
+    <string name="chat_mode_off">关闭</string>
+    <string name="chat_mode_local_search">本地搜索</string>
+    <string name="chat_mode_custom_image">自定义生图</string>
+    <string name="chat_mode_model_search">模型搜索</string>
     <string name="chat_tools_web">网络搜索</string>
-    <string name="chat_tools_image">图片生成</string>
+    <string name="chat_tools_image">图像生成</string>
     <string name="chat_tools_builtin_search">模型内置搜索</string>
     <string name="chat_tools_custom_search">自定义搜索</string>
     <string name="chat_tools_custom_image">自定义图片生成</string>

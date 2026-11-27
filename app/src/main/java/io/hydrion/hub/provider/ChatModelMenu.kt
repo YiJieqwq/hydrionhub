@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import io.hydrion.hub.ui.composer.PanelBottomRail
 import io.hydrion.hub.ui.composer.PanelModelSearch
 import io.hydrion.hub.ui.composer.PanelViewport
 import io.hydrion.hub.ui.composer.PanelStep
@@ -177,7 +178,7 @@ internal fun ChatModelBrowsePage(
         }
         picker.consumeBrowseRestore(restore)
     }
-    Column(modifier.fillMaxWidth().testTag("chat-model-list").padding(bottom = 6.dp)) {
+    Column(modifier.fillMaxWidth().testTag("chat-model-list").padding(bottom = if (providers.isEmpty()) 6.dp else 0.dp)) {
         PanelModelSearch(picker, enabled = interactive && settled, onFavorites = if (shortcuts.isEmpty()) null else ({
             picker.clearSearchQuery()
             browsingScroll.requestScrollToItem(if (catalog.perChatModel) 1 else 0)
@@ -225,8 +226,8 @@ internal fun ChatModelBrowsePage(
             val visibleProvider by remember(rows, scroll, prefixCount) {
                 derivedStateOf { rows.getOrNull(scroll.firstVisibleItemIndex - prefixCount)?.takeUnless { it.favoriteShortcut }?.provider?.id }
             }
-            PanelStep(Modifier.fillMaxWidth()) {
-                LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp).testTag("chat-model-providers"), horizontalArrangement = Arrangement.spacedBy(6.dp),
+            PanelBottomRail {
+                LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp).testTag("chat-model-providers"), userScrollEnabled = interactive && settled, horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     items(providers, key = { it.provider.id }) { heading ->
                         val index = headingIndex[heading.provider.id]

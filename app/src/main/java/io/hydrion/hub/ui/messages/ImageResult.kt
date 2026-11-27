@@ -9,9 +9,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import io.hydrion.hub.ui.theme.HubShapes
 import io.hydrion.hub.ui.theme.capsuleEdge
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -64,10 +64,10 @@ internal fun ImageResult(msg: Message, query: String, vm: HubViewModel, busy: Bo
         Toast.makeText(context, "已添加到输入框", Toast.LENGTH_SHORT).show()
         return true
     }
-    MessageCard(LocalMessageStyle.current.renderPalette.assistant, Modifier.fillMaxWidth(), RoundedCornerShape(20.dp)) {
+    MessageCard(LocalMessageStyle.current.renderPalette.assistant, Modifier.fillMaxWidth(), HubShapes.Large) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             if (msg.prompt.isNotBlank()) Text(highlighted(msg.prompt, query), style = MaterialTheme.typography.bodyMedium)
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))) {
+            Box(Modifier.fillMaxWidth().clip(HubShapes.Small)) {
                 HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth()) { index ->
                     val key = msg.imageKeys[index]
                     val aspect = sizes[key]?.let { it.width.toFloat() / it.height } ?: 1f

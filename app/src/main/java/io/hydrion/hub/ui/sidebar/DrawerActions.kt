@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import io.hydrion.hub.R
 import io.hydrion.hub.model.Conversation
 import io.hydrion.hub.model.isActive
+import io.hydrion.hub.ui.theme.HubShapes
 
 internal class DrawerActions(
     val hasDraft: (String) -> Boolean,
@@ -44,7 +45,7 @@ internal class DrawerActions(
 @Composable
 internal fun DrawerActionSheet(title: String?, close: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     ModalBottomSheet(onDismissRequest = close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        shape = HubShapes.Sheet,
         dragHandle = { Spacer(Modifier.padding(top = 12.dp, bottom = 10.dp).size(40.dp, 4.dp)
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .20f), RoundedCornerShape(2.dp))) }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
@@ -59,7 +60,7 @@ internal fun DrawerActionSheet(title: String?, close: () -> Unit, content: @Comp
 internal fun DrawerAction(label: String, icon: ImageVector, enabled: Boolean = true, destructive: Boolean = false, onClick: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val tint = (if (destructive) colors.error else colors.onSurface).copy(alpha = if (enabled) 1f else .38f)
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(14.dp)).background(colors.surfaceContainerHigh)
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(HubShapes.Small).background(colors.surfaceContainerHigh)
         .clickable(enabled = enabled, onClick = onClick).heightIn(min = 48.dp).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Icon(icon, null, Modifier.size(20.dp), tint = tint)
@@ -88,7 +89,7 @@ internal fun SelectionHeader(count: Int, all: Boolean, cancel: () -> Unit, toggl
         IconButton(cancel) { Icon(Icons.Outlined.Close, stringResource(R.string.settings_cancel)) }
         Text(stringResource(R.string.drawer_selected_count, count), Modifier.weight(1f),
             textAlign = TextAlign.Center, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Row(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = toggleAll).heightIn(min = 48.dp)
+        Row(Modifier.clip(HubShapes.Small).clickable(onClick = toggleAll).heightIn(min = 48.dp)
             .padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Checkbox(all, onCheckedChange = null, modifier = Modifier.size(18.dp))
             Text(stringResource(if (all) R.string.drawer_clear_selection else R.string.drawer_select_all),
@@ -100,7 +101,7 @@ internal fun SelectionHeader(count: Int, all: Boolean, cancel: () -> Unit, toggl
 @Composable
 internal fun SelectionFooter(allPinned: Boolean, movable: Boolean, enabled: Boolean, pin: () -> Unit, move: () -> Unit, delete: () -> Unit) {
     val colors = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().background(colors.surfaceContainerLow, RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+    Row(Modifier.fillMaxWidth().background(colors.surfaceContainerLow, HubShapes.Sheet)
         .padding(8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         BulkButton(stringResource(if (allPinned) R.string.drawer_unpin else R.string.drawer_pin),
             Icons.Outlined.PushPin, colors.onSurface, enabled, pin)
@@ -112,7 +113,7 @@ internal fun SelectionFooter(allPinned: Boolean, movable: Boolean, enabled: Bool
 @Composable
 private fun RowScope.BulkButton(label: String, icon: ImageVector, tint: Color, enabled: Boolean, action: () -> Unit) {
     val dark = MaterialTheme.colorScheme.surface.luminance() < .5f
-    Row(Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(tint.copy(alpha = if (dark) .18f else .14f))
+    Row(Modifier.weight(1f).clip(HubShapes.Small).background(tint.copy(alpha = if (dark) .18f else .14f))
         .clickable(enabled = enabled, onClick = action).heightIn(min = 48.dp).padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
         val foreground = tint.copy(alpha = if (enabled) 1f else .4f)

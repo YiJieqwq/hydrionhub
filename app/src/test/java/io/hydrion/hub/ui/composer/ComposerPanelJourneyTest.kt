@@ -26,6 +26,7 @@ import androidx.core.view.WindowInsetsCompat
 import java.util.concurrent.atomic.AtomicInteger
 import androidx.lifecycle.ViewModelProvider
 import io.hydrion.hub.MainActivity
+import io.hydrion.hub.R
 import io.hydrion.hub.model.*
 import io.hydrion.hub.provider.*
 import io.hydrion.hub.ui.HydrionApp
@@ -57,6 +58,13 @@ class ComposerPanelJourneyTest {
     private val selection = TextRange(6, 11)
     private fun tag(id: String) = ui.onNodeWithTag(id, useUnmergedTree = true)
     private fun bounds(id: String) = tag(id).fetchSemanticsNode().boundsInRoot
+    private fun drawn(id: String): Rect {
+        val layout = tag(id).fetchSemanticsNode().layoutInfo
+        return ui.runOnUiThread {
+            val c = layout.coordinates
+            Rect(c.localToRoot(Offset.Zero), c.localToRoot(Offset(c.size.width.toFloat(), c.size.height.toFloat())))
+        }
+    }
     private val shell get() = bounds("composer-capsule")
     private val editor get() = ui.onNode(hasContentDescription("消息输入框") and hasSetTextAction())
     private fun back() = ui.runOnUiThread { ui.activity.onBackPressedDispatcher.onBackPressed() }
@@ -177,9 +185,13 @@ class ComposerPanelJourneyTest {
             val half = shell
             assertTrue("Width grows from the parked dock", half.width > original.width)
             assertEquals(original.bottom, half.bottom, 1f)
+            val middleRail = drawn("chat-model-providers")
+            val middleTools = drawn("composer-action-row")
             val intermediate = shellInkHeight(x, ink)
             assertTrue("The drawn shell must grow: $parkedInk → $intermediate", intermediate > parkedInk + 20)
             back()
+            assertEquals("The rail keeps its pose at reversal", middleRail, drawn("chat-model-providers"))
+            assertEquals("The composer buttons keep their pose at reversal", middleTools, drawn("composer-action-row"))
             assertEquals("Back starts at the current rendered pixel", intermediate, shellInkHeight(x, ink))
             clock.advanceTimeByFrame()
             ui.waitForIdle()
@@ -190,6 +202,8 @@ class ComposerPanelJourneyTest {
                 ui.waitForIdle()
                 capture("reverse-" + (i + 9).toString().padStart(2, '0'))
             }
+            assertTrue("The strip retreats through the lower edge", drawn("chat-model-providers").top > middleRail.top)
+            assertTrue("The old buttons return from below", drawn("composer-action-row").center.y < middleTools.center.y)
             assertTrue("The drawn shell recedes from $intermediate", shellInkHeight(x, ink) < intermediate)
         } finally { clock.autoAdvance = true }
         tag("chat-model-list").assertDoesNotExist()
@@ -426,12 +440,14 @@ class ComposerPanelJourneyTest {
         val parked = shell
         assertTrue(parked.width < wide.width)
         val titleChip = bounds("conversation-chip")
+        val restingActions = drawn("composer-action-row")
         val parkedSelection = editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
         println("Selection before invoking either panel, after parking IME: $parkedSelection")
         val noNewKeyboard = shows
         val clock = ui.mainClock
         fun frames(name: String, start: Rect, opening: Boolean): List<Rect> {
             val path = mutableListOf(start)
+            var railSize: Rect? = null
             repeat(22) { i ->
                 clock.advanceTimeByFrame()
                 ui.waitForIdle()
@@ -443,6 +459,27 @@ class ComposerPanelJourneyTest {
                 assertTrue("$name frame $i: $prev → $current", if (opening)
                     current.width >= prev.width - 1f && current.top <= prev.top + 1f
                     else current.width <= prev.width + 1f && current.top >= prev.top - 1f)
+                val fraction = (current.width - parked.width) / (wide.width - parked.width)
+                if (fraction > .02f && fraction < .95f) {
+                    val actions = drawn("composer-action-row")
+                    val scale = actions.width / (restingActions.width + current.width - parked.width)
+                    assertTrue("Toolbar shrinks towards its center", scale < 1f)
+                    assertEquals(parked.center.x + (restingActions.center.x - parked.center.x) * scale, actions.center.x, 2f)
+                    assertEquals("Toolbar has one planar scale", 1f - .36f * fraction, scale, .02f)
+                    val natural = actions.height / scale
+                    assertEquals("Toolbar descends", current.bottom + natural * (fraction - .5f), actions.center.y, 4f)
+                }
+                if (name.contains("model") && fraction > .01f) {
+                    val rail = drawn("chat-model-providers")
+                    railSize?.let {
+                        assertEquals("Provider chips stay full width", it.width, rail.width, 1f)
+                        assertEquals("Provider chips stay full height", it.height, rail.height, 1f)
+                    }
+                    railSize = rail
+                    val inset = 6f * host.resources.displayMetrics.density
+                    assertEquals("Provider strip crosses the live lower edge on the shell clock",
+                        (rail.height + inset) * fraction, current.bottom - rail.top, 3f)
+                }
                 path += current
             }
             assertTrue("$name shows intermediate widths", path.map { it.width }.distinct().size > 4)
@@ -496,6 +533,92 @@ class ComposerPanelJourneyTest {
             tag("context-window").assertDoesNotExist()
             assertEquals(noNewKeyboard, shows)
         }
+    }
+
+    @Test @Config(qualifiers = "zh-rCN-w393dp-h851dp-night-xhdpi")
+    fun orderedGroupsAndTracksUseOnlyTheExistingDraftModes() {
+        ui.runOnIdle {
+            vm.setSearch("模型内置搜索")
+            vm.setImageTool(CUSTOM_IMAGE_TOOL)
+        }
+        val original = vm.state.value.draft
+        ui.onNodeWithContentDescription("打开工具箱").performClick()
+        val order = listOf("web" to "联网搜索", "image" to "图像生成", "local" to "本地工具", "mcp" to "MCP", "environment" to "工作环境")
+        fun group(id: String) = tag("chat-tools-group:$id")
+        for ((id, title) in order) {
+            group(id).performScrollTo()
+            ui.onNode(hasText(title) and hasAnyAncestor(hasTestTag("chat-tools-group:$id")), useUnmergedTree = true).assertIsDisplayed()
+        }
+        val ys = order.map { drawn("chat-tools-group:" + it.first).top }
+        assertTrue("Panel order: $ys", ys.zipWithNext().all { (a, b) -> a < b })
+
+        val rail = tag("chat-tools-track:web").performScrollTo()
+        fun verify(mode: String) {
+            tag("chat-tools-option:web:$mode").assertIsSelected()
+            assertEquals(original.copy(search = mode), ui.runOnIdle { vm.state.value.draft })
+        }
+        verify("模型内置搜索")
+        rail.performTouchInput { click(Offset(4f, centerY)) }
+        verify("禁用")
+        rail.performTouchInput { swipe(Offset(5f, centerY), center, 220) }
+        verify("自定义搜索")
+        rail.performTouchInput { down(center); moveTo(Offset(right - 6f, centerY)); cancel() }
+        verify("自定义搜索")
+        tag("chat-tools-option:web:模型内置搜索").performClick()
+        verify("模型内置搜索")
+        rail.performSemanticsAction(SemanticsActions.SetProgress) { it(1f) }
+        verify("自定义搜索")
+        val afterSearch = ui.runOnIdle { vm.state.value.draft }
+        group("image").performScrollTo().performClick()
+        val imageTrack = tag("chat-tools-track:image").performScrollTo()
+        tag("chat-tools-option:image:$CUSTOM_IMAGE_TOOL").assertIsSelected()
+        imageTrack.performTouchInput { swipe(Offset(right - 3, centerY), Offset(3f, centerY), 220) }
+        tag("chat-tools-option:image:禁用").assertIsSelected()
+        assertEquals(afterSearch.copy(imageTool = "禁用"), ui.runOnIdle { vm.state.value.draft })
+        imageTrack.performSemanticsAction(SemanticsActions.SetProgress) { it(1f) }
+        assertEquals(afterSearch, ui.runOnIdle { vm.state.value.draft })
+        ui.onAllNodes(hasAnyAncestor(hasTestTag("chat-tools-section:image")) and isSelectable()).assertCountEquals(2)
+        group("web").performScrollTo()
+        capture("tools-search-modes")
+        back()
+        ui.onNodeWithContentDescription("打开工具箱").performClick()
+        verify("自定义搜索")
+        ui.runOnIdle { vm.setSearch("future-preference") }
+        for (mode in listOf("禁用", "自定义搜索", "模型内置搜索")) tag("chat-tools-option:web:$mode").assertIsNotSelected()
+        tag("chat-tools-track:web").performTouchInput { click(Offset(5f, centerY)) }
+        verify("禁用")
+    }
+
+    @Test @Config(qualifiers = "zh-rCN-w393dp-h851dp-night-xhdpi")
+    fun searchProviderSettingsRemainReachableWithTheSharedCardCorners() {
+        capture("corner-chat")
+        ui.onNodeWithContentDescription("打开侧栏").performClick()
+        tag("drawer-settings").performClick()
+        tag("settings-back-circle").assertIsDisplayed()
+        capture("corner-settings")
+        val label = ui.activity.getString(R.string.settings_web_search)
+        val target = hasText(label) and hasClickAction()
+        if (ui.onAllNodes(target).fetchSemanticsNodes().isEmpty()) {
+            ui.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange) and hasScrollAction())
+                .performScrollToNode(target)
+        }
+        ui.onNode(target).performScrollTo().performClick()
+        val control = ui.onNode(hasText(ui.activity.getString(R.string.search_local_demo)) and isToggleable())
+            .assertIsDisplayed()
+        val box = control.fetchSemanticsNode().boundsInRoot
+        val bitmap = windowFrame()
+        val density = host.resources.displayMetrics.density
+        val x = box.left.roundToInt()
+        val y = (box.top + 3f * density).roundToInt()
+        val outside = bitmap.getPixel(x - 3, y)
+        val fill = bitmap.getPixel(x + (34 * density).roundToInt(), y)
+        assertNotEquals(outside, fill)
+        val entrance = (0..(34 * density).roundToInt()).first { bitmap.getPixel(x + it, y) != outside } / density
+        // At 3 dp below the top, a 24 dp arc begins at 12.4 dp from the side.
+        assertEquals("Painted outer card corner", 12.4f, entrance, 1.8f)
+        capture("corner-providers")
+        back()
+        tag("settings-back-circle").assertIsDisplayed()
     }
 
     @Test @Config(qualifiers = "en-rUS-w1080dp-h720dp-night-mdpi")

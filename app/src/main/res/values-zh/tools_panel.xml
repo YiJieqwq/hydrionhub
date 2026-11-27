@@ -17,7 +17,7 @@
     <string name="panel_create">创建日程</string>
     <string name="panel_calendar">查询日程</string>
     <string name="panel_browser">浏览器</string>
-    <string name="panel_mcp">MCP服务器</string>
+    <string name="panel_mcp">MCP</string>
     <string name="panel_mcp_manage">管理服务器</string>
     <string name="panel_no_servers">暂无已配置服务器</string>
     <string name="panel_untrusted">请先在管理页确认信任。</string>

@@ -17,7 +17,7 @@
     <string name="panel_create">Create calendar event</string>
     <string name="panel_calendar">Look up calendar events</string>
     <string name="panel_browser">Browser</string>
-    <string name="panel_mcp">MCP servers</string>
+    <string name="panel_mcp">MCP</string>
     <string name="panel_mcp_manage">Manage servers</string>
     <string name="panel_no_servers">No configured servers</string>
     <string name="panel_untrusted">Trust this server in management first.</string>

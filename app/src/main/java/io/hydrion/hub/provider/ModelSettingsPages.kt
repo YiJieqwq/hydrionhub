@@ -25,12 +25,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
 import io.hydrion.hub.model.RemoteModel
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.ui.theme.HubShapes
 
 @Composable
 internal fun ModelSettingsFrame(title: String, onBack: () -> Unit, action: @Composable () -> Unit = {},
@@ -47,10 +47,10 @@ internal fun ModelSettingsFrame(title: String, onBack: () -> Unit, action: @Comp
 }
 
 @Composable
-internal fun ModelSettingsCard(radius: Dp = 12.dp, content: @Composable ColumnScope.() -> Unit) {
+internal fun ModelSettingsCard(content: @Composable ColumnScope.() -> Unit) {
     val colors = MaterialTheme.colorScheme
     val dark = colors.surface.luminance() < .5f
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(radius),
+    Surface(Modifier.fillMaxWidth(), shape = HubShapes.Large,
         color = Color.White.copy(alpha = if (dark) .10f else .96f).compositeOver(colors.surface),
         border = BorderStroke(.6.dp, colors.outlineVariant.copy(alpha = if (dark) .08f else .06f))) {
         Column(content = content)
@@ -103,14 +103,14 @@ internal fun ModelProviderPage(mode: Mode, catalog: ModelCatalog, onBack: () -> 
             }
             IconButton(onAdd) { Icon(Icons.Outlined.Add, stringResource(R.string.model_settings_add_provider), Modifier.size(22.dp)) } }) {
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-            singleLine = true, shape = RoundedCornerShape(12.dp), leadingIcon = { Icon(Icons.Outlined.Search, null) },
+            singleLine = true, shape = HubShapes.Small, leadingIcon = { Icon(Icons.Outlined.Search, null) },
             placeholder = { Text(stringResource(R.string.model_settings_filter)) })
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp)) {
             if (rows.isEmpty()) item { Text(stringResource(if (all.isEmpty()) R.string.model_settings_empty else R.string.settings_no_matches)) }
             itemsIndexed(rows, key = { _, pair -> pair.first.id }) { index, (provider, label) ->
                 // The list scrolls as one card, with only the outside corners rounded.
-                val shape = RoundedCornerShape(topStart = if (index == 0) 12.dp else 0.dp, topEnd = if (index == 0) 12.dp else 0.dp,
-                    bottomStart = if (index == rows.lastIndex) 12.dp else 0.dp, bottomEnd = if (index == rows.lastIndex) 12.dp else 0.dp)
+                val shape = RoundedCornerShape(topStart = if (index == 0) HubShapes.LargeRadius else 0.dp, topEnd = if (index == 0) HubShapes.LargeRadius else 0.dp,
+                    bottomStart = if (index == rows.lastIndex) HubShapes.LargeRadius else 0.dp, bottomEnd = if (index == rows.lastIndex) HubShapes.LargeRadius else 0.dp)
                 Surface(shape = shape, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                     Column {
                         ModelSettingsRow(label, { onOpen(provider) }, { BrowseAvatar(provider, null, 22.dp, browseColors()) }) {
@@ -154,7 +154,7 @@ internal fun DefaultModelsPage(store: ProviderStore, catalog: ModelCatalog, onBa
                 val rows = catalog.entries(mode)
                 val current = catalog.defaults[mode] ?: rows.firstOrNull()?.route
                 val entry = rows.find { it.route == current }
-                ModelSettingsCard(16.dp) {
+                ModelSettingsCard {
                     Column(Modifier.padding(14.dp)) {
                         Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(if (mode == Mode.Chat) Icons.Outlined.ChatBubbleOutline else Icons.Outlined.Image, null, Modifier.size(18.dp))
@@ -172,7 +172,7 @@ internal fun DefaultModelsPage(store: ProviderStore, catalog: ModelCatalog, onBa
                             else R.string.model_settings_new_only), fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = .7f))
                         Spacer(Modifier.height(12.dp))
-                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        Row(Modifier.fillMaxWidth().clip(HubShapes.Small)
                             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = .10f))
                             .clickable(enabled = rows.isNotEmpty()) { picking = mode }
                             .heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 10.dp),
@@ -187,7 +187,7 @@ internal fun DefaultModelsPage(store: ProviderStore, catalog: ModelCatalog, onBa
                 }
                 if (mode == Mode.Chat) {
                     Spacer(Modifier.height(12.dp))
-                    ModelSettingsCard(16.dp) {
+                    ModelSettingsCard {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f).padding(end = 12.dp)) {
                                 Text(stringResource(R.string.chat_model_per_conversation))

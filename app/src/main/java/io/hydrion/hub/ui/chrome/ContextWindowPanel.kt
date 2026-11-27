@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.HubShapes
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -138,7 +139,7 @@ internal fun ContextWindowPanel(usage: ContextUsage, onManage: (() -> Unit)?, mo
         }
         if (onManage != null) {
             Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClick = onManage)
+            Row(Modifier.fillMaxWidth().clip(HubShapes.Small).clickable(role = Role.Button, onClick = onManage)
                 .heightIn(min = 48.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.AccountTree, null, Modifier.size(19.dp), tint = colors.onSurface)
                 Spacer(Modifier.width(10.dp))

@@ -45,6 +45,7 @@ import io.hydrion.hub.provider.chatModelPickerPreImeBack
 import io.hydrion.hub.ui.ChatPanelMotionMillis
 import io.hydrion.hub.ui.messages.LocalMessageStyle
 import io.hydrion.hub.ui.messages.timelineScheme
+import io.hydrion.hub.ui.theme.HubShapes
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -76,7 +77,7 @@ internal fun Modifier.contextWindowInput(state: ContextWindowState): Modifier {
 private class ContextShell(private val source: Rect, private val progress: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val height = lerp(source.height, size.height, progress)
-        val radius = lerp(source.height / 2, with(density) { 18.dp.toPx() }, progress)
+        val radius = lerp(source.height / 2, with(density) { HubShapes.LargeRadius.toPx() }, progress)
         return Outline.Rounded(RoundRect(lerp(source.left, 0f, progress), 0f,
             lerp(source.right, size.width, progress), height, CornerRadius(radius)))
     }

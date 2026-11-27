@@ -30,6 +30,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.HubShapes
 import io.hydrion.hub.ui.theme.capsuleEdge
 import io.hydrion.hub.provider.Header
 import io.hydrion.hub.ui.messages.*
@@ -163,7 +164,7 @@ private fun MaterialSwatch(material: CardMaterial) {
 
 @Composable
 private fun SettingsCard(content: @Composable () -> Unit) {
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
+    Surface(Modifier.fillMaxWidth(), shape = HubShapes.Large,
         color = MaterialTheme.colorScheme.surfaceContainerLow, content = content)
 }
 

@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -20,6 +19,7 @@ import io.hydrion.hub.ui.settings.SettingsHome
 import io.hydrion.hub.ui.composer.DictationRmsDiagnostic
 import androidx.compose.ui.res.stringResource
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.HubShapes
 import io.hydrion.hub.ui.theme.capsuleEdge
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -118,7 +118,7 @@ internal fun Header(title: String, onBack: () -> Unit, action: @Composable () ->
 @Composable
 internal fun EditField(label: String, value: String, onValueChange: (String) -> Unit) {
     OutlinedTextField(value, onValueChange, Modifier.fillMaxWidth(), label = { Text(label) },
-        singleLine = true, shape = RoundedCornerShape(14.dp))
+        singleLine = true, shape = HubShapes.Small)
 }
 
 @Composable

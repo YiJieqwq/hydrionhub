@@ -17,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Brush
@@ -46,6 +47,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -53,10 +55,12 @@ import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
 import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.ui.behindToolsPage
+import io.hydrion.hub.ui.theme.HubShapes
 import kotlin.math.roundToInt
 
 private class PanelPull(val progress: () -> Float, val acceptingBodyInput: () -> Boolean) {
     var root: LayoutCoordinates? = null
+    var hiddenHeight by mutableIntStateOf(0)
     var sourceScale by mutableFloatStateOf(1f)
 }
 
@@ -115,8 +119,9 @@ internal fun ComposerPanelBody(
         else if (source.release == null) source.release = p to entryOffset
         val lift = source.release?.let { (at, px) -> if (at > 0f) px * (p / at).coerceIn(0f, 1f) else 0f } ?: entryOffset.toFloat()
         val height = ((editor.height + lift) * (1f - p) + sheet.height * p).roundToInt().coerceIn(0, limits.maxHeight)
+        pull.hiddenHeight = sheet.height - height
         layout(limits.maxWidth, height) {
-            if (p < .45f) editor.placeWithLayer(0, height - editor.height) { alpha = (1f - p / .45f).coerceIn(0f, 1f) }
+            if (p < 1f) editor.place(0, height - editor.height)
             sheet.place((limits.maxWidth - sheet.width) / 2, 0)
         }
     }
@@ -149,6 +154,17 @@ private fun BlockPanelTouches(modifier: Modifier) {
     Spacer(modifier.pointerInput(Unit) {
         awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } }
     })
+}
+
+/** The provider strip travels one strip height through the current lower edge.
+ * Its layout slot still reserves room below the list, including when the list is short. */
+@Composable
+internal fun PanelBottomRail(content: @Composable () -> Unit) {
+    val pull = LocalPanelPull.current
+    Box(Modifier.fillMaxWidth().offset { IntOffset(0, -(pull?.hiddenHeight ?: 0)) }.clipToBounds()) {
+        Box(Modifier.fillMaxWidth().graphicsLayer { translationY = size.height * (1f - (pull?.progress?.invoke() ?: 1f)) }
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(bottom = 6.dp)) { content() }
+    }
 }
 
 /** Sample the untransformed row slot. Its planar position, uniform scale and opacity
@@ -248,7 +264,7 @@ internal fun PanelModelSearch(picker: ChatModelPickerState, enabled: Boolean, on
     PanelHeader {
         Column(Modifier.fillMaxWidth().testTag("chat-model-heading")) {
             PanelHandle("model", picker::systemBack)
-            val shape = RoundedCornerShape(14.dp)
+            val shape = HubShapes.Small
             val line = if (focused) colors.primary.copy(alpha = .5f) else colors.outlineVariant.copy(alpha = .4f)
             Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).behindToolsPage(!enabled)) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("chat-model-search-box")

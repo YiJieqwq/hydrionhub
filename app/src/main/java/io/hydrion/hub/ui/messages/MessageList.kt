@@ -61,6 +61,7 @@ import io.hydrion.hub.provider.DEEPSEEK_PROVIDER_ID
 import io.hydrion.hub.ui.profile.LocalProfileStore
 import io.hydrion.hub.ui.sidebar.AssistantAvatar
 import io.hydrion.hub.ui.profile.ProfileAvatar
+import io.hydrion.hub.ui.theme.HubShapes
 import io.hydrion.hub.ui.theme.IonMark
 import kotlinx.coroutines.flow.collect
 import java.text.DateFormat
@@ -149,8 +150,8 @@ fun MessageList(
             itemsIndexed(messages, key = { _, msg -> msg.id }, contentType = { _, msg -> msg.role }) { _, msg ->
                 val selected = msg.id == match
                 val itemModifier = if (selected) Modifier
-                    .clip(RoundedCornerShape(14.dp))
-                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .7f), RoundedCornerShape(14.dp))
+                    .clip(HubShapes.Small)
+                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .7f), HubShapes.Small)
                     .padding(6.dp) else Modifier
                 Column(itemModifier.fillMaxWidth().testTag("message-turn-${msg.id}")) {
                     if (state.current.mode == Mode.Chat && msg.id == state.current.contextStart) {
@@ -262,7 +263,8 @@ private fun UserTurn(msg: Message, chat: Conversation, query: String, vm: HubVie
 @Composable
 internal fun UserBubble(msg: Message, query: String, mode: Mode, modifier: Modifier = Modifier) {
     val chat = mode == Mode.Chat
-    val bubble = if (chat) RoundedCornerShape(16.dp) else RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp)
+    val bubble = if (chat) RoundedCornerShape(16.dp) else RoundedCornerShape(
+        HubShapes.LargeRadius, HubShapes.LargeRadius, HubShapes.SmallRadius, HubShapes.LargeRadius)
     val bounds = if (chat) Modifier.padding(start = 24.dp).widthIn(max = (LocalConfiguration.current.screenWidthDp * .75f).dp)
         else Modifier.widthIn(max = (LocalConfiguration.current.screenWidthDp * .81f).dp)
     val surface = bounds.testTag("message-user-bubble").clip(bubble).then(modifier)
@@ -384,7 +386,7 @@ internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: 
 
 @Composable
 internal fun Thought(msg: Message, query: String, expanded: Boolean, onToggle: () -> Unit) {
-    MessageCard(LocalMessageStyle.current.renderPalette.assistant, Modifier.fillMaxWidth().testTag("message-thought"), RoundedCornerShape(12.dp)) {
+    MessageCard(LocalMessageStyle.current.renderPalette.assistant, Modifier.fillMaxWidth().testTag("message-thought"), HubShapes.Small) {
         Column {
             Row(
                 Modifier.fillMaxWidth().semantics { stateDescription = if (expanded) "已展开" else "已收起" }
@@ -481,16 +483,16 @@ internal fun MessageAttachment(attachment: Attachment, query: String, chat: Bool
         val size = pictureSize(imageKey, Extent(width, height))
         val aspect = size?.let { it.width.toFloat() / it.height } ?: 1f
         GeneratedPicture(imageKey, width, height, attachment.name,
-            Modifier.width(100.dp).aspectRatio(aspect.coerceIn(.67f, 1.75f)).clip(RoundedCornerShape(10.dp)))
+            Modifier.width(100.dp).aspectRatio(aspect.coerceIn(.67f, 1.75f)).clip(HubShapes.Small))
     } else if (attachment.mimeType?.startsWith("image/") == true) {
         val preview = if (uri == null) PicturePreview.Failed else rememberAttachmentPreview(uri.toString())
         BitmapPreview(
-            preview, attachment.name, Modifier.width(128.dp).height(90.dp).clip(RoundedCornerShape(10.dp)),
+            preview, attachment.name, Modifier.width(128.dp).height(90.dp).clip(HubShapes.Small),
             fit = false, failureLabel = stringResource(R.string.turn_image_preview_failed),
         )
     }
     Row(
-        modifier = if (uri == null) Modifier else Modifier.clip(RoundedCornerShape(8.dp)).clickable {
+        modifier = if (uri == null) Modifier else Modifier.clip(HubShapes.Small).clickable {
             openMessageAttachment(
                 launch = {
                     context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, attachment.mimeType ?: "*/*")

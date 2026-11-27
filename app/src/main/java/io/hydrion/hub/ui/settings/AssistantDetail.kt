@@ -9,7 +9,6 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.semantics.semantics
@@ -39,6 +38,7 @@ import io.hydrion.hub.provider.ModelCatalog
 import io.hydrion.hub.provider.ModelSelectionSheet
 import io.hydrion.hub.provider.route
 import io.hydrion.hub.ui.sidebar.AssistantAvatar
+import io.hydrion.hub.ui.theme.HubShapes
 import kotlinx.coroutines.launch
 
 internal enum class AssistantTab(val label: Int) {
@@ -117,11 +117,11 @@ internal fun AssistantEditor(
                 BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 8.dp)) {
                     val n = AssistantTab.entries.size
                     val width = maxOf(88.dp, (maxWidth - 8.dp - 6.dp * (n - 1)) / n)
-                    LazyRow(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(colors.surfaceContainer),
+                    LazyRow(Modifier.fillMaxWidth().clip(HubShapes.Large).background(colors.surfaceContainer),
                         state = tabs, horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(4.dp)) {
                         items(AssistantTab.entries.size) { i ->
                             val active = pager.currentPage == i
-                            Box(Modifier.width(width).clip(RoundedCornerShape(14.dp))
+                            Box(Modifier.width(width).clip(HubShapes.Small)
                                 .then(if (active) Modifier.background(colors.primary.copy(alpha = .14f)) else Modifier)
                                 .selectable(active, role = Role.Tab, onClick = { scope.launch { pager.animateScrollToPage(i) } })
                                 .heightIn(min = 36.dp).padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
@@ -211,7 +211,7 @@ internal fun AssistantEditor(
 
 @Composable
 private fun DetailCard(content: @Composable ColumnScope.() -> Unit) {
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+    Surface(Modifier.fillMaxWidth(), shape = HubShapes.Large, color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
     }
 }

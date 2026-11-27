@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.hydrion.hub.model.Message
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.Role
+import io.hydrion.hub.ui.theme.HubShapes
 import io.hydrion.hub.ui.theme.HubStyle
 import java.util.Locale
 import kotlin.random.Random
@@ -84,7 +85,7 @@ private val grainPaint by lazy {
 internal fun MessageCard(
     colors: MessageCardStyle,
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(14.dp),
+    shape: Shape = HubShapes.Small,
     outlined: Boolean = true,
     content: @Composable () -> Unit
 ) {
@@ -167,7 +168,7 @@ internal fun AssistantBody(text: String, query: String, mode: Mode,
     val type = MaterialTheme.typography.bodyLarge
     val body = if (chat) type.copy(fontSize = 15.7.sp, lineHeight = 23.55.sp, letterSpacing = 0.sp) else type
     if (style.assistantBubble) {
-        val shape = RoundedCornerShape(if (chat) 16.dp else 19.dp)
+        val shape = if (chat) chatTintedShape else HubShapes.Small
         MessageCard(colors, Modifier.testTag("message-assistant-body"), shape = shape) {
             Box(Modifier.padding(horizontal = if (chat) 12.dp else 14.dp, vertical = if (chat) 12.dp else 10.dp)) {
                 MarkdownBody(text, query, if (chat) Modifier else Modifier.fillMaxWidth(), body, chat, fragments, images)
@@ -183,7 +184,7 @@ fun MessageStylePreview(style: MessageStyle, modifier: Modifier = Modifier) {
     val user = remember { Message(id = "preview-user", role = Role.User, text = "用户消息") }
     val assistant = remember { Message(id = "preview-assistant", role = Role.Assistant,
         text = "这是助手的回复。", thought = "这里展示思考内容。") }
-    MessageCanvas(style, modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)), previewScheme(style.tone)) {
+    MessageCanvas(style, modifier.fillMaxWidth().clip(HubShapes.Large), previewScheme(style.tone)) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) { UserBubble(user, "", Mode.Chat) }
             ReplyTimeline(assistant, "")

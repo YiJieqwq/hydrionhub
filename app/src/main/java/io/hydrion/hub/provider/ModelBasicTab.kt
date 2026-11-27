@@ -2,12 +2,12 @@ package io.hydrion.hub.provider
 
 import androidx.compose.ui.res.stringResource
 import io.hydrion.hub.R
+import io.hydrion.hub.ui.theme.HubShapes
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.*
@@ -35,7 +35,7 @@ internal fun ModelBasicTab(draft: ModelEditDraft) {
     ModelGroup("") {
         Row(Modifier.fillMaxWidth().clickable { iconPicker = true }.heightIn(min = 48.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Surface(shape = HubShapes.Small, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 ProfileIcon(profile.icon, draft.type, Modifier.padding(9.dp).size(22.dp))
             }
             Text(stringResource(R.string.model_icon), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
@@ -56,7 +56,7 @@ internal fun ModelBasicTab(draft: ModelEditDraft) {
         Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
             modelTypes.forEach { (type, label) ->
                 val active = type == draft.type
-                Surface(Modifier.weight(1f), shape = RoundedCornerShape(10.dp),
+                Surface(Modifier.weight(1f), shape = HubShapes.Small,
                     color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer) {
                     Box(Modifier.selectable(active, role = Role.RadioButton, onClick = { draft.changeType(type) })
                         .heightIn(min = 39.dp), contentAlignment = Alignment.Center) {

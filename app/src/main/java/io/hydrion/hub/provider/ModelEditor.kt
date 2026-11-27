@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -26,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.ui.theme.HubShapes
 
 @Composable
 internal fun ModelEditor(
@@ -73,11 +73,11 @@ internal fun ModelEditor(
             style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         IconButton(onClick = save) { Icon(Icons.Outlined.Check, stringResource(R.string.model_save), tint = MaterialTheme.colorScheme.primary) }
     }
-    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    Surface(shape = HubShapes.Small, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Row(Modifier.fillMaxWidth().selectableGroup().padding(4.dp)) {
             ModelPage.entries.forEach { item ->
                 val selected = item == draft.page
-                Surface(Modifier.weight(1f), shape = RoundedCornerShape(11.dp),
+                Surface(Modifier.weight(1f), shape = HubShapes.Small,
                     color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) {
                     Box(Modifier.selectable(selected = selected, role = Role.Tab, onClick = {
                         focus.clearFocus()

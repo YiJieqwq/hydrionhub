@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.outlined.*
@@ -24,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.hydrion.hub.model.Mode
+import io.hydrion.hub.ui.theme.HubShapes
 import io.hydrion.hub.ui.theme.IonMark
 import io.hydrion.hub.ui.theme.capsuleEdge
 import java.util.UUID
@@ -71,8 +71,8 @@ internal fun ProviderModelsTab(
             }
         }
         Surface(
-            modifier = Modifier.align(Alignment.CenterHorizontally).padding(horizontal = 8.dp, vertical = 12.dp).capsuleEdge(),
-            shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(horizontal = 8.dp, vertical = 12.dp).capsuleEdge(HubShapes.Large),
+            shape = HubShapes.Large, color = MaterialTheme.colorScheme.surfaceContainerHigh
         ) {
             Row(Modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 val addModel: @Composable () -> Unit = {
@@ -135,7 +135,7 @@ private fun ModelTag(label: String, primary: Boolean = false) {
     val colors = MaterialTheme.colorScheme
     val background = if (primary) colors.primaryContainer else colors.surfaceContainerHigh
     val foreground = if (primary) colors.onPrimaryContainer else colors.onSurfaceVariant
-    Text(label, Modifier.background(background, RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+    Text(label, Modifier.background(background, HubShapes.Small).padding(horizontal = 6.dp, vertical = 2.dp),
         style = MaterialTheme.typography.labelSmall, color = foreground)
 }
 
@@ -173,7 +173,7 @@ private fun LocalModelPicker(
                 trailingIcon = if (query.isEmpty()) null else ({
                     IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, stringResource(R.string.model_clear_query)) }
                 }),
-                shape = RoundedCornerShape(18.dp),
+                shape = HubShapes.Large,
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = colors.surfaceContainer, unfocusedContainerColor = colors.surfaceContainer,
                     unfocusedBorderColor = Color.Transparent

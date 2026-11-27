@@ -4,7 +4,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
@@ -21,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import io.hydrion.hub.R
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
+import io.hydrion.hub.ui.theme.HubShapes
 
 @Composable
 fun modelLabel(store: ProviderStore, mode: Mode): String {
@@ -48,7 +48,7 @@ fun ConfigureSheet(store: ProviderStore, mode: Mode, onDismiss: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)) {
+        shape = HubShapes.Sheet) {
         LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(start = 22.dp, end = 22.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item {
@@ -59,7 +59,7 @@ fun ConfigureSheet(store: ProviderStore, mode: Mode, onDismiss: () -> Unit) {
             else {
                 val model = entry.first
                 item {
-                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                    Surface(shape = HubShapes.Large, color = MaterialTheme.colorScheme.surfaceVariant) {
                         ModelSettingsRow(model.name, { choosing = true }, { BrowseAvatar(entry.second, model, 22.dp, browseColors()) })
                     }
                 }
@@ -96,7 +96,7 @@ fun ConfigureSheet(store: ProviderStore, mode: Mode, onDismiss: () -> Unit) {
 internal fun <T> ChoiceRow(label: String, value: String, options: List<Pair<T, String>>, selected: T, onPick: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant,
+        Surface(shape = HubShapes.Large, color = MaterialTheme.colorScheme.surfaceVariant,
             modifier = Modifier.fillMaxWidth().clickable { expanded = true }) {
             Row(Modifier.padding(horizontal = 16.dp, vertical = 15.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
