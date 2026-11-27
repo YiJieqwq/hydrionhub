@@ -159,6 +159,92 @@ class ComposerPanelJourneyTest {
 
     private fun scrollMax(id: String) = tag(id).fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue()
 
+    @Test fun retiringEffortPickerScalesItsPaintedControlsAndReopensAtMax() {
+        val model = ProviderModel("motion-flash", "V4.1 Flash", listOf(Capability("effort", "Effort", listOf("Low", "High", "Max"))))
+        val provider = deepSeekProvider.copy(id = "motion-fixture", models = listOf(model))
+        ui.runOnIdle {
+            vm.providers.save(provider, "", null)
+            vm.providers.configure(Mode.Chat, RemoteModel(provider.id, model.id), emptyMap())
+        }
+        val trigger = tag("chat-model-trigger")
+        val rail = tag("chat-model-effort")
+        trigger.performTouchInput { click(center) }
+        rail.performTouchInput { click(Offset(width * .97f, centerY)) }
+        tag("chat-model-effort-title").assertTextEquals("Max")
+        val open = bounds("chat-picker-bubble")
+        val track = bounds("chat-model-effort")
+        val dp = ui.density.density
+        val knob = Offset(track.right - 27f * dp, track.center.y)
+        val areas = mapOf(
+            "thumb" to Rect(knob, 18f * dp),
+            "rail" to Rect(track.left, track.center.y - 2f * dp, knob.x - 19f * dp, track.center.y + 2f * dp),
+            "level" to bounds("chat-model-effort-title"),
+            "name" to bounds("chat-model-name"),
+            "arrow" to bounds("chat-model-name-chevron"),
+        )
+        fun painted(area: Rect, image: Bitmap, name: String, shell: Rect): Rect {
+            val found = android.graphics.Rect()
+            val referenceX = (shell.left + shell.width * .2f).roundToInt()
+            for (y in area.top.toInt() until area.bottom.roundToInt()) {
+                // The editor edge can be visible through the fading model name. Sample the same scanline.
+                val floor = if (name == "name" || name == "arrow") Color.green(image.getPixel(referenceX, y)) + 18 else 100
+                for (x in area.left.toInt() until area.right.roundToInt()) {
+                    val pixel = image.getPixel(x, y)
+                    val r = Color.red(pixel)
+                    val g = Color.green(pixel)
+                    val b = Color.blue(pixel)
+                    val ink = if (name == "rail" || name == "level") b - g > 30 && b - r > 12
+                        else minOf(r, g, b) > floor && maxOf(r, g, b) - minOf(r, g, b) < 24
+                    if (ink) found.union(x, y, x + 1, y + 1)
+                }
+            }
+            return Rect(found.left.toFloat(), found.top.toFloat(), found.right.toFloat(), found.bottom.toFloat())
+        }
+        val fullFrame = windowFrame()
+        capture("effort-max-open")
+        val original = areas.mapValues { (name, area) -> painted(area, fullFrame, name, open) }
+        assertTrue("All controls have visible ink at rest: $original", original.values.none { it.isEmpty })
+        assertEquals(30f * dp, original.getValue("thumb").width, 3f)
+        val clock = ui.mainClock
+        clock.autoAdvance = false
+        try {
+            trigger.performTouchInput { click(center) }
+            clock.advanceTimeByFrame()
+            tag("chat-model-card").assertDoesNotExist() // the outgoing drawing has no active controls
+            for (step in listOf(80L, 48L)) {
+                clock.advanceTimeBy(step)
+                val shell = bounds("chat-picker-bubble")
+                val scale = minOf(shell.width / open.width, shell.height / open.height)
+                assertTrue("Mid-exit frame $shell", scale in 0.36f..0.94f)
+                fun project(point: Offset) = shell.center + (point - open.center) * scale
+                val frame = windowFrame()
+                capture("effort-max-close-$step")
+                for ((name, area) in areas) {
+                    val region = Rect(project(area.topLeft), project(area.bottomRight))
+                    val ink = painted(region, frame, name, shell)
+                    val before = original.getValue(name)
+                    val expected = Rect(project(before.topLeft), project(before.bottomRight))
+                    assertFalse("$name disappeared at scale $scale in $region", ink.isEmpty)
+                    assertEquals("$name left", expected.left, ink.left, 3f)
+                    assertEquals("$name right", expected.right, ink.right, 3f)
+                    assertEquals("$name top", expected.top, ink.top, 3f)
+                    assertEquals("$name bottom", expected.bottom, ink.bottom, 3f)
+                    if (name == "thumb") println("Effort shell width=${shell.width}, scale=$scale, Max thumb=${ink.width} x ${ink.height} px")
+                }
+            }
+            val retiring = bounds("chat-picker-bubble")
+            trigger.performTouchInput { click(center) }
+            clock.advanceTimeBy(96)
+            assertTrue("Reverse from the shrinking frame", bounds("chat-picker-bubble").width > retiring.width)
+        } finally { clock.autoAdvance = true }
+        tag("chat-model-effort-title").assertTextEquals("Max")
+        rail.performTouchInput { swipe(Offset(width * .97f, centerY), Offset(width * .03f, centerY), 320) }
+        tag("chat-model-effort-title").assertTextEquals("Low")
+        trigger.performTouchInput { click(center) }
+        trigger.performTouchInput { click(center) }
+        tag("chat-model-effort-title").assertTextEquals("Low")
+    }
+
     private fun dragList(list: SemanticsNodeInteraction, upward: Boolean) {
         val name = if (upward) "up" else "down"
         list.performTouchInput { down(Offset(centerX, height * if (upward) .78f else .22f)) }

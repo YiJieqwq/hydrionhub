@@ -21,12 +21,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.lerp as lerpRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
@@ -58,9 +61,18 @@ private data class BubbleTargets(
     fun bounds(weights: Offset) = translatedPickerBounds(label, effort, list, weights, travelX)
 }
 
-// Text keeps its native scale. Only the shell grows; old and new controls slide across its edge.
-private fun contentTravel(face: PickerBubbleFace, w: Offset, distance: Float): Float =
-    if (face == PickerBubbleFace.Effort) (1f - w.x - 2f * w.y) * distance else (1f - w.y) * distance
+private data class PagePlacement(val topLeft: Offset, val scale: Float = 1f)
+
+private fun BubbleTargets.pagePlacement(face: PickerBubbleFace, w: Offset, slide: Float): PagePlacement {
+    val panel = if (face == PickerBubbleFace.Effort) effort else list
+    // The capability page still slides sideways when it replaces the effort controls.
+    val dx = if (face == PickerBubbleFace.Effort) -w.y * slide else (1f - w.y) * slide
+    val offset = Offset(travelX + dx, pickerContentShiftY(dx, panel, composer, above))
+    if (face != PickerBubbleFace.Effort || panel.isEmpty) return PagePlacement(panel.topLeft + offset)
+    val frame = lerpRect(label, effort, (w.x + w.y).coerceIn(0f, 1f))
+    val scale = minOf(frame.width / effort.width, frame.height / effort.height, 1f)
+    return PagePlacement(frame.center - (effort.center - effort.topLeft) * scale + offset, scale)
+}
 
 private fun bubbleRadius(bounds: Rect, panelRadius: Float, coverage: Float): Float {
     val half = bounds.minDimension * 0.5f
@@ -136,24 +148,27 @@ internal fun PickerBubbleLayout(
                     if (scale > 0f) motion.velocity / scale else Offset.Zero
                 } else Offset.Zero
             })
-        // An outgoing page has no layout node, focus or callbacks. Retain only its last drawing.
+        // Paint effort in viewport coordinates, including over its source label. Its hit region
+        // stays outside the composer. A retired page contributes only its last drawing.
         Spacer(Modifier.fillMaxSize().drawBehind {
             val w = weights()
             if (hideForReturn || w == Offset.Zero) return@drawBehind
             val scene = targets.value
             val rect = scene.bounds(w)
-            fun ghost(other: PickerBubbleFace, ink: GraphicsLayer, end: Rect, alpha: Float) {
-                if (face == other || alpha <= 0f || ink.size == IntSize.Zero) return
+            fun paint(page: PickerBubbleFace, ink: GraphicsLayer, alpha: Float) {
+                if (alpha <= 0f || ink.size == IntSize.Zero) return
                 ink.alpha = alpha
-                val travel = contentTravel(other, w, 14.dp.toPx())
-                val travelY = pickerContentShiftY(travel, end, scene.composer, scene.above)
-                translate(end.left + scene.travelX + travel, end.top + travelY) { drawLayer(ink) }
+                val placement = scene.pagePlacement(page, w, 14.dp.toPx())
+                translate(placement.topLeft.x, placement.topLeft.y) {
+                    scale(placement.scale, pivot = Offset.Zero) { drawLayer(ink) }
+                }
             }
-            if ((face != PickerBubbleFace.Effort && w.x > 0f) || (face != PickerBubbleFace.List && w.y > 0f)) {
+            if (w.x > 0f || (face != PickerBubbleFace.List && w.y > 0f)) {
                 val radius = bubbleRadius(rect, HubShapes.SmallRadius.toPx(), w.x + w.y)
                 clipPath(Path().apply { addRoundRect(RoundRect(rect, CornerRadius(radius))) }) {
-                    ghost(PickerBubbleFace.Effort, effortInk, scene.effort, w.x)
-                    ghost(PickerBubbleFace.List, listInk, scene.list, w.y)
+                    if (face == PickerBubbleFace.Effort) paint(PickerBubbleFace.List, listInk, w.y)
+                    paint(PickerBubbleFace.Effort, effortInk, w.x)
+                    if (face == PickerBubbleFace.Label) paint(PickerBubbleFace.List, listInk, w.y)
                 }
             }
         })
@@ -161,9 +176,11 @@ internal fun PickerBubbleLayout(
             val pageSemantics = if (shared) Modifier.clearAndSetSemantics {} else Modifier.semantics { this.paneTitle = paneTitle }
             val pageHit = if (face == PickerBubbleFace.Effort) picker.effortTouches.card(pageSemantics) else pageSemantics
             Box(pageHit.drawWithContent {
-                currentInk.alpha = 1f
                 currentInk.record { this@drawWithContent.drawContent() }
-                drawLayer(currentInk)
+                if (face == PickerBubbleFace.List) {
+                    currentInk.alpha = 1f
+                    drawLayer(currentInk)
+                }
             }) {
                 CompositionLocalProvider(LocalContentColor provides colors.onSurface, content = content)
                 if (shared) Spacer(Modifier.matchParentSize().pointerInput(Unit) {})
@@ -197,24 +214,32 @@ internal fun PickerBubbleLayout(
         )
         targets.value = scene
         val shell = children[0].measure(limits)
-        val ghosts = children[1].measure(limits)
+        val ink = children[1].measure(limits)
         layout(viewport.width, viewport.height) {
             shell.place(0, 0)
-            ghosts.place(0, 0)
+            if (face != PickerBubbleFace.Effort) ink.place(0, 0)
             if (live != null) {
                 val panel = if (face == PickerBubbleFace.Effort) scene.effort else scene.list
                 live.placeWithLayer(panel.left.roundToInt() + scene.travelX, panel.top.roundToInt()) {
                     val w = weights()
-                    val shift = contentTravel(face, w, 14.dp.toPx())
-                    translationX = shift
-                    translationY = pickerContentShiftY(shift, panel, scene.composer, scene.above)
-                    alpha = if (hideForReturn) 0f else if (face == PickerBubbleFace.Effort) w.x else w.y
+                    val placement = scene.pagePlacement(face, w, 14.dp.toPx())
+                    transformOrigin = TransformOrigin(0f, 0f)
+                    scaleX = placement.scale
+                    scaleY = placement.scale
+                    translationX = placement.topLeft.x - panel.left - scene.travelX
+                    translationY = placement.topLeft.y - panel.top
+                    alpha = if (hideForReturn) 0f else if (face == PickerBubbleFace.Effort) 1f else w.y
                     val rect = scene.bounds(w)
-                    shape = BubbleClip(rect.translate(-panel.left - scene.travelX - shift, -panel.top - translationY),
-                        bubbleRadius(rect, HubShapes.SmallRadius.toPx(), w.x + w.y))
+                    val hit = if (face != PickerBubbleFace.Effort) rect
+                        else if (scene.above) rect.copy(bottom = scene.composer.top.toFloat().coerceIn(rect.top, rect.bottom))
+                        else rect.copy(top = scene.composer.bottom.toFloat().coerceIn(rect.top, rect.bottom))
+                    val inverse = if (placement.scale > 0f) 1f / placement.scale else 0f
+                    shape = BubbleClip(Rect((hit.topLeft - placement.topLeft) * inverse, (hit.bottomRight - placement.topLeft) * inverse),
+                        bubbleRadius(rect, HubShapes.SmallRadius.toPx(), w.x + w.y) * inverse)
                     clip = true
                 }
             }
+            if (face == PickerBubbleFace.Effort) ink.place(0, 0)
         }
     }
 }
