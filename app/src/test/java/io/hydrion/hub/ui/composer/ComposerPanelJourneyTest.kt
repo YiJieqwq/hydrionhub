@@ -138,6 +138,25 @@ class ComposerPanelJourneyTest {
 
     private fun tapOutside(at: Offset) = ui.onRoot().performTouchInput { click(at) }
 
+    private fun fillTimeline() = ui.runOnIdle {
+        repeat(12) { turn ->
+            vm.setDraft("Offline question ${turn + 1}")
+            vm.send("Offline demo", search = "禁用", imageTool = "禁用", remoteModel = null)
+            vm.stop()
+            check(vm.editMessage(vm.state.value.current.messages.last().id, "Offline answer ${turn + 1}.\nA second line for the viewport."))
+        }
+        vm.setDraft(draft)
+    }
+
+    private fun openPanel(panel: String) {
+        if (panel == "tools") ui.onNodeWithContentDescription("打开工具箱").performClick()
+        else {
+            tag("chat-model-trigger").performClick()
+            if (!ui.mainClock.autoAdvance) ui.mainClock.advanceTimeBy(320)
+            tag("chat-model-select").performClick()
+        }
+    }
+
     private fun scrollMax(id: String) = tag(id).fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue()
 
     private fun dragList(list: SemanticsNodeInteraction, upward: Boolean) {
@@ -529,6 +548,161 @@ class ComposerPanelJourneyTest {
         tag("chat-model-search-field").assertIsNotFocused()
         ui.onNodeWithText(ui.activity.getString(R.string.chat_panel_model_search_hint), useUnmergedTree = true).assertIsDisplayed()
         assertEquals("", ui.runOnIdle { vm.state.value.draft.text })
+    }
+
+    @Test fun raisedPanelsKeepTheVisibleMessageAtItsWindowPositionThroughImeReturn() {
+        fillTimeline()
+        editor.performClick()
+        keyboard(260)
+        editor.performTextInputSelection(selection)
+        val tail = vm.state.value.current.messages.last().id
+        val clock = ui.mainClock
+        val excursions = mutableListOf<Float>()
+        for (readingHistory in listOf(false, true)) {
+            if (readingHistory) {
+                val timeline = tag("message-timeline")
+                val range = timeline.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+                val bottomPosition = ui.runOnIdle { range.value() }
+                timeline.performTouchInput {
+                    swipe(Offset(centerX, height * .20f), Offset(centerX, height * .51f), 540)
+                }
+                assertTrue("Swipe actually moved away from the bottom", ui.runOnIdle { range.value() } < bottomPosition)
+            }
+            val windowTop = bounds("floating-header").bottom
+            val windowBottom = shell.top
+            val anchor = if (!readingHistory) tag("message-turn-$tail").fetchSemanticsNode() else {
+                val visible = ui.onAllNodes(SemanticsMatcher("message row") {
+                    SemanticsProperties.TestTag in it.config && it.config[SemanticsProperties.TestTag].startsWith("message-turn-")
+                }, useUnmergedTree = true).fetchSemanticsNodes()
+                visible.first { it.boundsInRoot.top > windowTop && it.boundsInRoot.bottom < windowBottom &&
+                    it.config[SemanticsProperties.TestTag] != "message-turn-$tail" }
+            }
+            val anchorTag = anchor.config[SemanticsProperties.TestTag]
+            val coords = anchor.layoutInfo.coordinates
+            fun y() = ui.runOnUiThread { coords.localToWindow(Offset.Zero).y }
+            val origin = y()
+            assertTrue("The tracked message is visible at entry", origin in windowTop..windowBottom)
+            for (panel in listOf("tools", "model")) {
+                val samples = mutableListOf<Float>()
+                fun frame(count: Int = 1) {
+                    repeat(count) {
+                        clock.advanceTimeByFrame()
+                        ui.waitForIdle()
+                        samples += y()
+                    }
+                }
+                clock.autoAdvance = false
+                try {
+                    openPanel(panel)
+                    frame()
+                    var entering = origin
+                    for (imeHeight in listOf(210, 150, 82, 36, 12, 0)) {
+                        keyboard(imeHeight)
+                        frame()
+                        if (imeHeight == 150) entering = y()
+                    }
+                    frame(24)
+                    val open = y()
+                    val requests = shows
+                    if (panel == "tools") tapOutside(bounds("conversation-chip").center) else back()
+                    frame()
+                    val exitStart = y()
+                    // The platform may deliver the first IME frame after the sheet has already retired.
+                    if (panel == "tools" && !readingHistory) {
+                        var remaining = 105
+                        while (ui.onAllNodesWithTag("chat-tools-grip", true).fetchSemanticsNodes().isNotEmpty() && remaining-- > 0) frame()
+                        tag("chat-tools-grip").assertDoesNotExist()
+                    } else {
+                        var remaining = 35
+                        while (shows == requests && remaining-- > 0) frame()
+                    }
+                    assertTrue("The draft requested its own IME", shows > requests)
+                    frame(4)
+                    val hidden = y()
+                    var midway = hidden
+                    for (imeHeight in listOf(28, 70, 130, 200, 254, 258, 260)) {
+                        keyboard(imeHeight)
+                        frame(3)
+                        if (imeHeight == 130) midway = y()
+                    }
+                    frame(8)
+                    val stable = y()
+                    val excursion = samples.maxOf { kotlin.math.abs(it - origin) }
+                    println("$panel history=$readingHistory origin=$origin entering=$entering open=$open exit=$exitStart " +
+                        "hidden=$hidden halfway=$midway stable=$stable maxDelta=$excursion px")
+                    excursions += excursion
+                } finally { clock.autoAdvance = true }
+                editor.assertTextEquals(draft).assertIsFocused()
+                assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+                assertEquals("Same message after handoff", origin, drawn(anchorTag).top, 1f)
+                if (!readingHistory) {
+                    clock.autoAdvance = false
+                    try {
+                        keyboard(210)
+                        frame(4)
+                        assertTrue("A later ordinary IME resize owns the bottom again", y() > origin + 30f)
+                        keyboard(260)
+                        frame(4)
+                        assertEquals(origin, y(), 1f)
+                    } finally { clock.autoAdvance = true }
+                }
+            }
+        }
+        assertTrue("Each visible message must stay within one pixel on every sampled frame: $excursions", excursions.all { it <= 1f })
+    }
+
+    @Test fun parkedPanelsSkipImeRestoreAndAnInterruptedReturnReleasesTheList() {
+        fillTimeline()
+        val tail = tag("message-turn-" + vm.state.value.current.messages.last().id).fetchSemanticsNode().layoutInfo.coordinates
+        fun y() = ui.runOnUiThread { tail.localToWindow(Offset.Zero).y }
+        val parked = y()
+        val gap = shell.top - parked
+        val clock = ui.mainClock
+        for (panel in listOf("tools", "model")) {
+            val requests = shows
+            openPanel(panel)
+            tag("chat-$panel-grip").assertIsDisplayed()
+            assertEquals(parked, y(), 1f)
+            back()
+            editor.assertTextEquals(draft).assertIsNotFocused()
+            assertEquals("Parked entry does not request a keyboard", requests, shows)
+            assertEquals("Parked list returns to its own dock", parked, y(), 1f)
+        }
+        for (panel in listOf("tools", "model")) {
+            editor.performClick()
+            keyboard(260)
+            editor.performTextInputSelection(selection)
+            val raised = y()
+            assertTrue(parked > raised + 150f)
+            clock.autoAdvance = false
+            try {
+                fun frame() { clock.advanceTimeByFrame(); ui.waitForIdle() }
+                openPanel(panel)
+                frame()
+                keyboard(0)
+                repeat(26) { frame() }
+                val requests = shows
+                back()
+                var remaining = 40
+                while (shows == requests && remaining-- > 0) frame()
+                assertTrue(shows > requests)
+                // One IME refuses to show; the other starts and is dismissed part way through.
+                if (panel == "model") {
+                    keyboard(128)
+                    repeat(6) { frame() }
+                    assertEquals(raised, y(), 1f)
+                    keyboard(0)
+                }
+                val positions = ArrayList<Float>()
+                repeat(175) { frame(); positions += y() }
+                tag("chat-$panel-grip").assertDoesNotExist()
+                val settled = y()
+                assertEquals("List follows the real editor after an abandoned return", gap, shell.top - settled, 1f)
+                assertTrue("The interrupted return gives back the space without a one-frame jump",
+                    positions.any { it > raised + 8f && it < settled - 8f })
+            } finally { clock.autoAdvance = true }
+            editor.assertTextEquals(draft)
+        }
     }
 
     @Test fun toolsAndModelsSharePaintedCornersAndClearTheNavigationBar() {

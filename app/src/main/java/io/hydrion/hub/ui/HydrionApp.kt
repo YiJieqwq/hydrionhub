@@ -236,10 +236,15 @@ private fun Workspace(vm: HubViewModel) {
                     .contextWindowInput(contextWindow),
                 contentAlignment = Alignment.TopCenter
             ) {
-                val covered = toolsActive || modelBrowse.active
+                val panelClock = when {
+                    toolsActive -> toolsPage?.clock
+                    modelBrowse.active -> modelBrowse.clock
+                    else -> null
+                }
+                val covered = panelClock != null
                 ChatComposerLayers(
                     modifier = Modifier.fillMaxSize(),
-                    freezeTimelineDock = covered, dockKey = chatPicker,
+                    panelEntryImePx = panelClock?.entryImeHeight, dockKey = chatPicker,
                     trackPickerAnchor = { editVisit == null && (chatPicker.page != null || modelBrowse.active || chatPicker.drawingBubble) },
                     picker = if (current.mode == Mode.Chat && !toolsActive) {
                         { ChatModelPicker(providers, chatPicker, chatOverride = current.modelRoutes?.get(Mode.Chat), suspended = editVisit != null, hideForReturn = returning,
