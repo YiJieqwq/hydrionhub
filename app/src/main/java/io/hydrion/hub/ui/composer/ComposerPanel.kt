@@ -356,7 +356,7 @@ private fun PanelGrip(id: String, onDismiss: () -> Unit) {
     val pull = LocalPanelPull.current
     val label = stringResource(R.string.chat_panel_drag_dismiss)
     val fallback = if (pull == null) Modifier.semantics { contentDescription = label; dismiss { onDismiss(); true } } else Modifier
-    Box(Modifier.fillMaxWidth().height(28.dp).then(fallback).graphicsLayer { alpha = pull?.progress() ?: 1f },
+    Box(Modifier.fillMaxWidth().then(fallback).graphicsLayer { alpha = pull?.progress() ?: 1f }.padding(vertical = 8.dp),
         contentAlignment = Alignment.Center) {
         val light = MaterialTheme.colorScheme.surface.luminance() > .5f
         val shape = RoundedCornerShape(2.dp)
@@ -393,7 +393,11 @@ internal fun PanelModelSearch(picker: ChatModelPickerState, enabled: Boolean, at
             val shape = HubShapes.Small
             val dark = colors.onSurface.luminance() > colors.surfaceContainerHigh.luminance()
             val fill = lerp(colors.surfaceContainerHigh, Color.Black, if (dark) .16f else .03f)
-            val line = if (focused) lerp(colors.primary, colors.onSurface, .45f) else colors.onSurface.copy(alpha = .46f)
+            val line = when {
+                focused -> lerp(colors.primary, colors.onSurface, .45f)
+                dark -> Color(0xFF38393A)
+                else -> colors.onSurface.copy(alpha = .46f)
+            }
             Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).behindToolsPage(!enabled)) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("chat-model-search-box")
                     .background(fill, shape).border(1.dp, line, shape),

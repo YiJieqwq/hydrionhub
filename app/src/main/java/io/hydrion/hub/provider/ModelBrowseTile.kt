@@ -68,12 +68,12 @@ internal fun BrowseTile(
             onLongClickLabel = if (onEdit != null) stringResource(R.string.chat_picker_edit_model) else null,
             onLongClick = onEdit, onClick = onPick)
     // The chat panel already supplies a 12dp list inset. Settings owns its own tile margins.
-    Box(Modifier.padding(horizontal = if (compact) 0.dp else 12.dp, vertical = if (compact) 3.dp else 6.dp)) {
+    Box(Modifier.padding(horizontal = if (compact) 0.dp else 12.dp, vertical = if (compact) 5.dp else 6.dp)) {
         Row(Modifier.fillMaxWidth().clip(shape).background(if (checked) colors.selected else Color.Transparent),
             verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f).then(action).heightIn(min = 48.dp)
                 .padding(start = if (compact) 8.dp else 12.dp, end = if (favoriteButton == null) 12.dp else 0.dp)
-                .padding(vertical = if (compact) 6.dp else 10.dp),
+                .padding(vertical = if (compact) 8.dp else 10.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 BrowseAvatar(provider, model, if (compact) 24.dp else 28.dp, colors)
                 Spacer(Modifier.width(if (compact) 8.dp else 10.dp))

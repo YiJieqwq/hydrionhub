@@ -421,7 +421,7 @@ class ComposerPanelJourneyTest {
         assertEquals(showBeforeExit, shows)
     }
 
-    private fun checkModelPanelDensity(narrow: Boolean) {
+    private fun checkModelPanelDensity(narrow: Boolean, captureName: String) {
         val model = ProviderModel("astra", "6.2 Astra", profile = ModelProfile(type = ModelType.Chat,
             input = linkedSetOf("text", "image", "audio", "video", "pdf"), output = setOf("text"),
             abilities = setOf("tools", "reasoning"), levels = listOf("Low", "High"), contextWindowTokens = 128_000))
@@ -453,11 +453,17 @@ class ComposerPanelJourneyTest {
         val fill = frame.getPixel(x, (search.bottom - 6f * dp).roundToInt())
         val edge = frame.getPixel(x, search.top.roundToInt())
         val surface = frame.getPixel((shell.left + 8f * dp).roundToInt(), search.center.y.roundToInt())
-        capture(if (narrow) "model-density-narrow" else "model-density")
-        println("narrow=$narrow model row=$rowHeight dp, tag center delta=$tagDelta dp, grip gaps=$topGap/$lowerGap dp, " +
+        capture(captureName)
+        val centerDistance = if (narrow) null else {
+            val first = drawn("chat-model-option:demo-chat/demo-reason")
+            val second = drawn("chat-model-option:demo-chat/demo-quick")
+            (second.center.y - first.center.y) / dp
+        }
+        println("density=$dp narrow=$narrow row=$rowHeight dp, adjacent centers=$centerDistance dp, tag center delta=$tagDelta dp, grip gaps=$topGap/$lowerGap dp, " +
             "search fill/edge/backing=${Integer.toHexString(fill)}/${Integer.toHexString(edge)}/${Integer.toHexString(surface)}")
-        assertEquals(12f, topGap, 1f)
-        assertEquals(topGap, lowerGap, 1f)
+        assertEquals(8f, topGap, .5f)
+        assertEquals(8f, lowerGap, .5f)
+        if (centerDistance != null) assertTrue("One-line model rows are 71–73dp apart: $centerDistance", centerDistance in 71f..73f)
         assertEquals(100f, handle.width / dp, 1f)
         assertEquals(40f, handle.height / dp, 1f)
         assertEquals(40f, grip.width / dp, 1f)
@@ -466,7 +472,9 @@ class ComposerPanelJourneyTest {
         assertTrue(followBounds.top >= search.bottom && kotlin.math.abs(followBounds.width - search.width) <= 9f * dp)
         assertTrue(rowHeight >= 48f && bounds("$rowTag:favorite").height / dp >= 48f)
         assertTrue(if (narrow) tagDelta > 12f else kotlin.math.abs(tagDelta) < 2f)
-        assertTrue(Color.red(fill) < Color.red(surface) && Color.red(edge) > Color.red(fill) + 35)
+        assertEquals(Color.rgb(0x24, 0x24, 0x24), fill)
+        assertTrue("Dark idle search outline", Color.red(edge) in 0x35..0x3a &&
+            Color.green(edge) in 0x36..0x3b && Color.blue(edge) in 0x37..0x3c)
         for (cx in listOf(search.left + 24f * dp, bounds("chat-model-bookmark").center.x)) {
             val icon = Rect(Offset(cx, search.center.y), 9f * dp)
             val brightest = (icon.top.toInt() until icon.bottom.toInt()).maxOf { y ->
@@ -485,6 +493,8 @@ class ComposerPanelJourneyTest {
         assertEquals(opened, shell)
         root.performTouchInput { click(overlap) }
         tag("chat-model-search-field").assertIsFocused()
+        val focusedEdge = windowFrame().getPixel(x, bounds("chat-model-search-box").top.roundToInt())
+        assertTrue("Focus still highlights the outline", ColorUtils.calculateLuminance(focusedEdge) > ColorUtils.calculateLuminance(edge) + .12)
         tag("chat-model-search-field").performTextReplacement("6.2")
         tag("chat-model-bookmark").assertIsNotSelected().performTouchInput { click(center) }
         tag("chat-model-search-field").assertTextEquals("")
@@ -502,10 +512,13 @@ class ComposerPanelJourneyTest {
         assertEquals(lowerGap, (bounds("chat-tools-heading").top - toolsGrip.bottom) / dp, 1f)
     }
 
-    @Test fun modelPanelFitsRichTagsAndKeepsBothHeaderTargets() = checkModelPanelDensity(false)
+    @Test fun modelPanelFitsRichTagsAndKeepsBothHeaderTargets() = checkModelPanelDensity(false, "model-density")
+
+    @Test @Config(qualifiers = "zh-rCN-w407dp-h904dp-night-xxhdpi")
+    fun modelPanelSpacingAt480Dpi() = checkModelPanelDensity(false, "model-density-480")
 
     @Test @Config(qualifiers = "en-rUS-w320dp-h740dp-night-xhdpi", fontScale = 1.5f)
-    fun modelPanelWrapsRichTagsAtLargeFontWithoutLosingActions() = checkModelPanelDensity(true)
+    fun modelPanelWrapsRichTagsAtLargeFontWithoutLosingActions() = checkModelPanelDensity(true, "model-density-narrow")
 
     @Test fun aModelScrollsOutAtFullWidthAboveAndShrinksGraduallyBelow() {
         ui.runOnIdle { vm.providers.configure(Mode.Chat, RemoteModel("b", "model-9"), emptyMap()) }
@@ -966,8 +979,9 @@ class ComposerPanelJourneyTest {
             val expanded = shell
             val grip = bounds("chat-$panel-grip").center
             val hit = bounds("chat-$panel-handle")
-            val near = grip + Offset(0f, 9f * dp)
-            assertTrue(hit.contains(near) && !bounds("chat-$panel-grip").contains(near))
+            val firstContent = bounds(if (panel == "model") "chat-model-search-box" else "chat-tools-heading")
+            val near = Offset(grip.x, firstContent.top + 3f * dp)
+            assertTrue(hit.contains(near) && firstContent.contains(near) && !bounds("chat-$panel-grip").contains(near))
 
             fun start(at: Offset = grip) = root.performTouchInput { down(at) }
             fun move(at: Offset, dy: Float, millis: Long = 100) {
@@ -1000,6 +1014,8 @@ class ComposerPanelJourneyTest {
 
             for (portion in listOf(.49f, .5f, .51f)) {
                 start(near)
+                // Cross touch slop while moving, before a stationary long press could select the search field.
+                move(near, 20f * dp, 40)
                 move(near, expanded.height * portion, 650)
                 val release = shell
                 assertEquals("$panel held at $portion ($expanded -> $release)", expanded.top + expanded.height * portion,
