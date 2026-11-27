@@ -99,13 +99,16 @@ class ComposerPanelJourneyTest {
         }
     }
 
-    private fun keyboard(heightDp: Int) = ui.runOnUiThread {
-        val height = (heightDp * host.resources.displayMetrics.density).roundToInt()
+    private fun keyboard(heightDp: Int, navigationDp: Int? = null) = ui.runOnUiThread {
+        val density = host.resources.displayMetrics.density
+        val height = (heightDp * density).roundToInt()
         val base = ViewCompat.getRootWindowInsets(host) ?: WindowInsetsCompat.CONSUMED
         val frame = WindowInsetsCompat.Builder(base)
             .setInsets(WindowInsetsCompat.Type.ime(), Insets.of(0, 0, 0, height))
-            .setVisible(WindowInsetsCompat.Type.ime(), height > 0).build()
-        ViewCompat.dispatchApplyWindowInsets(host, frame)
+            .setVisible(WindowInsetsCompat.Type.ime(), height > 0)
+        if (navigationDp != null) frame.setInsets(WindowInsetsCompat.Type.navigationBars(),
+            Insets.of(0, 0, 0, (navigationDp * density).roundToInt())).setVisible(WindowInsetsCompat.Type.navigationBars(), true)
+        ViewCompat.dispatchApplyWindowInsets(host, frame.build())
     }
 
     private var pixels: Bitmap? = null
@@ -526,6 +529,70 @@ class ComposerPanelJourneyTest {
         tag("chat-model-search-field").assertIsNotFocused()
         ui.onNodeWithText(ui.activity.getString(R.string.chat_panel_model_search_hint), useUnmergedTree = true).assertIsDisplayed()
         assertEquals("", ui.runOnIdle { vm.state.value.draft.text })
+    }
+
+    @Test fun toolsAndModelsSharePaintedCornersAndClearTheNavigationBar() {
+        val dp = ui.density.density
+        val navDp = 24
+        val cornerInsets = mutableListOf<List<Float>>()
+        for (panel in listOf("model", "tools")) {
+            editor.performClick().performTextInputSelection(selection)
+            keyboard(260, navDp)
+            ui.waitForIdle()
+            val invoking = shell
+            val stroke = windowFrame().getPixel(invoking.left.roundToInt(), invoking.center.y.roundToInt())
+            if (panel == "model") {
+                tag("chat-model-trigger").performClick()
+                tag("chat-model-select").performClick()
+            } else ui.onNodeWithContentDescription("打开工具箱").performClick()
+            keyboard(0, navDp)
+            ui.mainClock.advanceTimeBy(400)
+            ui.waitForIdle()
+
+            val box = shell
+            val frame = windowFrame()
+            val gap = (frame.height - box.bottom) / dp - navDp
+            assertEquals("$panel gap above the visible navigation bar", 8f, gap, .5f)
+            assertNotEquals("Composer stroke is distinct from its fill", backingPixel(box), stroke)
+            val bottom = box.bottom.roundToInt() - 1
+            assertEquals("$panel painted bottom stroke", stroke, frame.getPixel(box.center.x.roundToInt(), bottom))
+            // Three dp into a 24 dp corner, the outer arc starts about 12.4 dp from the side.
+            val depth = (3f * dp).roundToInt()
+            val corners = listOf(box.top.roundToInt() + depth, bottom - depth).flatMap { y ->
+                listOf(false, true).map { right ->
+                    (0..(24f * dp).roundToInt()).first { dx ->
+                        val x = if (right) box.right.roundToInt() - 1 - dx else box.left.roundToInt() + dx
+                        frame.getPixel(x, y) == stroke
+                    } / dp
+                }
+            }
+            for (inset in corners) assertEquals("$panel painted corner", 12.4f, inset, 1.5f)
+            cornerInsets += corners
+            println("$panel navigation gap=$gap dp, corner stroke insets=$corners dp")
+            if (panel == "tools") {
+                tag("chat-tools-group:local").performScrollTo().performClick()
+                val list = tag("chat-tools-page")
+                val range = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+                assertTrue(range.maxValue() > 0f)
+                list.performTouchInput { swipeUp() }
+                assertEquals(range.maxValue(), range.value(), 1f)
+                val viewport = bounds("chat-tools-page")
+                val group = drawn("chat-tools-section:environment")
+                assertTrue("Entire final group inside viewport", group.top >= viewport.top - 1f && group.bottom <= viewport.bottom + 1f)
+                val last = tag("panel-action:Permissions")
+                val hit = last.fetchSemanticsNode().boundsInRoot
+                val full = last.getUnclippedBoundsInRoot()
+                assertEquals("The entire final touch target is visible", (full.bottom - full.top).value * dp, hit.height, 1f)
+                assertEquals("The list keeps its bottom padding below the touch target", 16f * dp, viewport.bottom - hit.bottom, 1f)
+                last.performTouchInput { click() }
+                ui.onNode(hasText(ui.activity.getString(R.string.panel_permission_note)) and hasAnyAncestor(isDialog())).assertIsDisplayed()
+                ui.onNode(hasText(ui.activity.getString(android.R.string.ok)) and hasClickAction() and hasAnyAncestor(isDialog())).performClick()
+            }
+            back()
+            keyboard(260, navDp)
+            editor.assertTextEquals(draft).assertIsFocused()
+        }
+        for ((model, tools) in cornerInsets[0].zip(cornerInsets[1])) assertEquals("Same painted corners", model, tools, 1f / dp)
     }
 
     @Test fun handleTracksTheFingerAndDecidesOnReleaseInBothPanels() {

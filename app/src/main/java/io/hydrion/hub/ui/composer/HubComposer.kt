@@ -39,7 +39,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AttachFile
@@ -142,7 +141,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
 
-private data class PanelEditorReturn(val value: TextFieldValue, val imeHeight: Int, val modelPanel: Boolean)
+private data class PanelEditorReturn(val value: TextFieldValue, val imeHeight: Int)
 
 private enum class ToolsPanel { Closed, WaitingForIme, Open }
 
@@ -293,7 +292,7 @@ internal fun HubComposer(
     LaunchedEffect(panelRequested) {
         if (panelRequested) {
             if (panelClock != null && panelClock.entryImeHeight > 0 && raisedDraft == null) {
-                raisedDraft = PanelEditorReturn(editorValue.copy(composition = null), panelClock.entryImeHeight, modelPanel)
+                raisedDraft = PanelEditorReturn(editorValue.copy(composition = null), panelClock.entryImeHeight)
             }
             requestedDraftFocus = false
             collapse()
@@ -485,7 +484,7 @@ internal fun HubComposer(
         restoringDock -> lastEditorSide
         else -> lerp(entrySide, normalSide, widthReturn.value)
     }
-    val panelGap = if (parkedDraft) lastEditorGap else if (modelPanel || raisedDraft?.modelPanel == true) 8.dp else 0.dp
+    val panelGap = if (parkedDraft) lastEditorGap else 8.dp
     val entryImeHeight = raisedDraft?.imeHeight ?: if (morphingEditor) panelClock?.entryImeHeight ?: 0 else 0
     val bottomGap = when {
         !morphingEditor && !restoringDock -> normalGap
@@ -529,24 +528,14 @@ internal fun HubComposer(
                 }
             }
         }
-        val toolsPull = if (morphingEditor && !modelPanel) pageProgress else 0f
-        val shape = when {
-            !morphingEditor && (dictating || toolbar == 0f) -> CircleShape
-            toolsPull > 0f -> {
-                val top = lerp(HubShapes.LargeRadius, 20.dp, toolsPull)
-                val bottom = lerp(HubShapes.LargeRadius, 0.dp, toolsPull)
-                RoundedCornerShape(top, top, bottom, bottom)
-            }
-            else -> HubShapes.Large
-        }
+        val shape = if (!morphingEditor && (dictating || toolbar == 0f)) CircleShape else HubShapes.Large
         Surface(
             modifier = Modifier.fillMaxWidth().testTag("composer-capsule")
                 .then(if (chatPicker != null) Modifier.pickerCapsuleBounds() else Modifier)
                 .then(if (chatPicker == null) Modifier else Modifier.onGloballyPositioned {
                     chatPicker.composerBounds = IntRect(it.positionInWindow().round(), it.size)
                 })
-                .then(if (toolsPull >= 1f) Modifier else Modifier.border(0.66.dp,
-                    HubStyle.ComposerBorder.copy(alpha = HubStyle.ComposerBorder.alpha * (1f - toolsPull)), shape)),
+                .border(0.66.dp, HubStyle.ComposerBorder, shape),
             shape = shape,
             color = colors.surfaceContainerHigh,
         ) {

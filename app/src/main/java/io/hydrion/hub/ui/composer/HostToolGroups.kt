@@ -234,9 +234,11 @@ internal fun HostToolGroups(vm: HubViewModel, query: String, legacyMatches: Bool
     }
     destination?.let { page ->
         key(chat.id, chat.environmentId, page) {
-            HostToolDestination(page, vm, chat, catalog?.getOrNull(), env, onSettings = { show(HostToolPage.Settings) }) {
-                destination = null
-                if (page in listOf(HostToolPage.Mcp, HostToolPage.Settings, HostToolPage.Path, HostToolPage.Environment)) revision++
+            MaterialTheme(colorScheme = toolControlScheme()) {
+                HostToolDestination(page, vm, chat, catalog?.getOrNull(), env, onSettings = { show(HostToolPage.Settings) }) {
+                    destination = null
+                    if (page in listOf(HostToolPage.Mcp, HostToolPage.Settings, HostToolPage.Path, HostToolPage.Environment)) revision++
+                }
             }
         }
     }

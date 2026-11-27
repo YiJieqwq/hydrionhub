@@ -49,6 +49,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -76,7 +77,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import io.hydrion.hub.ui.messages.LocalMessageStyle
-import io.hydrion.hub.ui.messages.MessageTone
 import io.hydrion.hub.ui.messages.timelineScheme
 import io.hydrion.hub.model.CUSTOM_IMAGE_TOOL
 import io.hydrion.hub.model.Draft
@@ -104,15 +104,19 @@ private const val Disabled = "禁用"
 private data class ToolChoice(val value: String, val label: String)
 
 @Composable
-internal fun toolPanelScheme(): androidx.compose.material3.ColorScheme {
-    val tone = LocalMessageStyle.current.tone
-    val palette = timelineScheme(tone)
-    return remember(tone, palette) {
-        if (tone == MessageTone.Light) palette else palette.copy(surface = Color(0xFF1D1D1D),
+private fun toolPanelScheme(): androidx.compose.material3.ColorScheme {
+    val palette = MaterialTheme.colorScheme
+    if (palette.onSurface.luminance() <= palette.surfaceContainerHigh.luminance()) return palette
+    return remember(palette) {
+        palette.copy(surface = Color(0xFF1D1D1D),
             primary = Color(0xFFB8C2FF), onPrimary = Color(0xFF232A42),
             surfaceContainerLowest = Color(0xFF111111), onSurfaceVariant = Color(0xFFADADAD))
     }
 }
+
+// Tracks and detail dialogs paint their own surfaces; keep their original paired colors.
+@Composable
+internal fun toolControlScheme() = timelineScheme(LocalMessageStyle.current.tone)
 
 @Composable
 internal fun ChatToolsPage(
@@ -219,7 +223,7 @@ private fun ToolModeSection(id: String, title: String, choices: List<ToolChoice>
 
 @Composable
 private fun ToolModeTrack(id: String, title: String, choices: List<ToolChoice>, value: String, enabled: Boolean, height: Dp, onSelect: (String) -> Unit) {
-    val colors = MaterialTheme.colorScheme
+    val colors = toolControlScheme()
     val values = choices.map { it.value }
     val track = colors.surfaceContainerHighest
     val thumb = colors.primary.copy(alpha = if (enabled) .36f else .12f).compositeOver(track)

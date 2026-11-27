@@ -40,7 +40,7 @@ internal fun PanelToolRow(
     val ink = when {
         highlight -> colors.primary
         available -> colors.onSurface
-        else -> colors.onSurface.copy(alpha = .5f)
+        else -> colors.onSurfaceVariant
     }
     val action = if (checked == null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         else Modifier.toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = { onClick() })
@@ -97,13 +97,15 @@ internal fun ManualPanelSwitch(checked: Boolean, enabled: Boolean, label: String
 
 @Composable
 private fun PanelSwitchTrack(checked: Boolean, enabled: Boolean, id: String) {
-    val colors = MaterialTheme.colorScheme
-    Box(Modifier.size(width = 44.dp, height = 26.dp).testTag("panel-track:$id"), contentAlignment = Alignment.Center) {
-        // Keep Material's state animation and shrink only the painted switch, independently of the hit target.
-        Switch(checked, onCheckedChange = null, enabled = enabled, thumbContent = {},
-            modifier = Modifier.requiredSize(52.dp, 32.dp).graphicsLayer { scaleX = 44f / 52f; scaleY = 26f / 32f },
-            colors = SwitchDefaults.colors(checkedTrackColor = colors.primary, checkedThumbColor = colors.onPrimary,
-                uncheckedTrackColor = colors.surfaceContainerLowest, uncheckedThumbColor = colors.outline,
-                uncheckedBorderColor = colors.outlineVariant, disabledUncheckedBorderColor = colors.outlineVariant.copy(alpha = .5f)))
+    val colors = toolControlScheme()
+    MaterialTheme(colorScheme = colors) {
+        Box(Modifier.size(width = 44.dp, height = 26.dp).testTag("panel-track:$id"), contentAlignment = Alignment.Center) {
+            // Keep Material's state animation and shrink only the painted switch, independently of the hit target.
+            Switch(checked, onCheckedChange = null, enabled = enabled, thumbContent = {},
+                modifier = Modifier.requiredSize(52.dp, 32.dp).graphicsLayer { scaleX = 44f / 52f; scaleY = 26f / 32f },
+                colors = SwitchDefaults.colors(checkedTrackColor = colors.primary, checkedThumbColor = colors.onPrimary,
+                    uncheckedTrackColor = colors.surfaceContainerLowest, uncheckedThumbColor = colors.outline,
+                    uncheckedBorderColor = colors.outlineVariant, disabledUncheckedBorderColor = colors.outlineVariant.copy(alpha = .5f)))
+        }
     }
 }

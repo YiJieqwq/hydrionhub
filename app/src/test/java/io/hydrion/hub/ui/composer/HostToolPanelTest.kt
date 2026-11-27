@@ -13,6 +13,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.drawToBitmap
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModel
@@ -344,6 +345,12 @@ class HostToolPanelTest {
                     (box.left + 4 * screen.density.density).roundToInt(), box.center.y.roundToInt())
             }
         }
+        fun textInk(labelId: Int): Int {
+            val layouts = mutableListOf<TextLayoutResult>()
+            screen.onNodeWithText(label(labelId), useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            return layouts.single().layoutInput.style.color.toArgb()
+        }
         val darkFill = composerFill()
         assertEquals("Default composer backing", android.graphics.Color.rgb(48, 48, 48), darkFill)
         open()
@@ -393,7 +400,10 @@ class HostToolPanelTest {
         for (id in listOf("local", "mcp", "web", "image")) assertEquals(darkFill, sectionFill(id))
         screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
         screen.onNodeWithTag("panel-switch:Time", true).assert(hasAnyAncestor(hasTestTag("chat-tools-section:local")))
+        val darkPlain = textInk(R.string.panel_time)
+        val darkHeading = textInk(R.string.panel_local)
         enable("Time")
+        val darkSelected = textInk(R.string.panel_time)
         checkScrolledFeather(darkFill)
         screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
         screen.onNodeWithTag("panel-switch:Time").assertDoesNotExist()
@@ -408,19 +418,30 @@ class HostToolPanelTest {
             for (id in listOf("web", "mcp", "local")) assertEquals(lightFill, sectionFill(id))
             screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
             checkScrolledFeather(lightFill)
-            fun textInk(text: String): Int {
-                val layouts = mutableListOf<TextLayoutResult>()
-                screen.onNodeWithText(text, useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
-                return layouts.single().layoutInput.style.color.toArgb()
-            }
-            val selectedInk = textInk(label(R.string.panel_time))
+            val selectedInk = textInk(R.string.panel_time)
             screen.onNodeWithTag("panel-switch:Time").performScrollTo().assertIsOn().performClick().assertIsOff()
-            val plainInk = textInk(label(R.string.panel_time))
-            val secondaryInk = textInk(label(R.string.panel_local))
+            val plainInk = textInk(R.string.panel_time)
+            val secondaryInk = textInk(R.string.panel_local)
             assertNotEquals("Enabled control keeps its accent", selectedInk, plainInk)
-            val rowLuminance = android.graphics.Color.luminance(plainInk)
-            val secondaryLuminance = android.graphics.Color.luminance(secondaryInk)
-            assertTrue("Light row=$rowLuminance, secondary=$secondaryLuminance", rowLuminance < secondaryLuminance && secondaryLuminance < .25f)
+            assertEquals(darkPlain, plainInk)
+            assertEquals(darkHeading, secondaryInk)
+            assertEquals(darkSelected, selectedInk)
+            val contrast = listOf(plainInk, secondaryInk, selectedInk, textInk(R.string.panel_path))
+                .map { ColorUtils.calculateContrast(it, lightFill) }
+            assertTrue("Plain, secondary, selected and unavailable text contrast: $contrast", contrast.all { it >= 4.5 })
+            val row = act("Time").performScrollTo().fetchSemanticsNode().boundsInWindow
+            val dp = screen.density.density
+            val iconContrast = screen.runOnIdle {
+                val frame = screen.activity.window.decorView.drawToBitmap()
+                val left = (row.left + 12f * dp).roundToInt()
+                val top = (row.center.y - 10f * dp).roundToInt()
+                val size = (20f * dp).roundToInt()
+                (left until left + size).maxOf { x -> (top until top + size).maxOf { y ->
+                    ColorUtils.calculateContrast(frame.getPixel(x, y), lightFill)
+                } }
+            }
+            assertTrue("Painted time icon/background contrast: $iconContrast", iconContrast >= 3.0)
+            println("Light message style, text contrast (plain/secondary/selected/unavailable)=$contrast; icon=$iconContrast")
             screen.onNodeWithTag("composer-panel-dismiss").performClick()
             assertEquals("Light message tone uses the actual composer backing", composerFill(), lightFill)
         } finally {
