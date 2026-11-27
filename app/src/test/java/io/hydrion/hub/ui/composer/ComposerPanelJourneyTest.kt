@@ -421,6 +421,92 @@ class ComposerPanelJourneyTest {
         assertEquals(showBeforeExit, shows)
     }
 
+    private fun checkModelPanelDensity(narrow: Boolean) {
+        val model = ProviderModel("astra", "6.2 Astra", profile = ModelProfile(type = ModelType.Chat,
+            input = linkedSetOf("text", "image", "audio", "video", "pdf"), output = setOf("text"),
+            abilities = setOf("tools", "reasoning"), levels = listOf("Low", "High"), contextWindowTokens = 128_000))
+        val provider = Provider("fixture", Mode.Chat, "Example", "local", "", listOf(model))
+        val route = RemoteModel(provider.id, model.id)
+        ui.runOnIdle {
+            vm.providers.catalog.value.favorites.toList().forEach { vm.providers.setChatModelFavorite(it, false) }
+            vm.providers.save(provider, "", null)
+            vm.providers.configure(Mode.Chat, route, emptyMap())
+            vm.providers.setChatModelFavorite(route, true)
+        }
+        openPanel("model")
+        val dp = ui.density.density
+        val search = bounds("chat-model-search-box")
+        val grip = bounds("chat-model-grip")
+        val handle = bounds("chat-model-handle")
+        val follow = tag("chat-model-follow-default").assertIsEnabled()
+        val rowTag = "chat-model-favorite-option:fixture/astra"
+        val inside = hasAnyAncestor(hasTestTag(rowTag))
+        fun item(matcher: SemanticsMatcher) = ui.onNode(inside and matcher, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val type = item(hasText(ui.activity.getString(R.string.browse_chat)))
+        val context = item(hasContentDescription(ui.activity.getString(R.string.browse_context, 128_000)))
+        val rowHeight = bounds(rowTag).height / dp
+        val tagDelta = (context.center.y - type.center.y) / dp
+        val topGap = (grip.top - shell.top) / dp
+        val lowerGap = (search.top - grip.bottom) / dp
+        val frame = windowFrame()
+        val x = (search.right - 54f * dp).roundToInt()
+        val fill = frame.getPixel(x, (search.bottom - 6f * dp).roundToInt())
+        val edge = frame.getPixel(x, search.top.roundToInt())
+        val surface = frame.getPixel((shell.left + 8f * dp).roundToInt(), search.center.y.roundToInt())
+        capture(if (narrow) "model-density-narrow" else "model-density")
+        println("narrow=$narrow model row=$rowHeight dp, tag center delta=$tagDelta dp, grip gaps=$topGap/$lowerGap dp, " +
+            "search fill/edge/backing=${Integer.toHexString(fill)}/${Integer.toHexString(edge)}/${Integer.toHexString(surface)}")
+        assertEquals(12f, topGap, 1f)
+        assertEquals(topGap, lowerGap, 1f)
+        assertEquals(100f, handle.width / dp, 1f)
+        assertEquals(40f, handle.height / dp, 1f)
+        assertEquals(40f, grip.width / dp, 1f)
+        assertEquals(4f, grip.height / dp, 1f)
+        val followBounds = follow.fetchSemanticsNode().boundsInRoot
+        assertTrue(followBounds.top >= search.bottom && kotlin.math.abs(followBounds.width - search.width) <= 9f * dp)
+        assertTrue(rowHeight >= 48f && bounds("$rowTag:favorite").height / dp >= 48f)
+        assertTrue(if (narrow) tagDelta > 12f else kotlin.math.abs(tagDelta) < 2f)
+        assertTrue(Color.red(fill) < Color.red(surface) && Color.red(edge) > Color.red(fill) + 35)
+        for (cx in listOf(search.left + 24f * dp, bounds("chat-model-bookmark").center.x)) {
+            val icon = Rect(Offset(cx, search.center.y), 9f * dp)
+            val brightest = (icon.top.toInt() until icon.bottom.toInt()).maxOf { y ->
+                (icon.left.toInt() until icon.right.toInt()).maxOf { px -> Color.red(frame.getPixel(px, y)) }
+            }
+            assertTrue("The dark search field keeps both glyphs legible", brightest >= 200)
+        }
+        // The upper middle of the 48dp search field overlaps the preserved drag target.
+        val overlap = Offset(search.center.x, search.top + 3f * dp)
+        assertTrue(handle.contains(overlap))
+        val opened = shell
+        val root = ui.onRoot()
+        root.performTouchInput { down(overlap); moveTo(overlap + Offset(0f, 48f * dp), 160) }
+        assertEquals(opened.top + 48f * dp, shell.top, 3f)
+        root.performTouchInput { cancel() }
+        assertEquals(opened, shell)
+        root.performTouchInput { click(overlap) }
+        tag("chat-model-search-field").assertIsFocused()
+        tag("chat-model-search-field").performTextReplacement("6.2")
+        tag("chat-model-bookmark").assertIsNotSelected().performTouchInput { click(center) }
+        tag("chat-model-search-field").assertTextEquals("")
+        tag("chat-model-bookmark").assertIsSelected()
+        tag("chat-model-results").performScrollToIndex(0)
+        follow.performTouchInput { click(center) }
+        tag("chat-model-card").assertIsDisplayed()
+        assertNull(ui.runOnIdle { vm.state.value.current.modelRoutes?.get(Mode.Chat) })
+        tag("chat-model-select").performClick()
+        tag("chat-model-follow-default").assertIsNotEnabled()
+        back()
+        openPanel("tools")
+        val toolsGrip = bounds("chat-tools-grip")
+        assertEquals(topGap, (toolsGrip.top - shell.top) / dp, 1f)
+        assertEquals(lowerGap, (bounds("chat-tools-heading").top - toolsGrip.bottom) / dp, 1f)
+    }
+
+    @Test fun modelPanelFitsRichTagsAndKeepsBothHeaderTargets() = checkModelPanelDensity(false)
+
+    @Test @Config(qualifiers = "en-rUS-w320dp-h740dp-night-xhdpi", fontScale = 1.5f)
+    fun modelPanelWrapsRichTagsAtLargeFontWithoutLosingActions() = checkModelPanelDensity(true)
+
     @Test fun aModelScrollsOutAtFullWidthAboveAndShrinksGraduallyBelow() {
         ui.runOnIdle { vm.providers.configure(Mode.Chat, RemoteModel("b", "model-9"), emptyMap()) }
         tag("chat-model-trigger").performClick()
@@ -473,7 +559,8 @@ class ComposerPanelJourneyTest {
             val frame = windowFrame()
             val y = (row.top + 2f * density).roundToInt()
             val painted = frame.getPixel(row.center.x.roundToInt(), y)
-            val surface = frame.getPixel((viewport.left + density).roundToInt(), y)
+            // The compact tile spans the viewport. Its outer gutter is still bare panel surface.
+            val surface = frame.getPixel((viewport.left - 4f * density).roundToInt(), y)
             return Color.red(painted) - Color.red(surface)
         }
         val middle = placeAt(viewport.center.y, "scroll-middle")
@@ -484,7 +571,7 @@ class ComposerPanelJourneyTest {
         fun edgeInk(atDp: Float): Int {
             val py = (viewport.top + density * atDp).roundToInt()
             return Color.red(crossing.getPixel(upper.center.x.roundToInt(), py)) -
-                Color.red(crossing.getPixel((viewport.left + density).roundToInt(), py))
+                Color.red(crossing.getPixel((viewport.left - 4f * density).roundToInt(), py))
         }
         assertTrue("Only scrolling content fades at the upper edge: ${edgeInk(1f)}, ${edgeInk(6f)}", edgeInk(1f) < edgeInk(6f))
         val near = placeAt(viewport.bottom - 21f * density, "scroll-near")

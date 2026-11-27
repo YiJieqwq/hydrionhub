@@ -1,5 +1,6 @@
 package io.hydrion.hub.provider
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,7 +11,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Replay
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import io.hydrion.hub.ui.composer.PanelBottomRail
@@ -24,11 +29,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
 import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
+import io.hydrion.hub.ui.theme.HubShapes
 
 private const val FOLLOW_DEFAULT_KEY = "follow-chat-default"
 private const val FAVORITES_HEADING_KEY = "chat-favorites-heading"
@@ -93,7 +101,7 @@ internal fun modelGroupLabels(entries: List<Pair<ProviderModel, Provider>>): Map
 
 internal fun LazyListScope.modelMenuItems(rows: List<ModelMenuRow>,
     selected: RemoteModel?, onPick: (RemoteModel) -> Unit, onEdit: ((RemoteModel) -> Unit)? = null,
-    favorites: Set<RemoteModel> = emptySet(), onFavoriteChange: ((RemoteModel, Boolean) -> Unit)? = null) {
+    favorites: Set<RemoteModel> = emptySet(), compact: Boolean = false, onFavoriteChange: ((RemoteModel, Boolean) -> Unit)? = null) {
     items(rows, key = { it.key }, contentType = { if (it.model == null) "header" else "model" }) { row ->
         val model = row.model
         if (model == null) PanelStep(Modifier.fillMaxWidth()) { BrowseHeading(row.label) }
@@ -104,7 +112,7 @@ internal fun LazyListScope.modelMenuItems(rows: List<ModelMenuRow>,
             val qualifiedLabel = stringResource(R.string.browse_model_with_provider, row.label, row.providerLabel)
             val label = if (row.favoriteShortcut) qualifiedLabel else row.label
             PanelStep(Modifier.fillMaxWidth()) { BrowseTile(label, row.provider, model, route == selected, Modifier.testTag(tag),
-                onEdit = onEdit?.let { edit -> { edit(route) } },
+                compact = compact, onEdit = onEdit?.let { edit -> { edit(route) } },
                 favoriteButton = if (onFavoriteChange == null) null else ({
                     ModelFavoriteButton(route in favorites, qualifiedLabel, Modifier.testTag("$tag:favorite")) {
                         onFavoriteChange(route, it)
@@ -179,9 +187,13 @@ internal fun ChatModelBrowsePage(
         picker.consumeBrowseRestore(restore)
     }
     Column(modifier.fillMaxWidth().testTag("chat-model-list").padding(bottom = if (providers.isEmpty()) 6.dp else 0.dp)) {
-        PanelModelSearch(picker, enabled = interactive && settled, onFavorites = if (shortcuts.isEmpty()) null else ({
+        val favoritesIndex = if (catalog.perChatModel) 1 else 0
+        val atFavorites by remember(query, shortcuts.size, favoritesIndex, browsingScroll) { derivedStateOf {
+            query.isEmpty() && shortcuts.isNotEmpty() && browsingScroll.firstVisibleItemIndex in favoritesIndex..(favoritesIndex + shortcuts.size)
+        } }
+        PanelModelSearch(picker, enabled = interactive && settled, atFavorites = atFavorites, onFavorites = if (shortcuts.isEmpty()) null else ({
             picker.clearSearchQuery()
-            browsingScroll.requestScrollToItem(if (catalog.perChatModel) 1 else 0)
+            browsingScroll.requestScrollToItem(favoritesIndex)
         }))
         Spacer(Modifier.height(8.dp))
         BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth().padding(horizontal = 12.dp)) {
@@ -190,13 +202,21 @@ internal fun ChatModelBrowsePage(
                 scrolledPx = { if (scroll.firstVisibleItemIndex > 0) Int.MAX_VALUE else scroll.firstVisibleItemScrollOffset }) { LazyColumn(Modifier.fillMaxWidth().testTag("chat-model-results"), state = scroll,
                 contentPadding = PaddingValues(top = 6.dp, bottom = composerPadding + 6.dp)) {
                 if (showFollow) item(key = FOLLOW_DEFAULT_KEY) {
-                    PanelStep(Modifier.fillMaxWidth()) { TextButton(
-                        onClick = { store.followChatDefault(); picker.open() },
-                        enabled = interactive && chatOverride != null,
-                        modifier = Modifier.fillMaxWidth().focusProperties { canFocus = false }.testTag("chat-model-follow-default"),
-                    ) {
-                        Text(stringResource(if (chatOverride == null) R.string.chat_model_following_default else R.string.chat_model_follow_default))
-                    } }
+                    PanelStep(Modifier.fillMaxWidth()) {
+                        val accent = browseColors().primary
+                        val enabled = interactive && chatOverride != null
+                        OutlinedButton(onClick = { store.followChatDefault(); picker.open() }, enabled = enabled,
+                            modifier = Modifier.fillMaxWidth().focusProperties { canFocus = false }.testTag("chat-model-follow-default"),
+                            shape = HubShapes.Small, border = BorderStroke(1.dp, accent.copy(alpha = if (enabled) .42f else .24f)),
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = accent.copy(alpha = .06f), contentColor = accent,
+                                disabledContainerColor = accent.copy(alpha = .03f), disabledContentColor = browseColors().heading),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
+                            Icon(Icons.Outlined.Replay, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(if (chatOverride == null) R.string.chat_model_following_default else R.string.chat_model_follow_default),
+                                fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
                 if (query.isEmpty() && shortcuts.isNotEmpty()) item(key = FAVORITES_HEADING_KEY) {
                     PanelStep(Modifier.fillMaxWidth()) { BrowseHeading(stringResource(R.string.browse_favorites)) }
@@ -218,7 +238,7 @@ internal fun ChatModelBrowsePage(
                         onEditModel(route, PickerBrowseSnapshot(page, picker.searchQuery,
                             browsingScroll.anchor(), filteredScroll.anchor(), room.value))
                     }
-                }, favorites = catalog.favorites, onFavoriteChange = { route, favorite ->
+                }, favorites = catalog.favorites, compact = true, onFavoriteChange = { route, favorite ->
                     if (interactive && picker.modelListNavigation) store.setChatModelFavorite(route, favorite)
                 })
             } }

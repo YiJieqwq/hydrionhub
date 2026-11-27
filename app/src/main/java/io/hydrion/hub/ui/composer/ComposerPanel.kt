@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
@@ -30,6 +31,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Size
@@ -41,6 +43,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -48,6 +51,7 @@ import androidx.compose.ui.semantics.dismiss
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -76,6 +80,8 @@ private class PanelPull(val clock: () -> PanelTravelClock?, val requested: () ->
 }
 
 private val LocalPanelPull = compositionLocalOf<PanelPull?> { null }
+private val HandleWidth = 100.dp
+private val HandleHeight = 40.dp
 
 /** Both children live inside the composer's original Surface. Measure the list at its
  * destination, then reveal it with the moving shell edge rather than reflowing its rows. */
@@ -100,12 +106,13 @@ internal fun ComposerPanelBody(
                 if (panel != null) BlockPanelTouches(Modifier.matchParentSize())
             }
             if (panel != null) {
-                Box(Modifier.fillMaxWidth().onPlaced { pull.root = it }, propagateMinConstraints = true) {
+                Box(Modifier.fillMaxWidth().onPlaced { pull.root = it }.panelHandleDrag(handleId, pull, dismiss),
+                    propagateMinConstraints = true) {
                     CompositionLocalProvider(LocalPanelPull provides pull, content = panel)
                 }
-                // Keep the owning pointer node outside the changing search/list subtree.
-                // A captured drag must outlive the panel switching its fields to read-only.
-                PanelHandleInput(handleId, pull, dismiss)
+                val dismissLabel = stringResource(R.string.chat_panel_drag_dismiss)
+                Spacer(Modifier.size(HandleWidth, HandleHeight).testTag("chat-$handleId-handle")
+                    .semantics { contentDescription = dismissLabel; this.dismiss { dismiss(); true } })
             }
         }) { children, limits ->
             val editor = children.first().measure(limits.copy(minHeight = 0))
@@ -297,53 +304,51 @@ internal fun PanelStep(modifier: Modifier = Modifier, inheritGroupPull: Boolean 
     }
 }
 
-/** Only the handle owns vertical drags. List, bookmark and text gestures stay with their own controls. */
+/** Observe the original handle rectangle before its children. A tap in the shared
+ * strip reaches the search field; only an actual handle drag consumes motion. */
 @Composable
-private fun PanelHandleInput(id: String, pull: PanelPull, onDismiss: () -> Unit) {
-    val label = stringResource(R.string.chat_panel_drag_dismiss)
+private fun Modifier.panelHandleDrag(id: String, pull: PanelPull, onDismiss: () -> Unit): Modifier {
     val close by rememberUpdatedState(onDismiss)
-    var location by remember { mutableStateOf<LayoutCoordinates?>(null) }
-    Spacer(Modifier.width(100.dp).height(40.dp).testTag("chat-$id-handle")
-        .onPlaced { location = it }
-        .pointerInput(pull, id) {
-            awaitEachGesture {
-                val down = awaitFirstDown()
-                val motion = pull.clock() ?: return@awaitEachGesture
-                if (!pull.requested() || !motion.atEnd) return@awaitEachGesture
-                val anchor = location ?: return@awaitEachGesture
-                val start = anchor.localToRoot(down.position)
-                val expanded = pull.expandedHeight.toFloat()
-                val travel = pull.dragTravel
-                val velocity = VelocityTracker()
-                velocity.addPosition(down.uptimeMillis, start)
-                var captured = false
-                try {
-                    while (true) {
-                        val point = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
-                        if (point.isConsumed || !anchor.isAttached || !pull.requested()) break
-                        val position = anchor.localToRoot(point.position)
-                        val delta = position - start
-                        velocity.addPosition(point.uptimeMillis, position)
-                        if (!captured) {
-                            if (!point.pressed || abs(delta.x) > viewConfiguration.touchSlop && abs(delta.x) >= abs(delta.y)) break
-                            if (delta.y <= viewConfiguration.touchSlop) continue
-                            motion.hold()
-                            captured = true
-                        }
-                        val distance = delta.y.coerceAtLeast(0f)
-                        motion.seek(1f - distance / travel)
-                        point.consume()
-                        if (!point.pressed) {
-                            if (distance > expanded * .5f || velocity.calculateVelocity().y > 700.dp.toPx()) close()
-                            break
-                        }
+    return pointerInput(pull, id) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            if (down.position.y !in 0f..HandleHeight.toPx() ||
+                abs(down.position.x - size.width * .5f) > HandleWidth.toPx() / 2) return@awaitEachGesture
+            val motion = pull.clock() ?: return@awaitEachGesture
+            if (!pull.requested() || !motion.atEnd) return@awaitEachGesture
+            val anchor = pull.root ?: return@awaitEachGesture
+            val start = anchor.localToRoot(down.position)
+            val expanded = pull.expandedHeight.toFloat()
+            val travel = pull.dragTravel
+            val velocity = VelocityTracker()
+            velocity.addPosition(down.uptimeMillis, start)
+            var captured = false
+            try {
+                while (true) {
+                    val point = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
+                    if (point.isConsumed || !anchor.isAttached || !pull.requested()) break
+                    val position = anchor.localToRoot(point.position)
+                    val delta = position - start
+                    velocity.addPosition(point.uptimeMillis, position)
+                    if (!captured) {
+                        if (!point.pressed || abs(delta.x) > viewConfiguration.touchSlop && abs(delta.x) >= abs(delta.y)) break
+                        if (delta.y <= viewConfiguration.touchSlop) continue
+                        motion.hold()
+                        captured = true
                     }
-                } finally {
-                    if (captured) motion.release()
+                    val distance = delta.y.coerceAtLeast(0f)
+                    motion.seek(1f - distance / travel)
+                    point.consume()
+                    if (!point.pressed) {
+                        if (distance > expanded * .5f || velocity.calculateVelocity().y > 700.dp.toPx()) close()
+                        break
+                    }
                 }
+            } finally {
+                if (captured) motion.release()
             }
         }
-        .semantics { contentDescription = label; dismiss { close(); true } })
+    }
 }
 
 @Composable
@@ -351,7 +356,7 @@ private fun PanelGrip(id: String, onDismiss: () -> Unit) {
     val pull = LocalPanelPull.current
     val label = stringResource(R.string.chat_panel_drag_dismiss)
     val fallback = if (pull == null) Modifier.semantics { contentDescription = label; dismiss { onDismiss(); true } } else Modifier
-    Box(Modifier.fillMaxWidth().height(40.dp).then(fallback).graphicsLayer { alpha = pull?.progress() ?: 1f },
+    Box(Modifier.fillMaxWidth().height(28.dp).then(fallback).graphicsLayer { alpha = pull?.progress() ?: 1f },
         contentAlignment = Alignment.Center) {
         val light = MaterialTheme.colorScheme.surface.luminance() > .5f
         val shape = RoundedCornerShape(2.dp)
@@ -375,7 +380,7 @@ internal fun ToolPanelHeading(onBack: () -> Unit, countLabel: String) {
 }
 
 @Composable
-internal fun PanelModelSearch(picker: ChatModelPickerState, enabled: Boolean, onFavorites: (() -> Unit)?) {
+internal fun PanelModelSearch(picker: ChatModelPickerState, enabled: Boolean, atFavorites: Boolean, onFavorites: (() -> Unit)?) {
     val hint = stringResource(R.string.chat_panel_model_search_hint)
     val colors = MaterialTheme.colorScheme
     var focused by remember { mutableStateOf(false) }
@@ -386,10 +391,12 @@ internal fun PanelModelSearch(picker: ChatModelPickerState, enabled: Boolean, on
         PanelGrip("model", picker::systemBack)
         PanelStep(Modifier.fillMaxWidth().zIndex(1f)) {
             val shape = HubShapes.Small
-            val line = if (focused) colors.primary.copy(alpha = .5f) else colors.outlineVariant.copy(alpha = .4f)
+            val dark = colors.onSurface.luminance() > colors.surfaceContainerHigh.luminance()
+            val fill = lerp(colors.surfaceContainerHigh, Color.Black, if (dark) .16f else .03f)
+            val line = if (focused) lerp(colors.primary, colors.onSurface, .45f) else colors.onSurface.copy(alpha = .46f)
             Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).behindToolsPage(!enabled)) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("chat-model-search-box")
-                    .background(colors.surfaceContainerHighest, shape).border(1.dp, line, shape),
+                    .background(fill, shape).border(1.dp, line, shape),
                     verticalAlignment = Alignment.CenterVertically) {
                     BasicTextField(value, { edit ->
                         if (enabled && picker.modelListNavigation) {
@@ -403,7 +410,7 @@ internal fun PanelModelSearch(picker: ChatModelPickerState, enabled: Boolean, on
                         decorationBox = { field ->
                             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), tint = colors.onSurface.copy(alpha = .6f))
+                                    Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), tint = colors.onSurface.copy(alpha = .86f))
                                 }
                                 Box(Modifier.weight(1f).padding(end = if (onFavorites == null) 12.dp else 0.dp,
                                     top = 12.dp, bottom = 12.dp), contentAlignment = Alignment.CenterStart) {
@@ -413,9 +420,9 @@ internal fun PanelModelSearch(picker: ChatModelPickerState, enabled: Boolean, on
                             }
                         })
                     if (onFavorites != null) IconButton(onClick = onFavorites, enabled = enabled,
-                        modifier = Modifier.size(48.dp).testTag("chat-model-bookmark")) {
-                        Icon(Icons.Outlined.BookmarkBorder, stringResource(R.string.browse_favorites),
-                            Modifier.size(18.dp), tint = colors.onSurface.copy(alpha = .7f))
+                        modifier = Modifier.size(48.dp).testTag("chat-model-bookmark").semantics { selected = atFavorites }) {
+                        Icon(if (atFavorites) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder, stringResource(R.string.browse_favorites),
+                            Modifier.size(18.dp), tint = colors.onSurface.copy(alpha = if (atFavorites) 1f else .9f))
                     }
                 }
                 if (!enabled) BlockPanelTouches(Modifier.matchParentSize())

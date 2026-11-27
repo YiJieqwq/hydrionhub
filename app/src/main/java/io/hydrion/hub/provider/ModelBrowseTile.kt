@@ -58,7 +58,7 @@ internal fun BrowseHeading(label: String) {
 @Composable
 internal fun BrowseTile(
     label: String, provider: Provider, model: ProviderModel, checked: Boolean,
-    modifier: Modifier, onEdit: (() -> Unit)? = null, favoriteButton: (@Composable () -> Unit)? = null, onPick: () -> Unit,
+    modifier: Modifier, compact: Boolean = false, onEdit: (() -> Unit)? = null, favoriteButton: (@Composable () -> Unit)? = null, onPick: () -> Unit,
 ) {
     val colors = browseColors()
     val shape = HubShapes.Small
@@ -67,20 +67,26 @@ internal fun BrowseTile(
         .combinedClickable(role = Role.RadioButton,
             onLongClickLabel = if (onEdit != null) stringResource(R.string.chat_picker_edit_model) else null,
             onLongClick = onEdit, onClick = onPick)
-    Box(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+    // The chat panel already supplies a 12dp list inset. Settings owns its own tile margins.
+    Box(Modifier.padding(horizontal = if (compact) 0.dp else 12.dp, vertical = if (compact) 3.dp else 6.dp)) {
         Row(Modifier.fillMaxWidth().clip(shape).background(if (checked) colors.selected else Color.Transparent),
             verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f).then(action).heightIn(min = 48.dp)
-                .padding(start = 12.dp, end = if (favoriteButton == null) 12.dp else 0.dp, top = 10.dp, bottom = 10.dp),
+                .padding(start = if (compact) 8.dp else 12.dp, end = if (favoriteButton == null) 12.dp else 0.dp)
+                .padding(vertical = if (compact) 6.dp else 10.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                BrowseAvatar(provider, model, 28.dp, colors)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(label, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .25.sp,
-                        fontWeight = FontWeight.SemiBold, color = colors.text)
-                    BrowseModelTags(model, provider, colors)
+                BrowseAvatar(provider, model, if (compact) 24.dp else 28.dp, colors)
+                Spacer(Modifier.width(if (compact) 8.dp else 10.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, Modifier.weight(1f), fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .25.sp,
+                            fontWeight = FontWeight.SemiBold, color = colors.text)
+                        if (compact && checked) Icon(painterResource(R.drawable.lucide_check), null,
+                            Modifier.padding(start = 4.dp).size(16.dp), tint = colors.primary)
+                    }
+                    BrowseModelTags(model, provider, colors, compact)
                 }
-                Box(Modifier.size(if (favoriteButton == null) 36.dp else 22.dp), contentAlignment = Alignment.Center) {
+                if (!compact) Box(Modifier.size(if (favoriteButton == null) 36.dp else 22.dp), contentAlignment = Alignment.Center) {
                     if (checked) Icon(painterResource(R.drawable.lucide_check), null, Modifier.size(20.dp), tint = colors.primary)
                 }
             }
@@ -122,7 +128,7 @@ internal fun BrowseAvatar(provider: Provider, model: ProviderModel?, size: Dp, c
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun BrowseModelTags(model: ProviderModel, provider: Provider, colors: BrowseColors) {
+private fun BrowseModelTags(model: ProviderModel, provider: Provider, colors: BrowseColors, compact: Boolean) {
     val type = model.typeFor(provider.mode)
     val typeLabel = when (type) {
         ModelType.Chat -> R.string.browse_chat
@@ -131,29 +137,32 @@ private fun BrowseModelTags(model: ProviderModel, provider: Provider, colors: Br
     }
     val modalFill = if (colors.dark) .25f else .15f
     val iconAlpha = if (colors.dark) 1f else .9f
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        BadgeSurface(colors.primary, modalFill, .2f, 8.dp, Modifier.align(Alignment.CenterVertically)) {
+    val gap = if (compact) 4.dp else 6.dp
+    val pad = if (compact) 5.dp else 8.dp
+    val iconPad = if (compact) 4.dp else 6.dp
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(gap), verticalArrangement = Arrangement.spacedBy(gap)) {
+        BadgeSurface(colors.primary, modalFill, .2f, pad, Modifier.align(Alignment.CenterVertically)) {
             BadgeText(stringResource(typeLabel), colors.primary.copy(alpha = iconAlpha))
         }
-        BadgeSurface(colors.tertiary, modalFill, .2f, 8.dp, Modifier.align(Alignment.CenterVertically)) {
+        BadgeSurface(colors.tertiary, modalFill, .2f, pad, Modifier.align(Alignment.CenterVertically)) {
             val ink = colors.tertiary.copy(alpha = iconAlpha)
             ModalityIcons(model.profile.input.ifEmpty { setOf("text") }, ink)
             Icon(painterResource(R.drawable.lucide_chevron_right), stringResource(R.string.browse_outputs),
                 Modifier.size(12.dp), tint = ink)
             ModalityIcons(model.profile.output.ifEmpty { setOf("text") }, ink)
         }
-        if ("tools" in model.profile.abilities) BadgeSurface(colors.primary, modalFill, .2f, 6.dp, Modifier.align(Alignment.CenterVertically)) {
+        if ("tools" in model.profile.abilities) BadgeSurface(colors.primary, modalFill, .2f, iconPad, Modifier.align(Alignment.CenterVertically)) {
             Icon(painterResource(R.drawable.lucide_hammer), stringResource(R.string.browse_tools),
                 Modifier.size(12.dp), tint = colors.primary.copy(alpha = iconAlpha))
         }
         if ("reasoning" in model.profile.abilities || model.configureCapabilities().any { it.key == "effort" }) {
-            BadgeSurface(colors.secondary, if (colors.dark) .30f else .18f, .25f, 6.dp, Modifier.align(Alignment.CenterVertically)) {
+            BadgeSurface(colors.secondary, if (colors.dark) .30f else .18f, .25f, iconPad, Modifier.align(Alignment.CenterVertically)) {
                 Icon(painterResource(R.drawable.lucide_brain), stringResource(R.string.browse_reasoning),
                     Modifier.size(12.dp), tint = colors.secondary.copy(alpha = iconAlpha))
             }
         }
         val size = model.contextWindowTokens
-        BadgeSurface(colors.text, if (colors.dark) .12f else .08f, .16f, 8.dp, Modifier.align(Alignment.CenterVertically)) {
+        BadgeSurface(colors.text, if (colors.dark) .12f else .08f, .16f, pad, Modifier.align(Alignment.CenterVertically)) {
             val context = stringResource(R.string.browse_context, size)
             BadgeText(browseTokenCount(size), colors.text.copy(alpha = if (colors.dark) .86f else .78f),
                 Modifier.clearAndSetSemantics { contentDescription = context })
