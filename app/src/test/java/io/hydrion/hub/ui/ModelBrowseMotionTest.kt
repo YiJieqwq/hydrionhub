@@ -4,7 +4,6 @@ import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.mutableStateOf
 import io.hydrion.hub.provider.ChatModelPickerState
 import io.hydrion.hub.ui.composer.ToolsPageState
-import io.hydrion.hub.ui.composer.searchHintFraction
 import io.hydrion.hub.ui.composer.ToolsPageTravelMillis
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancelAndJoin
@@ -30,12 +29,7 @@ class ModelBrowseMotionTest {
             frames.sendFrame(time)
             yield()
             assertEquals(tools.progress, models.progress, 0.0001f)
-            assertEquals("The query hint follows the page on every sampled frame, including reversals",
-                tools.progress, searchHintFraction(models.progress, picker.modelListNavigation, lastQueryEmpty = true), .0001f)
-            if (!picker.modelListNavigation) {
-                assertEquals("A departing nonempty query has no outgoing hint", 0f,
-                    searchHintFraction(models.progress, browsing = false, lastQueryEmpty = false), 0f)
-            }
+
         }
         fun animate(open: Boolean) = listOf(
             launch(frames, start = CoroutineStart.UNDISPATCHED) { tools.animateToTarget(open) },
@@ -83,14 +77,4 @@ class ModelBrowseMotionTest {
         assertEquals(1f, models.progress, 0f)
     }
 
-    @Test fun configurationCoverDrivesSearchAndGlassTogetherWithoutAddingImeTravelTwice() {
-        for (cover in listOf(0f, .25f, .5f, .75f, 1f).let { it + it.reversed() }) {
-            val reveal = modelVisitBrowseReveal(1f, cover)
-            assertEquals(1f - reveal, modelVisitDockOffset(cover, 144f, false) / 144f, .00001f)
-            for (ime in listOf(600, 350, 0)) {
-                val imeTop = 2400f - ime
-                assertEquals(imeTop - 36f, imeTop - 36f + modelVisitDockOffset(cover, 144f, true), 0f)
-            }
-        }
-    }
 }

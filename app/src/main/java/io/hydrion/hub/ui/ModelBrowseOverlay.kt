@@ -30,7 +30,7 @@ internal class ModelBrowseMotion(private val picker: ChatModelPickerState, priva
     suspend fun travel(open: Boolean, restoring: Boolean) {
         // Configuration covers an already-open search. Restore that endpoint without
         // replaying the ordinary draft-to-search animation after the cover disappears.
-        if (restoring && open) clock.snapOpen() else clock.animateTo(open)
+        if (restoring && open) clock.snapOpen() else clock.animateTo(open) { picker.modelListNavigation == open }
     }
 }
 

@@ -45,34 +45,36 @@ internal fun PanelToolRow(
     }
     val action = if (checked == null) Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         else Modifier.toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = { onClick() })
-    Row(Modifier.fillMaxWidth().padding(end = if (compactActions) 6.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Row(Modifier.weight(1f).clip(MaterialTheme.shapes.small).testTag("panel-action:$id").keepToolEditorFocus().then(action)
-            .heightIn(min = if (detail.isNullOrEmpty()) 48.dp else 56.dp).padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            Icon(painterResource(icon), null, Modifier.size(20.dp), tint = ink)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.bodyMedium, fontSize = 15.sp, letterSpacing = 0.sp, color = ink,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (!detail.isNullOrEmpty()) {
-                    Text(detail, style = MaterialTheme.typography.bodySmall, fontSize = 13.sp, lineHeight = 17.sp,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis, color = colors.onSurfaceVariant)
+    PanelStep(Modifier.fillMaxWidth(), inheritGroupPull = true) {
+        Row(Modifier.fillMaxWidth().padding(end = if (compactActions) 6.dp else 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.weight(1f).clip(MaterialTheme.shapes.small).testTag("panel-action:$id").keepToolEditorFocus().then(action)
+                .heightIn(min = if (detail.isNullOrEmpty()) 48.dp else 56.dp).padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(painterResource(icon), null, Modifier.size(20.dp), tint = ink)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.bodyMedium, fontSize = 15.sp, letterSpacing = 0.sp, color = ink,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (!detail.isNullOrEmpty()) {
+                        Text(detail, style = MaterialTheme.typography.bodySmall, fontSize = 13.sp, lineHeight = 17.sp,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, color = colors.onSurfaceVariant)
+                    }
+                }
+                if (!value.isNullOrEmpty()) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(value, Modifier.widthIn(max = 128.dp), style = MaterialTheme.typography.bodySmall, fontSize = 13.sp,
+                        textAlign = TextAlign.End, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                if (checked != null) {
+                    Spacer(Modifier.width(8.dp))
+                    PanelSwitchTrack(checked, enabled, id)
+                } else if (enabled && chevron) {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(painterResource(R.drawable.lucide_chevron_right), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
                 }
             }
-            if (!value.isNullOrEmpty()) {
-                Spacer(Modifier.width(6.dp))
-                Text(value, Modifier.widthIn(max = 128.dp), style = MaterialTheme.typography.bodySmall, fontSize = 13.sp,
-                    textAlign = TextAlign.End, color = colors.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            if (checked != null) {
-                Spacer(Modifier.width(8.dp))
-                PanelSwitchTrack(checked, enabled, id)
-            } else if (enabled && chevron) {
-                Spacer(Modifier.width(6.dp))
-                Icon(painterResource(R.drawable.lucide_chevron_right), null, Modifier.size(18.dp), tint = colors.onSurfaceVariant)
-            }
+            controls?.invoke()
         }
-        controls?.invoke()
     }
 }
 

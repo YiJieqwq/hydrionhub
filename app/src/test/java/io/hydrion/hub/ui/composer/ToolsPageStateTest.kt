@@ -1,8 +1,6 @@
 package io.hydrion.hub.ui.composer
 
 import androidx.compose.runtime.BroadcastFrameClock
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -26,15 +24,13 @@ class ToolsPageStateTest {
         }
     }
 
-    @Test fun interruptedEntranceAndExitKeepTheSameTimelineAndQuery() = runBlocking {
+    @Test fun interruptedEntranceAndExitKeepTheCurrentDrawnPosition() = runBlocking {
         val frames = Frames()
         val state = ToolsPageState()
         assertFalse(state.active)
         assertFalse(state.interactive)
         assertEquals(0f, state.progress, 0f)
         state.open()
-        val typed = TextFieldValue("search", TextRange(2, 4))
-        state.query = typed
         val opening = launch(frames.clock, start = CoroutineStart.UNDISPATCHED) { state.animateToTarget(true) }
         frames.tick()
         val enteredMillis = ToolsPageTravelMillis / 2
@@ -43,10 +39,11 @@ class ToolsPageStateTest {
         val onEnter = state.progress
         assertEquals(.5f, onEnter, .001f)
         state.close()
+        frames.tick(16)
+        assertEquals(onEnter, state.progress, 0f)
         opening.cancelAndJoin()
         assertTrue(state.active)
         assertFalse(state.interactive)
-        assertEquals(typed, state.query)
         val closing = launch(frames.clock, start = CoroutineStart.UNDISPATCHED) { state.animateToTarget(false) }
         frames.tick()
         assertEquals(onEnter, state.progress, .0001f)
@@ -56,16 +53,16 @@ class ToolsPageStateTest {
         assertTrue("roughly a fifth of travel at a quarter of the clock", onExit in 0.18f..0.22f)
 
         state.open()
+        frames.tick(16)
+        assertEquals(onExit, state.progress, 0f)
         closing.cancelAndJoin()
         val reopen = launch(frames.clock, start = CoroutineStart.UNDISPATCHED) { state.animateToTarget(true) }
         frames.tick()
         assertEquals(onExit, state.progress, .0001f)
-        assertEquals(typed, state.query)
         frames.tick(ToolsPageTravelMillis - remainingPositionMillis)
         reopen.join()
         assertTrue(state.interactive)
         assertEquals(1f, state.progress, 0f)
-        assertEquals(typed, state.query)
     }
 
     @Test fun fullTravelKeepsTheSameVisibleMilestonesInBothDirections() = runBlocking {
@@ -84,30 +81,24 @@ class ToolsPageStateTest {
         }
     }
 
-    @Test fun queryClearsOnlyOnCompletedExitAndFreshOpen() = runBlocking {
+    @Test fun panelIsReleasedOnlyAtTheLastFrame() = runBlocking {
         val frames = Frames()
         val state = ToolsPageState()
-        state.query = TextFieldValue("old")
         state.open()
-        assertEquals(TextFieldValue(), state.query)
         val opening = launch(frames.clock, start = CoroutineStart.UNDISPATCHED) { state.animateToTarget(true) }
         frames.tick()
         frames.tick(ToolsPageTravelMillis)
         opening.join()
-        state.query = TextFieldValue("draft")
         state.open()
-        assertEquals("draft", state.query.text)
         state.close()
         assertFalse(state.interactive)
         val closing = launch(frames.clock, start = CoroutineStart.UNDISPATCHED) { state.animateToTarget(false) }
         frames.tick()
         frames.tick(ToolsPageTravelMillis - 1)
         assertTrue(state.active)
-        assertEquals("draft", state.query.text)
         frames.tick(1)
         closing.join()
         assertFalse(state.active)
-        assertEquals(TextFieldValue(), state.query)
         assertEquals(0f, state.progress, 0f)
     }
 }

@@ -1,16 +1,11 @@
 package io.hydrion.hub
 
 import android.view.KeyEvent
-import android.view.View
-import android.view.ViewTreeObserver
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -25,15 +20,11 @@ import io.hydrion.hub.provider.ModelProfile
 import io.hydrion.hub.provider.Provider
 import io.hydrion.hub.provider.ProviderModel
 import io.hydrion.hub.provider.ProviderStore
-import io.hydrion.hub.ui.composer.ToolsPageTravelMillis
-import io.hydrion.hub.ui.composer.composerAssistantName
-import io.hydrion.hub.ui.ModelEditorMotionMillis
 import io.hydrion.hub.provider.deepSeekProvider
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
-import io.hydrion.hub.R
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -42,20 +33,6 @@ class ChatModelSearchTest {
     @get:Rule val screen = createAndroidComposeRule<MainActivity>()
 
     private val editor get() = screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction())
-    private val send get() = screen.onNodeWithTag("chat-composer-send")
-    private val searchHint get() = screen.activity.getString(R.string.chat_picker_search_hint)
-    private val draftHint get() = screen.runOnIdle {
-        val state = ViewModelProvider(screen.activity)[HubViewModel::class.java].state.value
-        screen.activity.getString(R.string.chat_message_hint, state.composerAssistantName)
-    }
-
-    private fun assertComposerHint(expected: String?) {
-        val inCapsule = hasAnyAncestor(hasTestTag("composer-capsule"))
-        for (hint in listOf(draftHint, searchHint)) {
-            screen.onAllNodes(inCapsule and hasText(hint)).assertCountEquals(if (hint == expected) 1 else 0)
-        }
-    }
-
     private fun control(id: String) = screen.onNodeWithTag("chat-model-$id")
     private fun option(provider: Provider, id: String) = "option:${provider.id}/$id"
     private fun reveal(id: String): SemanticsNodeInteraction {
@@ -103,26 +80,6 @@ class ChatModelSearchTest {
         control("search-field").assertDoesNotExist()
     }
 
-    private fun enterModels(): SemanticsNodeInteraction {
-        val keyboardWasOpen = imeIsVisible()
-        control("select").performTouchInput { click(center) }
-        control("list").assertIsDisplayed()
-        val inCapsule = hasAnyAncestor(hasTestTag("composer-capsule"))
-        val field = screen.onNode(hasTestTag("chat-model-search-field") and inCapsule)
-            .assertIsDisplayed().assert(hasImeAction(ImeAction.Search))
-        if (keyboardWasOpen) field.assertIsFocused()
-        assertEquals("Entering the model page preserves the keyboard", keyboardWasOpen, imeIsVisible())
-        assertEquals("", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        screen.onNode(hasTestTag("chat-model-list-back") and inCapsule).assertIsDisplayed().assertHasClickAction()
-        screen.onNode(hasTestTag("chat-model-search-clear") and inCapsule).assertIsDisplayed().assertIsNotEnabled()
-        val inResultsPage = hasAnyAncestor(hasTestTag("chat-model-list"))
-        screen.onAllNodes(inResultsPage and (hasSetTextAction() or hasTestTag("chat-model-list-back")),
-            useUnmergedTree = true).assertCountEquals(0)
-        send.assertDoesNotExist()
-        screen.onNodeWithTag("chat-composer-dictate").assertDoesNotExist()
-        return field
-    }
-
     private fun imeIsVisible() = screen.runOnUiThread {
         val view = screen.activity.window.decorView
         val insets = ViewCompat.getRootWindowInsets(view)
@@ -137,552 +94,152 @@ class ChatModelSearchTest {
         screen.waitUntil(15_000) { !imeIsVisible() }
     }
 
-    private fun capsule() = screen.onNodeWithTag("composer-capsule", useUnmergedTree = true)
-        .fetchSemanticsNode().boundsInRoot
-
-    private fun assertAnchored(tag: String) {
-        val density = screen.activity.resources.displayMetrics.density
-        val card = control(tag).assertIsDisplayed().fetchSemanticsNode()
-        val composer = screen.onNodeWithTag("composer-capsule", useUnmergedTree = true).fetchSemanticsNode()
-        screen.runOnIdle {
-            assertEquals("Panel gap above composer", 11.5f * density,
-                composer.boundsInRoot.top - card.boundsInRoot.bottom, 2f)
-        }
-    }
-
-    private fun assertImeStays(visible: Boolean, action: () -> Unit) {
-        val view = screen.activity.window.decorView
-        val samples = mutableListOf<Boolean>()
-        val listener = ViewTreeObserver.OnPreDrawListener {
-            samples += ViewCompat.getRootWindowInsets(view)?.isVisible(WindowInsetsCompat.Type.ime()) == true
-            true
-        }
-        screen.runOnUiThread { view.viewTreeObserver.addOnPreDrawListener(listener) }
-        try {
-            action()
-            screen.waitForIdle()
-            assertEquals(visible, imeIsVisible())
-            screen.runOnUiThread {
-                assertTrue("IME visibility per drawn frame: $samples", samples.isNotEmpty() && samples.all { it == visible })
-            }
-        } finally {
-            screen.runOnUiThread { view.viewTreeObserver.removeOnPreDrawListener(listener) }
-        }
-    }
-
-    @Test fun emptyModelQueryKeepsTheKeyboardClosedUntilTappedAndClearDoesNotExit() = withProviders { vm, _, _ ->
-        screen.runOnIdle { vm.setDraft("") }
-        val compact = capsule()
-        editor.performTouchInput { click(center) }
-        screen.waitUntil(15_000) { imeIsVisible() }
-        openControls()
-        hideKeyboard()
-        screen.waitUntil(15_000) { capsule() == compact }
-        assertAnchored("card")
-        assertImeStays(false) { enterModels() }
-        assertComposerHint(searchHint)
-        val query = control("search-field")
-        query.performTouchInput { click(center) }
-        screen.waitUntil(15_000) { imeIsVisible() }
-        query.performTextReplacement("No such model")
-        reveal("search-empty")
-        assertImeStays(true) { control("search-clear").performTouchInput { click(center) } }
-        query.assertIsFocused()
-        assertComposerHint(searchHint)
-        control("results").assertIsDisplayed()
-        assertImeStays(true) { control("list-back").performTouchInput { click(center) } }
-        control("card").assertIsDisplayed()
-        assertComposerHint(draftHint)
-        hideKeyboard()
-        screen.waitUntil(15_000) { capsule() == compact }
-        send.assertIsNotEnabled()
+    private fun enterModels(): SemanticsNodeInteraction {
+        control("select").performTouchInput { click(center) }
+        control("list").assertIsDisplayed()
+        screen.waitUntil(15_000) { !imeIsVisible() }
+        val inShell = hasAnyAncestor(hasTestTag("composer-capsule"))
+        return screen.onNode(hasTestTag("chat-model-search-field") and inShell)
+            .assertIsDisplayed().assertIsNotFocused().assert(hasImeAction(ImeAction.Search))
     }
 
     @OptIn(ExperimentalTestApi::class)
-    @Test fun cancelAfterHidingTheSearchKeyboardRestoresParkedDraftSelectionAndAttachment() =
-        withProviders(includeAttachment = true) { vm, _, _ ->
-            val draft = "draft stays here"
-            val selection = TextRange(2, 7)
-            screen.runOnIdle { vm.setDraft(draft) }
-            val parked = capsule()
-            val attachments = screen.runOnIdle { vm.state.value.draft.attachments }
-            editor.performTouchInput { click(center) }
-            screen.waitUntil(15_000) { imeIsVisible() && capsule().width > parked.width }
-            editor.performTextInputSelection(selection)
-            openControls()
-            assertImeStays(true) { enterModels().performTextReplacement("Nimbus") }
-            assertComposerHint(null)
-            hideKeyboard()
-            assertImeStays(false) { control("list-back").performTouchInput { click(center) } }
-            control("list").assertDoesNotExist()
-            editor.assertTextEquals(draft)
-            assertComposerHint(null)
-            assertAnchored("card")
-            screen.onNodeWithTag("chat-composer-dictate").assertIsDisplayed().assertHasClickAction()
-            assertEquals(parked, capsule())
-
-            // The capsule's back arrow ends the whole model selection; re-entry starts empty.
-            assertImeStays(false) { enterModels() }
-            assertImeStays(false) { control("list-back").performTouchInput { click(center) } }
-            assertImeStays(false) { control("trigger").performTouchInput { click(center) } }
-            control("card").assertDoesNotExist()
-            editor.assertTextEquals(draft)
-            assertEquals(parked, capsule())
-            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-            screen.runOnIdle { assertEquals(attachments, vm.state.value.draft.attachments) }
-        }
-
-    @OptIn(ExperimentalTestApi::class)
-    @Test fun listReturnRestoresTheLiveEditorBeforeTheToolbarLands() = withProviders { vm, _, _ ->
-        editor.performTouchInput { click(center) }
-        screen.waitUntil(15_000) { imeIsVisible() }
-        val clock = screen.mainClock
-        fun xBounds(tag: String) = screen.onNodeWithTag(tag, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        for (original in listOf("", "first line\nsecond line")) {
-            editor.performTextReplacement(original)
-            val selection = TextRange(0, minOf(3, original.length))
-            editor.performTextInputSelection(selection)
-            openControls()
-            val labelTag = "chat-model-source-label"
-            val micTag = "chat-composer-dictate"
-            val settled = xBounds(labelTag)
-            val gap = xBounds(micTag).left - settled.right
-            val query = enterModels()
-            if (original.isNotEmpty()) query.performTextReplacement("Nimbus")
-
-            clock.autoAdvance = false
-            try {
-                control("list-back").performClick()
-                clock.advanceTimeByFrame()
-                clock.advanceTimeBy(ToolsPageTravelMillis / 2L)
-                assertTrue(imeIsVisible())
-                control("search-field").assertDoesNotExist()
-                assertEquals(original, editor.assertIsFocused().fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-                assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-                assertComposerHint(if (original.isEmpty()) draftHint else null)
-                val middle = xBounds(labelTag)
-                assertEquals("The model label and mic must travel together", gap, xBounds(micTag).left - middle.right, 1f)
-                clock.advanceTimeBy(ToolsPageTravelMillis.toLong())
-                assertEquals("The label returns to its original anchor", settled.right, xBounds(labelTag).right, 1f)
-            } finally {
-                clock.autoAdvance = true
-            }
-            control("card").assertIsDisplayed()
-            control("trigger").performClick()
-            screen.runOnIdle { assertEquals(original, vm.state.value.draft.text) }
-        }
-    }
-
-    @Test fun returnWithOrWithoutANewModelKeepsTheSameTrailingAnchorThroughLanding() =
-        withProviders { vm, first, second ->
-            editor.performTouchInput { click(center) }
-            screen.waitUntil(15_000) { imeIsVisible() }
-            val clock = screen.mainClock
-            val label = screen.onNodeWithTag("chat-model-source-label", useUnmergedTree = true)
-            val mic = screen.onNodeWithTag("chat-composer-dictate", useUnmergedTree = true)
-            fun positions() = listOf(label.fetchSemanticsNode().boundsInRoot.right, mic.fetchSemanticsNode().boundsInRoot.center.x)
-            val docked = positions()
-            for (chooseOther in listOf(false, true)) {
-                openControls()
-                enterModels()
-                val exit = if (chooseOther) reveal(option(second, "other-only")) else control("list-back")
-                clock.autoAdvance = false
-                try {
-                    exit.performTouchInput { click(center) }
-                    clock.advanceTimeByFrame()
-                    val frames = mutableListOf<List<Float>>()
-                    repeat(ToolsPageTravelMillis / 16 + 4) {
-                        clock.advanceTimeByFrame()
-                        // At the exact search endpoint the toolbar is measured but intentionally not placed.
-                        if (label.isDisplayed() && mic.isDisplayed()) frames += positions()
-                    }
-                    val end = positions()
-                    assertTrue("Sampled the returning toolbar before landing", frames.size >= 5)
-                    for (i in end.indices) {
-                        assertTrue("Observed a genuine in-flight position", frames.any { kotlin.math.abs(it[i] - end[i]) > 2f })
-                        assertTrue("Both items travel towards their dock without reversing",
-                            frames.zipWithNext().all { (a, b) ->
-                                kotlin.math.abs(b[i] - end[i]) <= kotlin.math.abs(a[i] - end[i]) + 1f
-                            })
-                        assertEquals("Same docked anchor with or without changing model", docked[i], end[i], 1f)
-                    }
-                    for (frame in frames) assertEquals("The label and microphone travel together",
-                        end[1] - end[0], frame[1] - frame[0], 1.5f)
-                    assertTrue(imeIsVisible())
-                } finally {
-                    clock.autoAdvance = true
-                }
-                val expected = if (chooseOther) RemoteModel(second.id, "other-only") else RemoteModel(first.id, "batch-alpha")
-                screen.runOnIdle { assertEquals(expected, vm.providers.catalog.value.active[Mode.Chat]) }
-                control("trigger").performClick()
-            }
-        }
-
-    @OptIn(ExperimentalTestApi::class)
-    @Test fun listArrowRestoresEffortAndTriggerClosesItWithKeyboardOpen() =
-        withProviders(includeAttachment = true) { vm, _, _ ->
-            val draft = "first line\nsecond line"
-            val selection = TextRange(2, 8)
+    @Test fun searchUsesItsOwnImeAndPreservesDraftAndRouteUntilAModelIsPicked() =
+        withProviders(includeAttachment = true) { vm, first, second ->
+            val draft = "keep my draft"
+            val range = TextRange(2, 7)
             editor.performTouchInput { click(center) }
             screen.waitUntil(15_000) { imeIsVisible() }
             editor.performTextReplacement(draft)
-            editor.performTextInputSelection(selection)
-            val before = screen.runOnIdle { vm.state.value.draft }
-
-            openControls()
-            enterModels().performTextReplacement("Nimbus")
-            assertImeStays(true) { control("list-back").performTouchInput { click(center) } }
-            control("search-field").assertDoesNotExist()
-            control("list").assertDoesNotExist()
-            assertAnchored("card")
-            editor.assertIsFocused().assertTextEquals(draft)
-            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-
-            enterModels()  // A new selection starts with an empty query.
-            assertImeStays(true) { control("list-back").performTouchInput { click(center) } }
-            assertImeStays(true) { control("trigger").performTouchInput { click(center) } }
-            control("card").assertDoesNotExist()
-            editor.assertIsFocused().assertTextEquals(draft)
-            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-            screen.onNodeWithText("draft-only.txt").assertIsDisplayed()
-            screen.runOnIdle { assertEquals(before, vm.state.value.draft) }
-        }
-
-    @OptIn(ExperimentalTestApi::class)
-    @Test fun editorDoubleTapClosesSearchInOneStepAndKeepsTheEditingSession() =
-        withProviders(includeAttachment = true) { vm, _, _ ->
-            val draft = "my original draft\nsecond line"
-            val selection = TextRange(2, 8)
-            editor.performTouchInput { click(center) }
-            screen.waitUntil(15_000) { imeIsVisible() }
-            editor.performTextReplacement(draft)
-            editor.performTextInputSelection(selection)
-            val original = screen.runOnIdle { vm.state.value }
+            editor.performTextInputSelection(range)
+            val saved = screen.runOnIdle { vm.state.value.draft }
             openControls()
             val search = enterModels()
-            search.performTextReplacement("Nimbus")
-            val textLine = screen.onNodeWithTag("composer-editable-text", useUnmergedTree = true)
-            assertImeStays(true) { textLine.performTouchInput { doubleClick(center) } }
-            control("search-field").assertDoesNotExist()
+            search.performTouchInput { click(center) }
+            screen.waitUntil(15_000) { imeIsVisible() }
+            search.performTextReplacement("nIMBus")
+            reveal(option(first, "batch-alpha")).assertIsSelected()
+            reveal(option(second, "batch-alpha")).assertIsNotSelected()
+            search.performTextReplacement("  /AtLaS-v3  ")
+            reveal(option(first, "batch-alpha")).assertIsSelected()
+            control(option(first, "batch-beta")).assertDoesNotExist()
+            search.performTextReplacement("no-such-model-qz")
+            reveal("search-empty")
+            search.performImeAction()
+            screen.runOnIdle {
+                assertEquals(saved, vm.state.value.draft)
+                assertEquals(RemoteModel(first.id, "batch-alpha"), vm.providers.catalog.value.active[Mode.Chat])
+            }
+            control("search-clear").performClick()
+            reveal(option(first, "last"))
+            search.performTextReplacement("Elsewhere")
+            reveal(option(second, "other-only")).performTouchInput { click(center) }
+            control("card").assertIsDisplayed()
+            screen.waitUntil(15_000) { !imeIsVisible() }
+            enterModels()
+            reveal(option(second, "other-only")).assertIsSelected()
+            control("list-back").performTouchInput { click(center) }
             control("list").assertDoesNotExist()
-            control("card").assertDoesNotExist()
-            editor.assertIsFocused().assertTextEquals(draft)
-            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            editor.assertIsNotFocused().assertTextEquals(draft)
+            assertEquals(range, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
             screen.onNodeWithText("draft-only.txt").assertIsDisplayed()
             screen.runOnIdle {
-                assertEquals(original.draft, vm.state.value.draft)
-                assertEquals(original.current.messages, vm.state.value.current.messages)
+                assertEquals(saved, vm.state.value.draft)
+                assertEquals(RemoteModel(second.id, "other-only"), vm.providers.catalog.value.active[Mode.Chat])
             }
-            openControls()
-            enterModels() // A new search has no retained query.
         }
 
-    @Test fun systemBackHidesTheKeyboardBeforeDismissingTheModelPageDirectly() = withProviders { vm, _, _ ->
-        screen.runOnIdle { vm.setDraft("parked draft") }
-        val parked = capsule()
+    @Test fun systemBackDismissesSearchKeyboardBeforeThePanel() = withProviders { vm, _, _ ->
+        screen.runOnIdle { vm.setDraft("parked") }
         openControls()
-        val field = enterModels()
-        field.performTouchInput { click(center) }
+        val search = enterModels()
+        search.performTouchInput { click(center) }
         screen.waitUntil(15_000) { imeIsVisible() }
-        field.performTextReplacement("Nimbus")
+        search.performTextInput("Nimbus")
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         screen.waitUntil(15_000) { !imeIsVisible() }
-        control("list").assertIsDisplayed()
-        field.assertTextEquals("Nimbus")
-        assertImeStays(false) {
-            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-            control("list").assertDoesNotExist()
-            control("search-field").assertDoesNotExist()
-            control("card").assertDoesNotExist()
-        }
-        editor.assertTextEquals("parked draft")
-        assertEquals(parked, capsule())
-        openControls()
-        enterModels()
+        search.assertIsDisplayed().assertTextContains("Nimbus")
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        control("list").assertDoesNotExist()
+        editor.assertIsNotFocused().assertTextEquals("parked")
     }
 
     @OptIn(ExperimentalTestApi::class)
-    @Test fun searchAcrossProvidersAndRestoresTheDraftSelection() = withProviders(includeAttachment = true) { vm, first, second ->
-        val draft = "first line\nsecond line\nthird line"
-        val selection = TextRange(6, 17)
-        editor.performTouchInput { click(center) }
-        screen.waitUntil(15_000) { imeIsVisible() }
-        editor.performTextReplacement(draft)
-        editor.performTextInputSelection(selection)
-        val before = screen.runOnIdle { vm.state.value }
-        fun assertDraftUntouched() {
-            screen.runOnIdle {
-                val now = vm.state.value
-                assertEquals(before.current.id, now.current.id)
-                assertEquals(before.current.messages, now.current.messages)
-                assertEquals(before.draft, now.draft)
-            }
-        }
-        fun assertEditing() {
-            assertDraftUntouched()
-            editor.assertIsFocused().assertTextEquals(draft)
-            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-            assertTrue("The draft's keyboard should remain visible", imeIsVisible())
-            screen.onNodeWithText("draft-only.txt").assertIsDisplayed()
-        }
-        val active = RemoteModel(first.id, "batch-alpha")
-        fun assertActive(route: RemoteModel) {
-            screen.runOnIdle { assertEquals(route, vm.providers.catalog.value.active[Mode.Chat]) }
-        }
-
-        openControls()
-        assertEditing()
-        val field = enterModels()
-        // The first search has no filter; its first and last provider models must both be reachable.
-        reveal(option(first, "batch-alpha")).assertIsSelected()
-        reveal(option(first, "last"))
-        field.performTextReplacement("Nimbus model ".repeat(8))
-        field.performTextInputSelection(TextRange.Zero)
-        field.performTouchInput { click(center) }
-        field.assertIsFocused()
-        val caret = field.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
-        assertTrue("A tap inside the query must reach the text field and move its cursor",
-            caret.collapsed && caret.start > 0)
-        field.performTextReplacement("nIMBus")
-        field.performImeAction()
-        control("list").assertIsDisplayed()
-        assertDraftUntouched()
-        reveal(option(first, "batch-alpha")).assertIsSelected().assertTextContains("batch-alpha", substring = true)
-        reveal(option(first, "batch-beta")).assertIsNotSelected().assertTextContains("batch-beta", substring = true)
-        reveal(option(second, "batch-alpha")).assertIsNotSelected()
-        field.performTextReplacement("tch-BEt")
-        reveal("search-empty")
-        control(option(first, "batch-alpha")).assertDoesNotExist()
-        field.performTextClearance()
-        reveal(option(first, "last"))
-        field.performTextReplacement("  /AtLaS-v3  ")
-        reveal(option(first, "batch-alpha")).assertIsSelected()
-        control(option(first, "batch-beta")).assertDoesNotExist()
-        field.performTextReplacement("eLseWhere")
-        reveal(option(second, "other-only"))
-        field.performTextReplacement("no-such-model-qz")
-        reveal("search-empty")
-        assertActive(active)
-        field.performTextReplacement("draft stays")
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_ENTER)
-        field.assertIsFocused().assertTextEquals("draft stays")
-        send.assertDoesNotExist()
-        assertDraftUntouched()
-        assertImeStays(true) { control("search-clear").performClick() }
-        reveal(option(first, "last"))
-        field.performTextReplacement("Nimbus")
-        field.assertIsFocused().assertTextEquals("Nimbus")
-        control(option(second, "other-only")).assertDoesNotExist()
-        assertActive(active)
-        field.performTextReplacement("Nimbus")
-        reveal(option(first, "batch-alpha")).assertIsSelected()
-        reveal(option(second, "batch-alpha")).assertIsNotSelected().performTouchInput { click(center) }
-        control("card").assertIsDisplayed()
-        control("search-field").assertDoesNotExist()
-        assertActive(RemoteModel(second.id, "batch-alpha"))
-        assertEditing()
-        enterModels()
-        reveal(option(second, "other-only"))
-        control("list-back").performTouchInput { click(center) }
-        assertEditing()
-    }
-
-    @Test fun lastModelIsReachableAboveTheSearchCapsuleAndCanBePicked() = withProviders { vm, _, second ->
-        screen.runOnIdle { vm.setDraft("model list") }
-        editor.performTouchInput { click(center) }
-        screen.waitUntil(15_000) { imeIsVisible() }
-        openControls()
-        enterModels()
-        val last = reveal(option(second, "other-only"))
-        control("results").performTouchInput { swipeUp() }
-        val row = last.fetchSemanticsNode().boundsInRoot
-        val minimum = 48f * screen.activity.resources.displayMetrics.density - 1f
-        assertTrue("Last model's tap target is fully available above the live editor", row.height >= minimum && row.bottom <= capsule().top + 1f)
-        val rtl = screen.activity.resources.configuration.layoutDirection == View.LAYOUT_DIRECTION_RTL
-        last.performTouchInput { click(Offset(if (rtl) 4.dp.toPx() else width - 4.dp.toPx(), centerY)) }
-        control("card").assertIsDisplayed()
-        screen.runOnIdle { assertEquals(RemoteModel(second.id, "other-only"), vm.providers.catalog.value.active[Mode.Chat]) }
-    }
-
-    @OptIn(ExperimentalTestApi::class)
-    @Test fun longPressEditsTheBrowsedProviderWithoutSelectingItAndRestoresTheSearch() =
+    @Test fun longPressUpdatesTheCorrectProviderAndRestoresTheListAndDraft() =
         withProviders(includeAttachment = true) { vm, first, second ->
-            val beforeTarget = List(14) { ProviderModel("batch-alpha-before-$it", "Atlas Before $it") }
-            val afterTarget = List(18) { ProviderModel("batch-alpha-after-$it", "Atlas After $it") }
-            screen.runOnIdle {
-                vm.providers.save(second.copy(models = beforeTarget + second.models + afterTarget), "", null)
-            }
-            val draft = "first line\nsecond line"
-            val selection = TextRange(2, 8)
+            val draft = "keep my selection"
+            val range = TextRange(2, 6)
             editor.performTouchInput { click(center) }
             screen.waitUntil(15_000) { imeIsVisible() }
             editor.performTextReplacement(draft)
-            editor.performTextInputSelection(selection)
-            val savedDraft = screen.runOnIdle { vm.state.value.draft }
-
+            editor.performTextInputSelection(range)
+            val saved = screen.runOnIdle { vm.state.value.draft }
             openControls()
-            enterModels()
-            val search = control("search-field").assertIsDisplayed()
-            val query = "atlas"
-            val querySelection = TextRange(2, 4)
-            search.performTextReplacement(query)
+            val search = enterModels()
+            search.performTouchInput { click(center) }
+            screen.waitUntil(15_000) { imeIsVisible() }
+            search.performTextReplacement("Nimbus")
+            val querySelection = TextRange(2, 5)
             search.performTextInputSelection(querySelection)
-            val row = reveal(option(second, "batch-alpha")).assertIsNotSelected()
-            val results = control("results")
-            fun rowOffset() = row.fetchSemanticsNode().positionInRoot.y - results.fetchSemanticsNode().positionInRoot.y
-            val inset = 7 * screen.activity.resources.displayMetrics.density
-            val delta = rowOffset() + inset
-            results.performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, delta) }
-            val savedOffset = rowOffset()
-            assertEquals("First visible model should be partly scrolled", -inset, savedOffset, 1f)
-            assertTrue(imeIsVisible())
-            fun formHeight() = screen.onNodeWithTag("chat-model-form", useUnmergedTree = true).fetchSemanticsNode().size.height
-            val openingHeight = try {
-                screen.mainClock.autoAdvance = false
-                row.performTouchInput { longClick(center) }
-                screen.mainClock.advanceTimeByFrame()
-                screen.mainClock.advanceTimeBy(ModelEditorMotionMillis / 5L)
-                formHeight()
-            } finally {
-                screen.mainClock.autoAdvance = true
-            }
+            hideKeyboard()
+            val row = reveal(option(second, "batch-alpha"))
+            val top = row.fetchSemanticsNode().boundsInRoot.top
+            row.performTouchInput { longClick(center) }
             control("editor").assertIsDisplayed()
-            screen.waitUntil(15_000) { !imeIsVisible() }
-            assertEquals("The outgoing IME never crops the configuration form's measured viewport",
-                formHeight(), openingHeight)
-            // The other provider uses the same local model ID but has external ID "vendor/atlas-v3".
             screen.onNodeWithContentDescription(screen.activity.getString(R.string.model_id)).assertTextContains("atlas/remote-b")
-            val active = RemoteModel(first.id, "batch-alpha")
-            screen.runOnIdle { assertEquals(active, vm.providers.catalog.value.active[Mode.Chat]) }
-
-            val name = screen.onNodeWithContentDescription(screen.activity.getString(R.string.model_name)).performScrollTo()
-            name.performTextReplacement("Renamed on B")
+            screen.onNodeWithContentDescription(screen.activity.getString(R.string.model_name)).performScrollTo().performTextReplacement("Nimbus B")
             hideKeyboard()
             screen.onNodeWithContentDescription(screen.activity.getString(R.string.model_save)).performClick()
             control("editor").assertDoesNotExist()
-            screen.waitUntil(15_000) { imeIsVisible() }
-            search.assertIsFocused().assertTextEquals(query)
+            search.assertTextContains("Nimbus").assertIsNotFocused()
             assertEquals(querySelection, search.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-            control(option(second, "batch-alpha")).assertIsDisplayed().assertIsNotSelected().assertTextContains("Renamed on B")
-            assertEquals("The same model keeps its pixel offset in the filtered list", savedOffset, rowOffset(), 1f)
+            row.assertIsNotSelected().assertTextContains("Nimbus B")
+            assertEquals(top, row.fetchSemanticsNode().boundsInRoot.top, 1f)
             screen.runOnIdle {
-                val catalog = vm.providers.catalog.value
-                assertEquals(active, catalog.active[Mode.Chat])
-                assertEquals(first, catalog.providers.single { it.id == first.id })
-                assertEquals("Renamed on B", catalog.providers.single { it.id == second.id }.models.single { it.id == "batch-alpha" }.name)
-                val saved = ProviderStore(screen.activity.applicationContext).catalog.value
-                assertEquals(catalog.providers.single { it.id == second.id }, saved.providers.single { it.id == second.id })
+                val reloaded = ProviderStore(screen.activity.applicationContext).catalog.value
+                assertEquals(first, reloaded.providers.single { it.id == first.id })
+                assertEquals("Nimbus B", reloaded.providers.single { it.id == second.id }.models.first().name)
+                assertEquals(RemoteModel(first.id, "batch-alpha"), reloaded.active[Mode.Chat])
             }
-            assertImeStays(true) { control("list-back").performTouchInput { click(center) } }
-            editor.assertIsFocused().assertTextEquals(draft)
-            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-            screen.onNodeWithText("draft-only.txt").assertIsDisplayed()
-            screen.runOnIdle { assertEquals(savedDraft, vm.state.value.draft) }
-        }
-
-    @Test fun longPressFromScrolledListWithClosedKeyboardSlidesInAndReturnsToTheSameRow() =
-        withProviders { vm, first, _ ->
-            screen.runOnIdle { vm.setDraft("parked") }
-            openControls()
-            enterModels()
-            val row = reveal(option(first, "extra-9")).assertIsNotSelected()
-            val list = control("results")
-            fun scrollPosition() = list.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
-            val scrollBefore = scrollPosition()
-            assertTrue(scrollBefore > 0f)
+            control("list-back").performClick()
+            editor.assertTextEquals(draft).assertIsNotFocused()
+            assertEquals(range, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
             assertTrue(!imeIsVisible())
-            val panel = control("editor")
-            // A bounded intermediate frame checks motion without tying it to the keyboard's duration.
-            // Trigger the same long-click semantic here; the keyboard-open case above uses a real pointer.
-            val earlyBottom = try {
-                screen.mainClock.autoAdvance = false
-                row.performSemanticsAction(SemanticsActions.OnLongClick)
-                screen.mainClock.advanceTimeBy(ModelEditorMotionMillis / 4L)
-                // The top is clipped while the panel enters from above. Its bottom remains observable.
-                panel.fetchSemanticsNode().boundsInRoot.bottom
-            } finally {
-                screen.mainClock.autoAdvance = true
-            }
-            screen.waitForIdle()
-            assertTrue("Configuration moves down from the top", earlyBottom < panel.fetchSemanticsNode().boundsInRoot.bottom)
-            screen.onNodeWithContentDescription(screen.activity.getString(R.string.model_name)).assertTextContains("Other model 9")
-            assertImeStays(false) {
-                try {
-                    screen.mainClock.autoAdvance = false
-                    screen.onNodeWithContentDescription(screen.activity.getString(R.string.settings_back)).performClick()
-                    screen.mainClock.advanceTimeBy(ModelEditorMotionMillis / 5L)
-                    // This is the parked search capsule throughout the reveal. The page is
-                    // shielded until it lands; no ordinary draft toolbar should flash underneath.
-                    screen.onNodeWithTag("chat-model-search-field", useUnmergedTree = true).assertExists()
-                    screen.onNodeWithTag("chat-composer-dictate", useUnmergedTree = true).assertDoesNotExist()
-                    send.assertDoesNotExist()
-                } finally {
-                    screen.mainClock.autoAdvance = true
-                }
-            }
-            panel.assertDoesNotExist()
-            row.assertIsDisplayed().assertIsNotSelected()
-            assertEquals(scrollBefore, scrollPosition(), .001f)
-            control("search-field").assertIsDisplayed()
-            screen.runOnIdle { assertEquals("parked", vm.state.value.draft.text) }
-            screen.runOnIdle {
-                assertEquals(RemoteModel(first.id, "batch-alpha"), vm.providers.catalog.value.active[Mode.Chat])
-            }
-
-            control("search-field").performTouchInput { click(center) }
-            screen.waitUntil(15_000) { imeIsVisible() }
-            val search = control("search-field")
-            search.performTextReplacement("Other model 9")
-            hideKeyboard()
-            row.performTouchInput { longClick(center) }
-            control("editor").assertIsDisplayed()
-            assertImeStays(false) { screen.onNodeWithContentDescription(screen.activity.getString(R.string.settings_back)).performClick() }
-            control("editor").assertDoesNotExist()
-            search.assertIsDisplayed().assertTextEquals("Other model 9")
-            row.assertIsDisplayed().assertIsNotSelected()
+            screen.runOnIdle { assertEquals(saved, vm.state.value.draft) }
         }
 
     @OptIn(ExperimentalTestApi::class)
-    @Test fun returningToModelSearchRestoresItsKeyboardWithoutRollingBackNewConversationMessages() =
-        withProviders { vm, first, _ ->
-            val previous = screen.runOnIdle { vm.state.value.current.id }
-            val conversation = screen.runOnIdle { vm.newConversation(); vm.state.value.current.id }
-            try {
-                val draft = "keep my selection"
-                val selection = TextRange(2, 6)
-                editor.performTouchInput { click(center) }
-                screen.waitUntil(15_000) { imeIsVisible() }
-                editor.performTextReplacement(draft)
-                editor.performTextInputSelection(selection)
-                openControls()
-                val search = enterModels()
-                search.assertIsFocused()
-                reveal(option(first, "batch-beta")).performTouchInput { longClick(center) }
-                control("editor").assertIsDisplayed()
-                screen.waitUntil(15_000) { !imeIsVisible() }
-
-                // Exercise a real local session update while the configuration page covers the chat.
-                val messages = screen.runOnIdle {
-                    vm.setDraft("offline background fixture")
-                    vm.send("Hydrion", remoteModel = null)
-                    vm.stop()
-                    vm.state.value.current.messages
-                }
-                assertTrue(messages.any { it.text == "offline background fixture" })
-                InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-                control("editor").assertDoesNotExist()
-                screen.waitUntil(15_000) { imeIsVisible() }
-                search.assertIsFocused()
-                control("list").assertIsDisplayed()
-                assertImeStays(true) { control("list-back").performTouchInput { click(center) } }
-                editor.assertIsFocused().assertTextEquals(draft)
-                assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-                screen.runOnIdle {
-                    assertEquals(conversation, vm.state.value.current.id)
-                    assertEquals(messages, vm.state.value.current.messages)
-                }
-            } finally {
-                screen.runOnIdle { vm.deleteConversation(conversation); vm.openConversation(previous) }
+    @Test fun returningFromModelEditingPreservesNewConversationMessages() = withProviders { vm, first, _ ->
+        val previous = screen.runOnIdle { vm.state.value.current.id }
+        val chat = screen.runOnIdle { vm.newConversation(); vm.state.value.current.id }
+        try {
+            val draft = "keep my selection"
+            val selection = TextRange(2, 6)
+            editor.performTouchInput { click(center) }
+            editor.performTextReplacement(draft)
+            editor.performTextInputSelection(selection)
+            openControls()
+            val search = enterModels()
+            reveal(option(first, "batch-beta")).performTouchInput { longClick(center) }
+            control("editor").assertIsDisplayed()
+            val messages = screen.runOnIdle {
+                vm.setDraft("offline background fixture")
+                vm.send("Offline fixture", search = "禁用", imageTool = "禁用", remoteModel = null)
+                vm.stop()
+                vm.state.value.current.messages
             }
+            assertTrue(messages.any { it.text == "offline background fixture" })
+            InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+            search.assertIsDisplayed().assertIsNotFocused()
+            control("list-back").performClick()
+            editor.assertIsNotFocused().assertTextEquals(draft)
+            assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            screen.runOnIdle {
+                assertEquals(chat, vm.state.value.current.id)
+                assertEquals(messages, vm.state.value.current.messages)
+            }
+        } finally {
+            screen.runOnIdle { vm.deleteConversation(chat); vm.openConversation(previous) }
         }
+    }
 }

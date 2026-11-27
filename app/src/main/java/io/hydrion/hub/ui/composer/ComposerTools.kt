@@ -95,27 +95,24 @@ private data class ToolChoice(val value: String, val label: String, val icon: ()
 
 @Composable
 internal fun ChatToolsPage(
-    search: String, imageTool: String, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
-    vm: HubViewModel, modelToolsEnabled: Boolean, modifier: Modifier = Modifier,
+    search: String, imageTool: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
+    vm: HubViewModel, modelToolsEnabled: Boolean, modifier: Modifier = Modifier, onBack: () -> Unit,
 ) {
     val browsing = rememberScrollState()
-    val filtered = rememberScrollState()
-    val term = query.trim()
-    if (term.isNotEmpty()) LaunchedEffect(term) { filtered.scrollTo(0) }
     val count = if (modelToolsEnabled) listOf(search, imageTool).count { it != Disabled } else 0
     val countLabel = stringResource(R.string.chat_tools_enabled_count, count)
     Column(modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Box(Modifier.fillMaxWidth().testTag("chat-tools-heading").heightIn(min = 34.dp).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.chat_tools_title), Modifier.padding(horizontal = 48.dp).testTag("chat-tools-title"),
-                style = MaterialTheme.typography.titleMedium, fontSize = 18.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center)
-            Text(stringResource(R.string.panel_mode_count, count), Modifier.align(Alignment.CenterEnd).testTag("chat-tools-count")
+        PanelHeading(models = false, onBack = onBack) {
+            Text(stringResource(R.string.panel_mode_count, count), Modifier.padding(end = 12.dp).testTag("chat-tools-count")
                 .clearAndSetSemantics { contentDescription = countLabel },
                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Spacer(Modifier.height(4.dp))
-        Column(Modifier.fillMaxSize().testTag("chat-tools-page").verticalScroll(if (term.isEmpty()) browsing else filtered),
-            verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            ChatToolGroups(search, imageTool, term, onSearch, onImageTool, vm, modelToolsEnabled)
+        Spacer(Modifier.height(6.dp))
+        PanelViewport(Modifier.weight(1f).fillMaxWidth()) {
+            Column(Modifier.fillMaxSize().testTag("chat-tools-page").verticalScroll(browsing),
+                verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                ChatToolGroups(search, imageTool, "", onSearch, onImageTool, vm, modelToolsEnabled)
+            }
         }
     }
 }
@@ -187,19 +184,21 @@ private fun ToolGroup(
         Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             matches.forEach { choice ->
                 val checked = selected == choice.value
-                Row(
-                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).then(keepEditorFocus)
-                        .testTag("chat-tools-option:$id:${choice.value}")
-                        .selectable(selected = checked, enabled = enabled, role = Role.RadioButton, onClick = { onSelect(choice.value) })
-                        .heightIn(min = 48.dp).padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Icon(choice.icon(), null, Modifier.size(20.dp),
-                        tint = if (choice.value == Disabled) colors.onSurface.copy(alpha = .38f) else colors.onSurfaceVariant)
-                    Text(choice.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    RadioButton(selected = checked, onClick = null, enabled = enabled,
-                        colors = RadioButtonDefaults.colors(selectedColor = colors.onSurface, unselectedColor = colors.outline))
+                PanelStep(Modifier.fillMaxWidth(), inheritGroupPull = true) {
+                    Row(
+                        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).then(keepEditorFocus)
+                            .testTag("chat-tools-option:$id:${choice.value}")
+                            .selectable(selected = checked, enabled = enabled, role = Role.RadioButton, onClick = { onSelect(choice.value) })
+                            .heightIn(min = 48.dp).padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Icon(choice.icon(), null, Modifier.size(20.dp),
+                            tint = if (choice.value == Disabled) colors.onSurface.copy(alpha = .38f) else colors.onSurfaceVariant)
+                        Text(choice.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        RadioButton(selected = checked, onClick = null, enabled = enabled,
+                            colors = RadioButtonDefaults.colors(selectedColor = colors.onSurface, unselectedColor = colors.outline))
+                    }
                 }
             }
         }
@@ -218,29 +217,31 @@ internal fun PanelSection(id: String, title: String, summary: String, visible: B
     val inputMode = LocalInputModeManager.current
     val keepEditorFocus = Modifier.focusProperties { canFocus = inputMode.inputMode != InputMode.Touch }
     val toggle = if (filtering) Modifier else keepEditorFocus.clickable(role = Role.Button, onClickLabel = toggleLabel) { expanded = !expanded }
-    SectionBody(id) {
-        val colors = MaterialTheme.colorScheme
-        Row(
-            Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).testTag("chat-tools-group:$id").then(toggle)
-                .semantics { stateDescription = describeState }
-                .heightIn(min = 32.dp).padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-                Icon(painterResource(if (showChoices) R.drawable.lucide_chevron_down else R.drawable.lucide_chevron_right),
-                    null, Modifier.size(14.dp), tint = colors.onSurfaceVariant)
+    PanelStep(Modifier.fillMaxWidth()) {
+        SectionBody(id) {
+            val colors = MaterialTheme.colorScheme
+            Row(
+                Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).testTag("chat-tools-group:$id").then(toggle)
+                    .semantics { stateDescription = describeState }
+                    .heightIn(min = 32.dp).padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                    Icon(painterResource(if (showChoices) R.drawable.lucide_chevron_down else R.drawable.lucide_chevron_right),
+                        null, Modifier.size(14.dp), tint = colors.onSurfaceVariant)
+                }
+                Text(title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                    fontSize = 13.sp, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant)
+                if (summary.isNotEmpty() && (!summaryOnCollapseOnly || !showChoices)) {
+                    val description = if (summaryDescription == null) Modifier else Modifier.semantics { contentDescription = summaryDescription }
+                    Text(summary, Modifier.widthIn(max = 160.dp).then(description),
+                        style = MaterialTheme.typography.bodySmall, fontSize = 13.sp, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End, color = colors.onSurfaceVariant)
+                }
             }
-            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
-                fontSize = 13.sp, fontWeight = FontWeight.Medium, color = colors.onSurfaceVariant)
-            if (summary.isNotEmpty() && (!summaryOnCollapseOnly || !showChoices)) {
-                val description = if (summaryDescription == null) Modifier else Modifier.semantics { contentDescription = summaryDescription }
-                Text(summary, Modifier.widthIn(max = 160.dp).then(description),
-                    style = MaterialTheme.typography.bodySmall, fontSize = 13.sp, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, textAlign = TextAlign.End, color = colors.onSurfaceVariant)
-            }
+            AnimatedVisibility(showChoices) { content() }
         }
-        AnimatedVisibility(showChoices) { content() }
     }
 }
 

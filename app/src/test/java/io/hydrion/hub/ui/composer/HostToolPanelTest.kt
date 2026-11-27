@@ -31,7 +31,6 @@ import io.hydrion.hub.ui.messages.MessageTone
 import io.hydrion.hub.ui.settings.assistantFeatureDirectory
 import io.hydrion.hub.provider.*
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.semantics.SemanticsProperties
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.math.roundToInt
@@ -137,7 +136,7 @@ class HostToolPanelTest {
         val editor = screen.onNode(hasContentDescription("消息输入框") and hasSetTextAction())
         editor.performTextReplacement("一段草稿")
         open()
-        hint(label(R.string.tools_search_hint)).assertIsDisplayed()
+        screen.onNodeWithTag("tools-search-field").assertDoesNotExist()
         hint("Message 月笺").assertDoesNotExist()
         screen.onNodeWithTag("chat-tools-back").performClick()
         editor.assertTextContains("一段草稿").performTextClearance()
@@ -266,8 +265,8 @@ class HostToolPanelTest {
         val heading = bounds("chat-tools-heading")
         val title = bounds("chat-tools-title")
         near(0f, (title.left + title.right - page.left - page.right) / 2)
-        near(34f, heading.bottom - heading.top)
-        near(4f, page.top - heading.bottom)
+        near(48f, heading.bottom - heading.top)
+        near(6f, page.top - heading.bottom)
         val localTag = "chat-tools-group:local"
         val localHeader = bounds(localTag)
         near(32f, localHeader.bottom - localHeader.top)
@@ -335,7 +334,7 @@ class HostToolPanelTest {
         }
     }
 
-    @Test fun fourWholeSectionsUseTheThoughtCardWhileTheEnvironmentStaysOnGlass() {
+    @Test fun fourWholeSectionsUseTheThoughtCardWhileTheEnvironmentUsesThePanelSurface() {
         open()
         screen.onNodeWithTag("chat-tools-card:environment", true).assertDoesNotExist()
         screen.onNodeWithTag("chat-tools-group:environment").assertIsDisplayed()
@@ -366,17 +365,13 @@ class HostToolPanelTest {
         screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
         screen.onNodeWithTag("panel-switch:Time").assertDoesNotExist()
         checkCard("local")
-        screen.onNodeWithTag("tools-search-field").performTextReplacement(label(R.string.chat_tools_custom_image))
+        screen.onNodeWithTag("chat-tools-group:image").performScrollTo().performClick()
         screen.onNodeWithTag("chat-tools-option:image:" + CUSTOM_IMAGE_TOOL, true).assert(hasAnyAncestor(hasTestTag("chat-tools-card:image")))
-        for (absent in listOf("web", "mcp", "local")) screen.onNodeWithTag("chat-tools-card:$absent", true).assertDoesNotExist()
-        val only = screen.onNodeWithTag("chat-tools-card:image", true).getUnclippedBoundsInRoot()
-        assertEquals(screen.onNodeWithTag("chat-tools-page", true).getUnclippedBoundsInRoot().top, only.top)
         val styles = MessageStyleStore.shared(screen.activity)
         val original = styles.style.value
         try {
             screen.runOnIdle { styles.update { it.copy(tone = MessageTone.Light) } }
             checkCard("image", light = true)
-            screen.onNodeWithTag("tools-search-field").performTextReplacement("")
             for (id in listOf("web", "mcp", "local")) checkCard(id, light = true)
             screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
             fun textInk(text: String): Int {
@@ -594,7 +589,7 @@ class HostToolPanelTest {
         assertNull(host.nextStartedActivity)
     }
 
-    @Test fun searchFindsConfiguredMcpAndManagementIsScopedToTheCurrentAssistant() {
+    @Test fun configuredMcpAndManagementRemainScopedToTheCurrentAssistant() {
         val owner = vm.state.value.current.assistantId
         val root = screen.activity.assistantFeatureDirectory()
         val file = mcpFile(root, owner)
@@ -608,25 +603,21 @@ class HostToolPanelTest {
             file.update { it.trust(catalog.servers.first().id, true) }.servers.first()
         }
         open()
-        val query = screen.onNodeWithTag("tools-search-field")
-        query.performTextReplacement("Fixture local")
+        screen.onNodeWithTag("tools-search-field").assertDoesNotExist()
         waitForText("Fixture local")
         val selection = act(server.id)
-        selection.assertIsOff().performClick()
+        selection.performScrollTo().assertIsOff().performClick()
         awaitUi { runBlocking { file.read().servers.first().enabled } }
         awaitUi { screen.onAllNodes(hasTestTag("panel-action:" + server.id) and isOn()).fetchSemanticsNodes().isNotEmpty() }
         selection.assertIsOn()
-        query.performTextReplacement("Fixture remote")
         waitForText("Fixture remote")
-        screen.onNodeWithText(label(R.string.mcp_config_only)).assertIsDisplayed()
-        act(server.id).assertDoesNotExist()
-        query.performTextReplacement("Manage servers")
+        screen.onNodeWithText(label(R.string.mcp_config_only)).performScrollTo().assertIsDisplayed()
         tap("Mcp")
         waitForText(label(R.string.mcp_import))
-        screen.onNodeWithText("Fixture remote").assertExists()
+        screen.onNode(hasText("Fixture remote") and hasAnyAncestor(isDialog())).assertIsDisplayed()
         screen.onNodeWithText("Other assistant fixture").assertDoesNotExist()
         screen.onNodeWithContentDescription(label(R.string.settings_back)).performClick()
-        assertEquals("Manage servers", query.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        act(server.id).performScrollTo().assertIsOn()
         screen.onNodeWithTag("chat-tools-back").performClick()
         assertEquals(Draft(text = "Panel draft"), vm.state.value.draft)
     }

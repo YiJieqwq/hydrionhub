@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
@@ -27,7 +28,6 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInputSelection
@@ -48,6 +48,7 @@ import io.hydrion.hub.ui.messages.MessageStyleStore
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import androidx.compose.ui.test.performScrollToNode
@@ -205,8 +206,9 @@ class ChatModelPickerTest {
             control("list").assertIsDisplayed()
             control("search-field").assertIsDisplayed()
             assertTrue("Browsing from a parked draft keeps the keyboard down", !softwareKeyboardIsOpen())
-            control("search-clear").assertIsDisplayed()
+            control("search-clear").assertDoesNotExist()
             control("list-back").performTouchInput { click(center) }
+            control("trigger").performClick()
             val effort = control("effort").assertIsDisplayed()
             val initial = store.selection(Mode.Chat).parameters
             val range = effort.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo]
@@ -321,10 +323,12 @@ class ChatModelPickerTest {
         editor.performTextReplacement(draft)
         editor.performTextInputSelection(selection)
 
+        var editing = true
         fun assertEditing() {
-            editor.assertIsFocused().assertTextEquals(draft)
+            if (editing) editor.assertIsFocused() else editor.assertIsNotFocused()
+            editor.assertTextEquals(draft)
             assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-            assertTrue("Soft keyboard and activity window retain focus", softwareKeyboardIsOpen())
+            assertEquals(editing, softwareKeyboardIsOpen())
         }
         val triggerSize = control("trigger").fetchSemanticsNode().size
         val closedLabel = control("trigger").fetchSemanticsNode().config[SemanticsProperties.Text]
@@ -339,17 +343,19 @@ class ChatModelPickerTest {
         assertEditing()
         control("select").performTouchInput { click(center) }
         control("list").assertIsDisplayed()
-        control("search-field").assertIsFocused()
-        control("search-clear").assertIsDisplayed()
+        control("search-field").assertIsNotFocused()
+        screen.waitUntil(15_000) { !softwareKeyboardIsOpen() }
+        editing = false
+        control("search-clear").assertDoesNotExist()
         option(active).assertIsSelected().performTouchInput { click(center) }
         control("card").assertIsDisplayed()
         assertEditing()
         control("select").performTouchInput { click(center) }
         control("list").assertIsDisplayed()
-        control("search-field").assertIsFocused()
+        control("search-field").assertIsNotFocused()
         option(active).assertIsSelected()
-        control("search-field").assertIsFocused()
-        assertTrue(softwareKeyboardIsOpen())
+        control("search-field").assertIsNotFocused()
+        assertFalse(softwareKeyboardIsOpen())
         // Exercise the Back delivered to the app; a physical Back can be consumed by the IME first.
         screen.runOnUiThread { screen.activity.onBackPressedDispatcher.onBackPressed() }
         screen.onNodeWithTag("chat-provider-list").assertDoesNotExist()

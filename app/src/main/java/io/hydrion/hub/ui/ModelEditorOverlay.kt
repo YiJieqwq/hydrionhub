@@ -43,11 +43,6 @@ import io.hydrion.hub.ui.messages.ChatEdgeFade
 internal const val ModelEditorMotionMillis = ChatPanelMotionMillis
 
 // The existing IME padding already supplies all downward movement for a visible source keyboard.
-internal fun modelVisitDockOffset(cover: Float, dockHeight: Float, followsIme: Boolean): Float =
-    if (followsIme) 0f else cover * dockHeight
-
-internal fun modelVisitBrowseReveal(browse: Float, cover: Float): Float = browse * (1f - cover)
-
 internal data class ModelEditVisit(
     val route: RemoteModel,
     val conversationId: String,

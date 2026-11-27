@@ -27,24 +27,6 @@ internal fun Placeable.capsuleBounds(): IntRect? {
     return IntRect(this[CapsuleLeft], top, this[CapsuleRight], this[CapsuleBottom])
 }
 
-// The two alignment lines travel through the same ancestors; their difference is the
-// measured height of the single-line search endpoint in any font scale.
-private val SearchLineTop = HorizontalAlignmentLine(::minOf)
-private val SearchLineBottom = HorizontalAlignmentLine(::maxOf)
-
-internal fun searchLineHeightLines(heightPx: Int): Map<AlignmentLine, Int> =
-    mapOf(SearchLineTop to 0, SearchLineBottom to heightPx)
-
-internal fun Placeable.searchDockHeight(): Int {
-    val lineTop = this[SearchLineTop]
-    val capsuleTop = this[CapsuleTop]
-    if (lineTop == AlignmentLine.Unspecified || capsuleTop == AlignmentLine.Unspecified) return height
-    val capsuleHeight = this[CapsuleBottom] - capsuleTop
-    val lineHeight = (this[SearchLineBottom] - lineTop).coerceIn(0, capsuleHeight)
-    // Keep everything outside the changing capsule: error banners, physical bottom gap and insets.
-    return height - capsuleHeight + lineHeight
-}
-
 // Relative to the picker's safe viewport. Only its measure policy consumes this value.
 internal val LocalPickerComposerBounds = compositionLocalOf<IntRect?> { null }
 

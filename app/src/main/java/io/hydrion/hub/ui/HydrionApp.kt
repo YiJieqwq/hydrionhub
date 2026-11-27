@@ -23,7 +23,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
@@ -52,6 +51,9 @@ import io.hydrion.hub.ui.chrome.ContextWindowState
 import io.hydrion.hub.ui.chrome.contextWindowInput
 import io.hydrion.hub.ui.chrome.conversationEnvironmentName
 import io.hydrion.hub.ui.chrome.contextUsage
+import io.hydrion.hub.ui.composer.ChatToolsPage
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import io.hydrion.hub.ui.composer.HubComposer
 import io.hydrion.hub.ui.composer.rememberToolsPageState
 import io.hydrion.hub.ui.composer.ModelEditorComposerBridge
@@ -125,23 +127,9 @@ private fun Workspace(vm: HubViewModel) {
     val density = LocalDensity.current
     val keyboard = LocalSoftwareKeyboardController.current
     val view = LocalView.current
-    var returnHeight by remember { mutableIntStateOf(0) }
     val returning = editVisit != null && !editTransition.targetState
     val modelBrowse = rememberModelBrowseMotion(chatPicker, returning)
     val blockEditorFocus = editVisit != null && !returning
-    val chatReveal = if (!returning) Modifier else Modifier.graphicsLayer {
-        translationY = returnHeight * pageCover.value
-        alpha = 1f - pageCover.value
-    }
-    val composerReveal = editVisit?.let { visit ->
-        Modifier.graphicsLayer {
-            // The host already follows the actual IME. Adding a second downward slide
-            // on entry puts the field behind the still-visible keyboard.
-            translationY = modelVisitDockOffset(pageCover.value, visit.entryDockTravel,
-                followsIme = !returning && visit.editor.imeVisible)
-            alpha = 1f - pageCover.value
-        }
-    } ?: Modifier
     var assistantEditor by rememberSaveable { mutableStateOf<String?>(null) }
     var editContextLimit by rememberSaveable { mutableStateOf(false) }
     var settings by rememberSaveable { mutableStateOf(false) }
@@ -245,22 +233,21 @@ private fun Workspace(vm: HubViewModel) {
             Box(
                 Modifier.fillMaxSize().then(workspaceInput)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
-                    .windowInsetsPadding(hostImeInsets).contextWindowInput(contextWindow),
+                    .contextWindowInput(contextWindow),
                 contentAlignment = Alignment.TopCenter
             ) {
                 val covered = toolsActive || modelBrowse.active
                 ChatComposerLayers(
                     modifier = Modifier.fillMaxSize(),
-                    panelActive = covered, panelSettled = toolsPage?.interactive == true || modelBrowse.interactive,
-                    freezeTimelineDock = covered && editVisit == null, dockKey = chatPicker,
+                    freezeTimelineDock = covered, dockKey = chatPicker,
                     trackPickerAnchor = { editVisit == null && (chatPicker.page != null || modelBrowse.active || chatPicker.drawingBubble) },
-                    picker = if (current.mode == Mode.Chat) {
+                    picker = if (current.mode == Mode.Chat && !toolsActive) {
                         { ChatModelPicker(providers, chatPicker, chatOverride = current.modelRoutes?.get(Mode.Chat), suspended = editVisit != null, hideForReturn = returning,
-                            modelBrowseProgress = { modelBrowse.progress }, modifier = Modifier.fillMaxSize()) }
+                            modelBrowseProgress = { modelBrowse.progress }, modifier = Modifier.fillMaxSize().windowInsetsPadding(hostImeInsets)) }
                     } else null,
                     composer = {
                         val bottomBars = WindowInsets.safeDrawing
-                        Column(composerReveal.windowInsetsPadding(bottomBars.only(WindowInsetsSides.Bottom))) {
+                        Column(Modifier.windowInsetsPadding(hostImeInsets).windowInsetsPadding(bottomBars.only(WindowInsetsSides.Bottom))) {
                             key(current.id) {
                                 errors[current.id]?.let { detail -> ComposerError(detail) { vm.clearError(current.id) } }
                                 // Keep the editor at the same composition position in both modes.
@@ -277,6 +264,27 @@ private fun Workspace(vm: HubViewModel) {
                                     modelEditorBridge = composerBridge,
                                     chatTools = toolsPage,
                                     modelBrowseProgress = { modelBrowse.progress },
+                                    panelContent = when {
+                                        toolsPage != null && toolsActive -> ({
+                                            ChatToolsPage(state.draft.search, state.draft.imageTool, vm::setSearch, vm::setImageTool, vm,
+                                                selectedEntry?.second?.chatProtocol() == null,
+                                                modifier = Modifier.testTag("chat-tools-surface"), onBack = toolsPage::close)
+                                        })
+                                        modelBrowse.active -> ({
+                                            ChatModelBrowsePage(providers, chatPicker, chatOverride = current.modelRoutes?.get(Mode.Chat),
+                                                suspended = editVisit != null, hideForReturn = returning, settled = modelBrowse.interactive,
+                                                onEditModel = edit@{ route, browse ->
+                                                    val origin = vm.state.value
+                                                    if (editVisit != null || origin.current.id != current.id) return@edit
+                                                    val visibleBottom = view.height - ime.getBottom(density)
+                                                    val dockTravel = (visibleBottom - (chatPicker.composerBounds?.top ?: visibleBottom)).coerceAtLeast(0)
+                                                    val editor = composerBridge.captureAndDismiss() ?: return@edit
+                                                    editVisit = ModelEditVisit(route, current.id, origin.draft, browse, editor, dockTravel.toFloat())
+                                                    editTransition.targetState = true
+                                                })
+                                        })
+                                        else -> null
+                                    },
                                     allowImeReturn = !blockEditorFocus && !drawerOpening && !configure && !find.open &&
                                         renameId == null && deleteId == null && assistantEditor == null,
                                     onConfigure = { focus.clearFocus(); configure = true },
@@ -293,15 +301,13 @@ private fun Workspace(vm: HubViewModel) {
                             }
                         }
                     },
-                ) { timelineDock, panelDock, excessDockPx ->
+                ) { timelineDock ->
                     Scaffold(
                         modifier = Modifier.fillMaxSize().behindToolsPage(covered),
                         contentWindowInsets = WindowInsets(0, 0, 0, 0),
                         topBar = {
-                            Column(chatReveal) {
-                                Box(Modifier.chatPageHeader {
-                                    if (modelBrowse.active) modelBrowse.progress else toolsPage?.progress ?: 0f
-                                }.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
+                            Column {
+                                Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))) {
                                     Header(
                                         mode = current.mode, locked = state.modeLocked, title = current.title, pinned = current.pinned,
                                         contextUsage = reading, contextWindow = contextWindow,
@@ -330,8 +336,8 @@ private fun Workspace(vm: HubViewModel) {
                     ) { bars ->
                         if (current.messages.isNotEmpty()) {
                             timelines.SaveableStateProvider(current.id) {
-                                MessageList(vm, state, find.query, hits.getOrNull(index), find.jump, modifier = chatReveal, floatingBars = bars,
-                                    composerBoundsInWindow = { chatPicker.composerBounds })
+                                MessageList(vm, state, find.query, hits.getOrNull(index), find.jump, floatingBars = bars,
+                                    composerBoundsInWindow = { chatPicker.composerBounds.takeUnless { covered } })
                             }
                         } else if (current.mode == Mode.Image && !state.modeLocked &&
                             state.draft.text.isBlank() && state.draft.attachments.isEmpty()) {
@@ -351,28 +357,14 @@ private fun Workspace(vm: HubViewModel) {
                             }) else null,
                             modifier = Modifier.fillMaxSize().padding(bottom = timelineDock))
                     }
-                    if (toolsPage != null && toolsPage.hasOpened) {
-                        key(toolsPage) {
-                            ToolsPageOverlay(toolsPage, state.draft.search, state.draft.imageTool, panelDock,
-                                excessDockPx, vm::setSearch, vm::setImageTool, vm, selectedEntry?.second?.chatProtocol() == null)
-                        }
-                    }
-                    modelBrowse.page?.let {
-                        ChatSlidingPage({ modelVisitBrowseReveal(modelBrowse.progress, pageCover.value) }, modelBrowse.interactive && editVisit == null,
-                            "chat-model-browse-surface") {
-                            ChatModelBrowsePage(providers, chatPicker, chatOverride = current.modelRoutes?.get(Mode.Chat), suspended = editVisit != null,
-                                hideForReturn = returning, composerPadding = panelDock,
-                                modifier = Modifier.clipSlidingPageContent(excessDockPx),
-                                onEditModel = edit@{ route, browse ->
-                                    val origin = vm.state.value
-                                    if (editVisit != null || origin.current.id != current.id) return@edit
-                                    val visibleBottom = view.height - ime.getBottom(density)
-                                    val dockTravel = (visibleBottom - (chatPicker.composerBounds?.top ?: visibleBottom)).coerceAtLeast(0)
-                                    val editor = composerBridge.captureAndDismiss() ?: return@edit
-                                    editVisit = ModelEditVisit(route, current.id, origin.draft, browse, editor, dockTravel.toFloat())
-                                    editTransition.targetState = true
-                                })
-                        }
+                    if (covered) {
+                        val label = stringResource(R.string.chat_tools_back)
+                        Spacer(Modifier.fillMaxSize().drawBehind {
+                            val p = if (toolsActive) toolsPage?.progress ?: 0f else modelBrowse.progress
+                            drawRect(Color.Black.copy(alpha = .45f * p))
+                        }.testTag("composer-panel-dismiss").clickable(
+                            interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = label
+                        ) { if (toolsActive) toolsPage?.close() else chatPicker.dismiss() })
                     }
                 }
             }
@@ -382,8 +374,7 @@ private fun Workspace(vm: HubViewModel) {
     editVisit?.let { visit ->
         var earlyBack by remember(visit) { mutableStateOf(false) }
         fun startReturn() {
-            returnHeight = view.height
-            if (!visit.editor.imeVisible) keyboard?.hide()
+            keyboard?.hide()
             focus.clearFocus(force = true)
             vm.restoreModelPickerDraft(visit.conversationId, visit.draft)
             editTransition.targetState = false
@@ -406,7 +397,7 @@ private fun Workspace(vm: HubViewModel) {
             if (current.id != visit.conversationId && vm.state.value.current.id == visit.conversationId) return@LaunchedEffect
             if (current.id == visit.conversationId) {
                 chatPicker.restoreBrowsing(visit.browse)
-                composerBridge.restore(visit.editor)
+                composerBridge.restore(visit.editor.copy(imeVisible = false, focusedInput = null))
                 snapshotFlow { editTransition.isIdle && chatPicker.pendingBrowseRestore == null }.first { it }
             } else snapshotFlow { editTransition.isIdle }.first { it }
             editVisit = null

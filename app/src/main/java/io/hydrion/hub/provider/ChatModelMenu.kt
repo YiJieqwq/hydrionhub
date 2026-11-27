@@ -1,15 +1,22 @@
 package io.hydrion.hub.provider
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import io.hydrion.hub.ui.composer.PanelHeading
+import io.hydrion.hub.ui.composer.PanelModelSearch
+import io.hydrion.hub.ui.composer.PanelViewport
+import io.hydrion.hub.ui.composer.PanelStep
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.testTag
@@ -89,27 +96,28 @@ internal fun LazyListScope.modelMenuItems(rows: List<ModelMenuRow>,
     favorites: Set<RemoteModel> = emptySet(), onFavoriteChange: ((RemoteModel, Boolean) -> Unit)? = null) {
     items(rows, key = { it.key }, contentType = { if (it.model == null) "header" else "model" }) { row ->
         val model = row.model
-        if (model == null) BrowseHeading(row.label)
+        if (model == null) PanelStep(Modifier.fillMaxWidth()) { BrowseHeading(row.label) }
         else {
             val route = requireNotNull(row.route)
             val prefix = if (row.favoriteShortcut) "chat-model-favorite-option" else "chat-model-option"
             val tag = "$prefix:${route.providerId}/${route.modelId}"
             val qualifiedLabel = stringResource(R.string.browse_model_with_provider, row.label, row.providerLabel)
             val label = if (row.favoriteShortcut) qualifiedLabel else row.label
-            BrowseTile(label, row.provider, model, route == selected, Modifier.testTag(tag),
+            PanelStep(Modifier.fillMaxWidth()) { BrowseTile(label, row.provider, model, route == selected, Modifier.testTag(tag),
                 onEdit = onEdit?.let { edit -> { edit(route) } },
                 favoriteButton = if (onFavoriteChange == null) null else ({
                     ModelFavoriteButton(route in favorites, qualifiedLabel, Modifier.testTag("$tag:favorite")) {
                         onFavoriteChange(route, it)
                     }
-                }), onPick = { onPick(route) })
+                }), onPick = { onPick(route) }) }
         }
     }
 }
 
 @Composable
 internal fun ChatModelBrowsePage(
-    store: ProviderStore, picker: ChatModelPickerState, chatOverride: RemoteModel?, suspended: Boolean, hideForReturn: Boolean, composerPadding: Dp,
+    store: ProviderStore, picker: ChatModelPickerState, chatOverride: RemoteModel?, suspended: Boolean, hideForReturn: Boolean, composerPadding: Dp = 0.dp,
+    settled: Boolean = true,
     onEditModel: (RemoteModel, PickerBrowseSnapshot) -> Unit, modifier: Modifier = Modifier,
 ) {
     val catalog by store.catalog.collectAsState()
@@ -137,7 +145,11 @@ internal fun ChatModelBrowsePage(
     val scroll = if (query.isEmpty()) browsingScroll else filteredScroll
     val restore = picker.pendingBrowseRestore
     val request = picker.pendingSearchScroll
-    var savedRoom by remember(query) { mutableStateOf<Dp?>(null) }
+    val providers = remember(all) { all.filter { it.model == null } }
+    val headingIndex = remember(rows) {
+        rows.withIndex().filter { it.value.model == null }.associate { it.value.provider.id to it.index }
+    }
+    val prefixCount = (if (showFollow) 1 else 0) + (if (query.isEmpty() && shortcuts.isNotEmpty()) 1 else 0)
     LaunchedEffect(query, request, interactive, restore) {
         if (interactive && request != null && restore == null && query == picker.searchQuery.text.trim()) {
             val firstModel = rows.indexOfFirst { it.model != null }.coerceAtLeast(0)
@@ -150,7 +162,6 @@ internal fun ChatModelBrowsePage(
     }
     LaunchedEffect(restore, hideForReturn, interactive) {
         if (restore == null || (!interactive && !hideForReturn)) return@LaunchedEffect
-        savedRoom = restore.menuHeightDp.takeIf { it > 0f }?.dp
         val allKeys = buildList {
             if (catalog.perChatModel) add(FOLLOW_DEFAULT_KEY)
             if (shortcuts.isNotEmpty()) add(FAVORITES_HEADING_KEY)
@@ -167,45 +178,67 @@ internal fun ChatModelBrowsePage(
         }
         picker.consumeBrowseRestore(restore)
     }
-    BoxWithConstraints(modifier.fillMaxSize().testTag("chat-model-list")) {
-        val room = (maxHeight - composerPadding - 8.dp).coerceAtLeast(0.dp)
-        val saved = restore?.menuHeightDp?.takeIf { it > 0f }?.dp ?: savedRoom
-        val heldRoom = if (!interactive && saved != null) minOf(room, saved) else room
-        LazyColumn(Modifier.fillMaxSize().testTag("chat-model-results"), state = scroll,
-            contentPadding = PaddingValues(top = 8.dp, bottom = maxHeight - heldRoom)) {
-            if (showFollow) item(key = FOLLOW_DEFAULT_KEY) {
-                TextButton(
-                    onClick = { store.followChatDefault(); picker.open() },
-                    enabled = interactive && chatOverride != null,
-                    modifier = Modifier.fillMaxWidth().focusProperties { canFocus = false }.testTag("chat-model-follow-default"),
-                ) {
-                    Text(stringResource(if (chatOverride == null) R.string.chat_model_following_default else R.string.chat_model_follow_default))
+    Column(modifier.fillMaxSize().testTag("chat-model-list").padding(horizontal = 12.dp, vertical = 6.dp)) {
+        PanelHeading(models = true, onBack = picker::systemBack)
+        Spacer(Modifier.height(6.dp))
+        PanelModelSearch(picker, enabled = interactive && settled)
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val room = maxHeight
+            PanelViewport(Modifier.fillMaxSize()) { LazyColumn(Modifier.fillMaxSize().testTag("chat-model-results"), state = scroll,
+                contentPadding = PaddingValues(top = 6.dp, bottom = composerPadding + 6.dp)) {
+                if (showFollow) item(key = FOLLOW_DEFAULT_KEY) {
+                    PanelStep(Modifier.fillMaxWidth()) { TextButton(
+                        onClick = { store.followChatDefault(); picker.open() },
+                        enabled = interactive && chatOverride != null,
+                        modifier = Modifier.fillMaxWidth().focusProperties { canFocus = false }.testTag("chat-model-follow-default"),
+                    ) {
+                        Text(stringResource(if (chatOverride == null) R.string.chat_model_following_default else R.string.chat_model_follow_default))
+                    } }
+                }
+                if (query.isEmpty() && shortcuts.isNotEmpty()) item(key = FAVORITES_HEADING_KEY) {
+                    PanelStep(Modifier.fillMaxWidth()) { BrowseHeading(stringResource(R.string.browse_favorites)) }
+                }
+                if (rows.isEmpty()) item(key = "empty") {
+                    Text(stringResource(if (query.isEmpty()) R.string.chat_picker_no_models else R.string.chat_picker_search_empty),
+                        Modifier.testTag("chat-model-search-empty").semantics { liveRegion = LiveRegionMode.Polite }
+                            .padding(horizontal = 14.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, color = browseColors().heading)
+                }
+                modelMenuItems(rows, active, onPick = pick@{ route ->
+                    if (!interactive || !picker.modelListNavigation) return@pick
+                    val latest = store.catalog.value
+                    val selected = latest.entries(Mode.Chat).find { it.route == route } ?: return@pick
+                    store.configure(Mode.Chat, route, latest.parameters(selected.first, selected.second))
+                    picker.open()
+                }, onEdit = { route ->
+                    val page = picker.page
+                    if (interactive && (page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Search)) {
+                        onEditModel(route, PickerBrowseSnapshot(page, picker.searchQuery,
+                            browsingScroll.anchor(), filteredScroll.anchor(), room.value))
+                    }
+                }, favorites = catalog.favorites, onFavoriteChange = { route, favorite ->
+                    if (interactive && picker.modelListNavigation) store.setChatModelFavorite(route, favorite)
+                })
+            } }
+        }
+        if (providers.isNotEmpty()) {
+            val visibleProvider by remember(rows, scroll, prefixCount) {
+                derivedStateOf { rows.getOrNull(scroll.firstVisibleItemIndex - prefixCount)?.takeUnless { it.favoriteShortcut }?.provider?.id }
+            }
+            PanelStep(Modifier.fillMaxWidth()) {
+                LazyRow(Modifier.fillMaxWidth().testTag("chat-model-providers"), horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    items(providers, key = { it.provider.id }) { heading ->
+                        val index = headingIndex[heading.provider.id]
+                        FilterChip(selected = heading.provider.id == visibleProvider, enabled = index != null,
+                            onClick = {
+                                if (!interactive || !settled || index == null) return@FilterChip
+                                picker.consumeSearchScroll()
+                                scroll.requestScrollToItem(prefixCount + index)
+                            }, label = { Text(heading.label, maxLines = 1) },
+                            modifier = Modifier.focusProperties { canFocus = interactive && settled }.testTag("chat-model-provider:${heading.provider.id}"))
+                    }
                 }
             }
-            if (query.isEmpty() && shortcuts.isNotEmpty()) item(key = FAVORITES_HEADING_KEY) {
-                BrowseHeading(stringResource(R.string.browse_favorites))
-            }
-            if (rows.isEmpty()) item(key = "empty") {
-                Text(stringResource(if (query.isEmpty()) R.string.chat_picker_no_models else R.string.chat_picker_search_empty),
-                    Modifier.testTag("chat-model-search-empty").semantics { liveRegion = LiveRegionMode.Polite }
-                        .padding(horizontal = 14.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, color = browseColors().heading)
-            }
-            modelMenuItems(rows, active, onPick = pick@{ route ->
-                if (!interactive || !picker.modelListNavigation) return@pick
-                val latest = store.catalog.value
-                val selected = latest.entries(Mode.Chat).find { it.route == route } ?: return@pick
-                store.configure(Mode.Chat, route, latest.parameters(selected.first, selected.second))
-                picker.open()
-            }, onEdit = { route ->
-                val page = picker.page
-                if (interactive && (page == ChatModelPickerState.Page.Models || page == ChatModelPickerState.Page.Search)) {
-                    savedRoom = room
-                    onEditModel(route, PickerBrowseSnapshot(page, picker.searchQuery,
-                        browsingScroll.anchor(), filteredScroll.anchor(), room.value))
-                }
-            }, favorites = catalog.favorites, onFavoriteChange = { route, favorite ->
-                if (interactive && picker.modelListNavigation) store.setChatModelFavorite(route, favorite)
-            })
         }
     }
 }
