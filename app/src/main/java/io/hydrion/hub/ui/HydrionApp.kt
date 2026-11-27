@@ -272,7 +272,7 @@ private fun Workspace(vm: HubViewModel) {
                                     chatPicker = chatPicker.takeIf { current.mode == Mode.Chat },
                                     modelEditorBridge = composerBridge,
                                     chatTools = toolsPage,
-                                    modelBrowseProgress = { modelBrowse.progress },
+                                    modelClock = modelBrowse.clock,
                                     panelContent = when {
                                         toolsPage != null && toolsActive -> ({
                                             ChatToolsPage(state.draft.search, state.draft.imageTool, vm::setSearch, vm::setImageTool, vm,

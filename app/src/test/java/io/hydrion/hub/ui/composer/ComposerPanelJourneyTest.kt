@@ -130,10 +130,6 @@ class ComposerPanelJourneyTest {
         File(path, "$name.png").outputStream().use { frame.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
-    private fun pullHandle(id: String) = tag("chat-$id-handle").performTouchInput {
-        swipe(center, center + Offset(0f, height * 3f), durationMillis = 200)
-    }
-
     private fun tapOutside(at: Offset) = ui.onRoot().performTouchInput { click(at) }
 
     private fun scrollMax(id: String) = tag(id).fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue()
@@ -302,7 +298,7 @@ class ComposerPanelJourneyTest {
         capture("models-before-close")
         clock.autoAdvance = false
         try {
-            pullHandle("model")
+            back()
             repeat(23) { i ->
                 clock.advanceTimeByFrame()
                 ui.waitForIdle()
@@ -324,8 +320,10 @@ class ComposerPanelJourneyTest {
         val list = tag("chat-model-results")
         val viewport = bounds("chat-model-results")
         val row = tag("chat-model-option:b/model-9")
-        list.performScrollToKey("model:1:b/model-9")
         val density = host.resources.displayMetrics.density
+        fun seam(y: Float): Int = windowFrame().getPixel(title.center.x.roundToInt(), (title.bottom + y * density).roundToInt())
+        assertEquals("There is no stationary stripe at the start of the list", seam(.5f), seam(5.5f))
+        list.performScrollToKey("model:1:b/model-9")
         assertEquals(8f * density, viewport.top - title.bottom, 1f)
         val searchBox = bounds("chat-model-search-box")
         assertEquals(16f * density, searchBox.left - shell.left, 1f)
@@ -343,7 +341,7 @@ class ComposerPanelJourneyTest {
         assertEquals("Curved search corner leaves the shell visible", outside, frame.getPixel(left + density.roundToInt(), y))
         assertEquals("14 dp corner reaches the fill", inside, frame.getPixel(left + (10 * density).roundToInt(), y))
         fun shadeAt(dp: Float): Int = Color.red(frame.getPixel(title.center.x.roundToInt(), (title.bottom + dp * density).roundToInt()))
-        assertTrue("The header feather is painted across its gap", shadeAt(.5f) > shadeAt(5.5f))
+        assertEquals("Scrolled empty padding retains the shell color", shadeAt(.5f), shadeAt(5.5f))
         // Unclipped viewport coordinates let us distinguish shrinking a row from simply cropping it.
         fun drawn(): Rect {
             val layout = row.fetchSemanticsNode().layoutInfo
@@ -371,6 +369,13 @@ class ComposerPanelJourneyTest {
         val middleInk = selectionInk(middle)
         val upper = placeAt(viewport.top - 8f * density, "scroll-top")
         assertEquals(middle.width, upper.width, 1f)
+        val crossing = windowFrame()
+        fun edgeInk(atDp: Float): Int {
+            val py = (viewport.top + density * atDp).roundToInt()
+            return Color.red(crossing.getPixel(upper.center.x.roundToInt(), py)) -
+                Color.red(crossing.getPixel((viewport.left + density).roundToInt(), py))
+        }
+        assertTrue("Only scrolling content fades at the upper edge: ${edgeInk(1f)}, ${edgeInk(6f)}", edgeInk(1f) < edgeInk(6f))
         val near = placeAt(viewport.bottom - 21f * density, "scroll-near")
         val nearInk = selectionInk(near)
         val edge = placeAt(viewport.bottom - 8f * density, "scroll-edge")
@@ -386,11 +391,13 @@ class ComposerPanelJourneyTest {
         assertEquals(rail, bounds("chat-model-providers"))
     }
 
-    @Test fun toolsFollowClosingImeWithoutMovingHeaderAndScrollBeneathTheTitle() {
+    @Test @Config(qualifiers = "zh-rCN-w393dp-h851dp-night-xhdpi")
+    fun toolsFollowClosingImeWithoutMovingHeaderAndScrollBeneathTheTitle() {
         editor.performClick().performTextInputSelection(selection)
         keyboard(260)
         ui.waitForIdle()
         val raised = shell
+        val actionWidth = drawn("composer-action-row").width
         val header = bounds("floating-header")
         val titleChip = bounds("conversation-chip")
         val tail = tag("message-turn-" + vm.state.value.current.messages.last().id).fetchSemanticsNode()
@@ -401,12 +408,34 @@ class ComposerPanelJourneyTest {
         try {
             capture("tools-00")
             ui.onNodeWithContentDescription("打开工具箱").performClick()
-            repeat(22) { i ->
-                if (i < 12) keyboard((260 * (11 - i)) / 12)
+            val path = mutableListOf<Pair<Float, Float>>()
+            var sawOverlap = false
+            val readings = mutableListOf<String>("frame,ime_dp,bottom_px,top_minus_bottom_px,row_minus_bottom_px")
+            repeat(42) { i ->
+                val height = if (i < 20) 260 * (19 - i) / 20 else 0
+                keyboard(height)
                 clock.advanceTimeByFrame()
                 ui.waitForIdle()
                 capture("tools-" + (i + 1).toString().padStart(2, '0'))
+                val box = shell
+                val row = drawn("chat-tools-group:local")
+                readings += "${i+1},$height,${box.bottom},${box.top-box.bottom},${row.top-box.bottom}"
+                if (height >= 65) {
+                    assertEquals("The whole editor descends at its original height", raised.height, box.height, 2f)
+                    assertEquals(raised.width, box.width, 1f)
+                }
+                if (height in 26..39 && box.height > raised.height + 2f) {
+                    assertEquals("Only the shell opens during overlap", actionWidth, drawn("composer-action-row").width, 1f)
+                    sawOverlap = true
+                }
+                if (height == 0) path += box.height to (row.top - box.bottom)
             }
+            assertTrue("Sampled the shell growing before the IME landed", sawOverlap)
+            val end = path.last()
+            val mid = path.filter { (it.first - raised.height) / (end.first - raised.height) in .52f.. .95f }
+            assertTrue("Mid rows continue moving with the shell: $mid", mid.size >= 3 &&
+                mid.zipWithNext().all { (first, next) -> next.second < first.second - 1f })
+            System.getenv("HYDRION_PANEL_PREVIEW_DIR")?.let { File(it, "ime-motion.csv").writeText(readings.joinToString("\n")) }
         } finally { clock.autoAdvance = true }
         val expanded = shell
         assertTrue(hides > dismissals)
@@ -426,16 +455,181 @@ class ComposerPanelJourneyTest {
         clock.autoAdvance = false
         try {
             tapOutside(titleChip.center)
-            repeat(22) { i ->
+            var started = false
+            var inset = 0
+            repeat(40) { i ->
+                if (shows > showBeforeExit) started = true
+                if (started) {
+                    inset = (inset + 22).coerceAtMost(260)
+                    keyboard(inset)
+                }
                 clock.advanceTimeByFrame()
                 ui.waitForIdle()
                 capture("tools-close-" + i.toString().padStart(2, '0'))
+                if (inset > 0) assertEquals("Rising editor keeps the invoking width", raised.width, shell.width, 1f)
+                if (inset >= 110) assertEquals("Rising editor keeps the invoking height", raised.height, shell.height, 2f)
             }
+            assertTrue("Closing restores the invoking editor's IME", started)
         } finally { clock.autoAdvance = true }
-        editor.assertTextEquals(draft).assertIsNotFocused()
+        editor.assertTextEquals(draft).assertIsFocused()
         tag("context-window").assertDoesNotExist()
         assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
-        assertEquals(showBeforeExit, shows)
+        assertEquals(raised, shell)
+    }
+
+    @Test @Config(qualifiers = "zh-rCN-w393dp-h851dp-night-xhdpi")
+    fun emptyEditorPromptTravelsIntoModelSearchAndAnEarlyBackRestoresTheEditor() {
+        ui.runOnIdle { vm.setDraft("") }
+        editor.performClick()
+        keyboard(260)
+        ui.waitForIdle()
+        val raised = shell
+        val hint = ui.activity.getString(R.string.chat_message_hint, vm.state.value.composerAssistantName)
+        ui.onNodeWithText(hint, useUnmergedTree = true).assertIsDisplayed()
+        val clock = ui.mainClock
+        val showBefore = shows
+        fun begin() {
+            tag("chat-model-trigger").performClick()
+            tag("chat-model-select").assertIsDisplayed()
+        }
+        begin()
+        clock.autoAdvance = false
+        try {
+            tag("chat-model-select").performClick()
+            keyboard(155)
+            clock.advanceTimeBy(64)
+            assertEquals("Waiting for the real IME", raised.height, shell.height, 2f)
+            back()
+            clock.advanceTimeBy(64)
+            keyboard(260)
+            clock.advanceTimeBy(360)
+        } finally { clock.autoAdvance = true }
+        editor.assertIsFocused()
+        assertTrue(shows > showBefore)
+        tag("chat-model-grip").assertDoesNotExist()
+        ui.onNodeWithText(hint, useUnmergedTree = true).assertIsDisplayed()
+        begin()
+        clock.autoAdvance = false
+        try {
+            capture("hint-model-00")
+            tag("chat-model-select").performClick()
+            repeat(40) { i ->
+                keyboard(if (i < 16) 260 * (15 - i) / 16 else 0)
+                clock.advanceTimeByFrame()
+                ui.waitForIdle()
+                capture("hint-model-" + (i + 1).toString().padStart(2, '0'))
+            }
+        } finally { clock.autoAdvance = true }
+        tag("chat-model-search-field").assertIsNotFocused()
+        ui.onNodeWithText(ui.activity.getString(R.string.chat_panel_model_search_hint), useUnmergedTree = true).assertIsDisplayed()
+        assertEquals("", ui.runOnIdle { vm.state.value.draft.text })
+    }
+
+    @Test fun handleTracksTheFingerAndDecidesOnReleaseInBothPanels() {
+        val root = ui.onRoot()
+        val dp = ui.density.density
+        for ((panel, raised) in listOf("tools" to false, "model" to true)) {
+            if (raised) {
+                editor.performClick().performTextInputSelection(selection)
+                keyboard(260)
+                ui.waitForIdle()
+            }
+            fun open() {
+                if (panel == "model") {
+                    tag("chat-model-trigger").performClick()
+                    tag("chat-model-select").performClick()
+                } else ui.onNodeWithContentDescription("打开工具箱").performClick()
+                if (raised) keyboard(0)
+                ui.waitForIdle()
+                ui.mainClock.advanceTimeBy(400)
+                ui.waitForIdle()
+            }
+            open()
+            val expanded = shell
+            val grip = bounds("chat-$panel-grip").center
+            val hit = bounds("chat-$panel-handle")
+            val near = grip + Offset(0f, 9f * dp)
+            assertTrue(hit.contains(near) && !bounds("chat-$panel-grip").contains(near))
+
+            fun start(at: Offset = grip) = root.performTouchInput { down(at) }
+            fun move(at: Offset, dy: Float, millis: Long = 100) {
+                root.performTouchInput { moveTo(at + Offset(0f, dy), millis) }
+                ui.waitForIdle()
+            }
+            fun slowRelease() = root.performTouchInput { advanceEventTime(200); up() }
+
+            root.performTouchInput { click(grip); swipe(grip, grip + Offset(40f * dp, 0f), 200) }
+            assertEquals("Taps and horizontal gestures keep the panel open", expanded, shell)
+            start()
+            capture("grip-$panel-00")
+            for (i in 1..16) {
+                val fraction = (if (i <= 8) i else 16 - i) * .075f
+                val dy = expanded.height * fraction
+                move(grip, dy)
+                assertEquals("$panel shell follows the held finger at $fraction", expanded.top + dy, shell.top, 2f)
+                assertEquals("$panel grip stays under the held finger", grip.y + dy, bounds("chat-$panel-grip").center.y, 2f)
+                capture("grip-$panel-" + i.toString().padStart(2, '0'))
+            }
+            assertEquals("Crossing the threshold while held does not dismiss", expanded, shell)
+            slowRelease()
+            assertEquals(expanded, shell)
+            start(near)
+            move(near, expanded.height * .55f)
+            root.performTouchInput { cancel() }
+            ui.mainClock.advanceTimeBy(400)
+            assertEquals("Android pointer cancellation restores the open panel", expanded, shell)
+
+            for (portion in listOf(.49f, .5f, .51f)) {
+                start(near)
+                move(near, expanded.height * portion, 650)
+                val release = shell
+                assertEquals("$panel held at $portion ($expanded -> $release)", expanded.top + expanded.height * portion,
+                    release.top, 2f * dp)
+                val before = shows
+                val clock = ui.mainClock
+                clock.autoAdvance = false
+                try {
+                    slowRelease()
+                    clock.advanceTimeByFrame()
+                    ui.waitForIdle()
+                    assertEquals("Release continues from the held pose", release.top, shell.top, 3f * dp)
+                    var inset = 0
+                    repeat(40) {
+                        if (raised && shows > before && inset < 260) {
+                            inset = (inset + 28).coerceAtMost(260)
+                            keyboard(inset)
+                        }
+                        clock.advanceTimeByFrame()
+                        ui.waitForIdle()
+                    }
+                } finally { clock.autoAdvance = true }
+                if (portion > .5f && raised) assertTrue("No draft IME request after release: shell=$shell grip=" +
+                    ui.onAllNodesWithTag("chat-model-grip", true).fetchSemanticsNodes().size, shows > before)
+                if (portion <= .5f) assertEquals("$panel slow release at $portion", expanded, shell)
+            }
+            tag("chat-$panel-grip").assertDoesNotExist()
+            if (raised) {
+                keyboard(260)
+                editor.assertIsFocused()
+                assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            } else editor.assertIsNotFocused()
+            editor.assertTextEquals(draft)
+
+            open()
+            val again = bounds("chat-$panel-grip").center
+            // The same short distance which springs back slowly dismisses on a downward fling.
+            start(again)
+            move(again, 56f * dp, 360)
+            slowRelease()
+            assertEquals(expanded.height, shell.height, 2f)
+            root.performTouchInput {
+                down(again)
+                for (i in 1..5) moveTo(again + Offset(0f, i * 11.2f * dp), 8)
+                up()
+            }
+            tag("chat-$panel-grip").assertDoesNotExist()
+            if (raised) { keyboard(260); editor.assertIsFocused() } else editor.assertIsNotFocused()
+        }
     }
 
     @Test @Config(qualifiers = "zh-rCN-w393dp-h851dp-night-xhdpi")
@@ -465,7 +659,7 @@ class ComposerPanelJourneyTest {
             var previousRailScale: Float? = null
             var middleInk: Int? = null
             var fullInk: Int? = null
-            repeat(22) { i ->
+            repeat(26) { i ->
                 clock.advanceTimeByFrame()
                 ui.waitForIdle()
                 capture("$name-" + (i + 1).toString().padStart(2, '0'))
@@ -552,7 +746,7 @@ class ComposerPanelJourneyTest {
             val beforeClose = shell
             clock.autoAdvance = false
             try {
-                if (id == "model") tapOutside(titleChip.center) else pullHandle(id)
+                if (id == "model") tapOutside(titleChip.center) else back()
                 val path = frames("parked-$id-close", beforeClose, false)
                 assertEquals(parked, path.last())
             } finally { clock.autoAdvance = true }
@@ -588,7 +782,7 @@ class ComposerPanelJourneyTest {
         verify("模型内置搜索")
         rail.performTouchInput { click(Offset(4f, centerY)) }
         verify("禁用")
-        val trackBounds = bounds("chat-tools-track:web")
+        val trackBounds = bounds("chat-tools-track-fill:web")
         val sampleX = (trackBounds.left + trackBounds.width * .4f).roundToInt()
         val sampleY = (trackBounds.top + 7f * ui.density.density).roundToInt()
         val unselected = windowFrame().getPixel(sampleX, sampleY)
@@ -609,6 +803,15 @@ class ComposerPanelJourneyTest {
         val afterSearch = ui.runOnIdle { vm.state.value.draft }
         group("image").performScrollTo().performClick()
         val imageTrack = tag("chat-tools-track:image").performScrollTo()
+        for (id in listOf("web", "image")) {
+            val heading = drawn("chat-tools-group:$id")
+            val fill = drawn("chat-tools-track-fill:$id")
+            assertEquals(heading.left, fill.left, 1f)
+            assertEquals(heading.right, fill.right, 1f)
+            assertEquals(32f * ui.density.density, fill.height, 1f)
+            assertTrue(drawn("chat-tools-track:$id").height >= 48f * ui.density.density)
+        }
+        capture("compact-tracks")
         tag("chat-tools-option:image:$CUSTOM_IMAGE_TOOL").assertIsSelected()
         imageTrack.performTouchInput { swipe(Offset(right - 3, centerY), Offset(3f, centerY), 220) }
         tag("chat-tools-option:image:禁用").assertIsSelected()
@@ -641,8 +844,10 @@ class ComposerPanelJourneyTest {
         ui.onNodeWithContentDescription("打开工具箱").performClick()
         tag("chat-tools-group:image").performScrollTo().performClick()
         val rail = tag("chat-tools-track:image").performScrollTo()
-        val area = bounds("chat-tools-track:image")
+        val area = bounds("chat-tools-track-fill:image")
         capture("modes-en-large-start")
+        val webHeight = drawn("chat-tools-track-fill:web").height
+        assertEquals("Both painted rails accommodate the longest label", webHeight, drawn("chat-tools-track-fill:image").height, 1f)
         val selections = listOf("禁用" to "Off", CUSTOM_IMAGE_TOOL to "Custom image generation")
         val cells = selections.map { (key, label) ->
             val id = "chat-tools-option:image:$key"
@@ -679,7 +884,7 @@ class ComposerPanelJourneyTest {
         assertEquals(area.right, cells.last().first.right, 1f)
         fun fills(): List<Int> {
             ui.waitForIdle()
-            val currentArea = bounds("chat-tools-track:image")
+            val currentArea = bounds("chat-tools-track-fill:image")
             val image = windowFrame()
             val y = (currentArea.top + 3 * ui.density.density).roundToInt()
             val outside = image.getPixel(currentArea.left.roundToInt() - 2, currentArea.center.y.roundToInt())

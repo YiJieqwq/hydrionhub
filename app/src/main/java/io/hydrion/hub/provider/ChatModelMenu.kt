@@ -186,7 +186,8 @@ internal fun ChatModelBrowsePage(
         Spacer(Modifier.height(8.dp))
         BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth().padding(horizontal = 12.dp)) {
             val room = maxHeight
-            PanelViewport(Modifier.fillMaxWidth()) { LazyColumn(Modifier.fillMaxWidth().testTag("chat-model-results"), state = scroll,
+            PanelViewport(Modifier.fillMaxWidth(), MaterialTheme.colorScheme.surfaceContainerHigh,
+                scrolledPx = { if (scroll.firstVisibleItemIndex > 0) Int.MAX_VALUE else scroll.firstVisibleItemScrollOffset }) { LazyColumn(Modifier.fillMaxWidth().testTag("chat-model-results"), state = scroll,
                 contentPadding = PaddingValues(top = 6.dp, bottom = composerPadding + 6.dp)) {
                 if (showFollow) item(key = FOLLOW_DEFAULT_KEY) {
                     PanelStep(Modifier.fillMaxWidth()) { TextButton(

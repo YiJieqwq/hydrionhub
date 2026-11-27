@@ -16,7 +16,7 @@ import io.hydrion.hub.ui.composer.PanelTravelClock
 
 @Stable
 internal class ModelBrowseMotion(private val picker: ChatModelPickerState, private val restoring: State<Boolean>) {
-    private val clock = PanelTravelClock()
+    val clock = PanelTravelClock()
     private var lastPage by mutableStateOf<ChatModelPickerState.Page?>(null)
     val progress: Float get() = if (restoring.value && picker.modelListNavigation) 1f else clock.progress
     val page by derivedStateOf {
@@ -41,6 +41,9 @@ internal fun rememberModelBrowseMotion(picker: ChatModelPickerState, restoring: 
     val open = picker.modelListNavigation
     val page = picker.page
     if (open && page != null) SideEffect { state.retain(page) }
-    LaunchedEffect(state, open, restoring) { state.travel(open, restoring) }
+    LaunchedEffect(state, open, restoring, state.clock.held) {
+        if (!open) state.clock.release()
+        if (!state.clock.held) state.travel(open, restoring)
+    }
     return state
 }

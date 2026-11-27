@@ -135,10 +135,14 @@ import io.hydrion.hub.ui.theme.HubShapes
 import io.hydrion.hub.ui.theme.HubStyle
 import io.hydrion.hub.ui.theme.capsuleEdge
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlin.math.roundToInt
+
+private data class PanelEditorReturn(val value: TextFieldValue, val imeHeight: Int, val modelPanel: Boolean)
 
 private enum class ToolsPanel { Closed, WaitingForIme, Open }
 
@@ -208,7 +212,7 @@ internal fun HubComposer(
     chatPicker: ChatModelPickerState? = null,
     modelEditorBridge: ModelEditorComposerBridge? = null,
     chatTools: ToolsPageState? = null,
-    modelBrowseProgress: () -> Float = { 0f },
+    modelClock: PanelTravelClock? = null,
     panelContent: (@Composable () -> Unit)? = null,
 ) {
     val colors = MaterialTheme.colorScheme
@@ -240,7 +244,8 @@ internal fun HubComposer(
     val morphingEditor = panelContent != null
     val panelRequested = browsing || tools?.targetOpen == true
     val modelPanel = morphingEditor && tools?.active != true
-    val pageProgress = if (modelPanel) modelBrowseProgress() else tools?.progress ?: 0f
+    val panelClock = if (modelPanel) modelClock else tools?.clock
+    val pageProgress = if (morphingEditor) panelClock?.progress ?: 0f else 0f
     val imeReturn = remember(state.current.id, state.current.mode, morphingEditor) { ComposerImeReturn() }
     val editorFocus = remember { FocusRequester() }
     val draft = state.draft
@@ -272,8 +277,46 @@ internal fun HubComposer(
         focusManager.clearFocus()
         keyboard?.hide()
     }
+    var raisedDraft by remember(state.current.id, state.current.mode) { mutableStateOf<PanelEditorReturn?>(null) }
+    val returningToEditor = !panelRequested && raisedDraft != null && (panelClock?.nearEditor != false || !morphingEditor)
+    var requestedDraftFocus by remember(state.current.id, state.current.mode) { mutableStateOf(false) }
+    val writableDraft = !morphingEditor || returningToEditor
+    if (!morphingEditor && raisedDraft == null) {
+        // Cache the actual invoking editor, before a panel takes focus or asks the IME to hide.
+        val insetPx = (current.getBottom(density) - nav).coerceAtLeast(0)
+        SideEffect {
+            val inset = { (current.getBottom(density) - nav).coerceAtLeast(0) }
+            tools?.clock?.prepareEditor(focused && insetPx > 0, inset)
+            modelClock?.prepareEditor(focused && insetPx > 0, inset)
+        }
+    }
     LaunchedEffect(panelRequested) {
-        if (panelRequested || morphingEditor) collapse()
+        if (panelRequested) {
+            if (panelClock != null && panelClock.entryImeHeight > 0 && raisedDraft == null) {
+                raisedDraft = PanelEditorReturn(editorValue.copy(composition = null), panelClock.entryImeHeight, modelPanel)
+            }
+            requestedDraftFocus = false
+            collapse()
+        } else if (morphingEditor) {
+            // End a possible search input session before returning to the original editor.
+            collapse()
+        }
+    }
+    LaunchedEffect(returningToEditor, morphingEditor, allowImeReturn) {
+        val origin = raisedDraft ?: return@LaunchedEffect
+        val saved = origin.value
+        if (returningToEditor && !requestedDraftFocus && allowImeReturn && windowFocused && saved.text == editorValue.text) {
+            fieldValue = editorValue.copy(selection = saved.selection, composition = null)
+            requestedDraftFocus = true
+            editorFocus.requestFocus()
+            keyboard?.show()
+        }
+        if (!morphingEditor) {
+            if (requestedDraftFocus && allowImeReturn) withTimeoutOrNull(1_000) {
+                snapshotFlow { current.getBottom(density) - nav }.first { it >= origin.imeHeight * .97f }
+            }
+            raisedDraft = null
+        }
     }
     val imeActive = imeVisible || hasImeHeight || hasImeTarget
     val hiddenAfterEditing = sawKeyboard && !imeActive
@@ -299,7 +342,8 @@ internal fun HubComposer(
     DisposableEffect(draftSession) { onDispose { draftSession.value = false } }
     fun acceptsDraftInput(): Boolean {
         val conversation = vm.state.value.current
-        return draftSession.value && !morphingEditor && tools?.active != true && conversation.id == state.current.id &&
+        val draftAccepting = !morphingEditor && tools?.active != true || returningToEditor && requestedDraftFocus
+        return draftSession.value && draftAccepting && conversation.id == state.current.id &&
             conversation.mode == state.current.mode && chatPicker?.modelListNavigation != true
     }
     fun updateDraft(updated: TextFieldValue) {
@@ -382,11 +426,13 @@ internal fun HubComposer(
     val hasContent = draft.text.isNotEmpty() || draft.attachments.isNotEmpty()
     val rowGate = rememberDraftRowMotion(hasContent).fraction
     val chatToolbar = maxOf(expansion, rowGate)
-    val toolbar = chatToolbar * (1f - pageProgress)
     var lastToolbar by remember { mutableFloatStateOf(chatToolbar) }
-    if (!morphingEditor) SideEffect { lastToolbar = chatToolbar }
-    val actionRow = if (morphingEditor) lastToolbar else chatToolbar
-    val draftFade = if (morphingEditor) Modifier.graphicsLayer { alpha = (1f - pageProgress / .45f).coerceIn(0f, 1f) } else Modifier
+    val restoringDock = !morphingEditor && raisedDraft != null
+    if (!morphingEditor && !restoringDock) SideEffect { lastToolbar = chatToolbar }
+    val actionRow = if (morphingEditor || restoringDock) lastToolbar else chatToolbar
+    val contentProgress = if (morphingEditor) panelClock?.contentProgress ?: 0f else 0f
+    val toolbar = actionRow * (1f - contentProgress)
+    val draftFade = if (morphingEditor) Modifier.graphicsLayer { alpha = (1f - contentProgress / .45f).coerceIn(0f, 1f) } else Modifier
     val overlay: Any? = if (chatPicker == null || !allowImeReturn) null
         else chatPicker.page ?: tools?.takeIf { it.targetOpen }
     val effortAtEditor = overlay == ChatModelPickerState.Page.Controls && !morphingEditor
@@ -434,16 +480,25 @@ internal fun HubComposer(
         if (morphingEditor) widthReturn.snapTo(0f)
         else if (widthReturn.value < 1f) widthReturn.animateTo(1f, tween(150))
     }
-    val sideInset = if (morphingEditor) lerp(lastEditorSide, expandedSide, pageProgress)
-        else lerp(entrySide, normalSide, widthReturn.value)
+    val sideInset = when {
+        morphingEditor -> lerp(lastEditorSide, expandedSide, pageProgress)
+        restoringDock -> lastEditorSide
+        else -> lerp(entrySide, normalSide, widthReturn.value)
+    }
+    val panelGap = if (parkedDraft) lastEditorGap else if (modelPanel || raisedDraft?.modelPanel == true) 8.dp else 0.dp
+    val entryImeHeight = raisedDraft?.imeHeight ?: if (morphingEditor) panelClock?.entryImeHeight ?: 0 else 0
     val bottomGap = when {
-        !morphingEditor -> normalGap
-        parkedDraft -> lastEditorGap
-        else -> lerp(normalGap, if (modelPanel) 8.dp else 0.dp, pageProgress)
+        !morphingEditor && !restoringDock -> normalGap
+        entryImeHeight > 0 -> {
+            val followingIme = panelRequested && panelClock?.passedIme == false || !panelRequested && requestedDraftFocus
+            val fraction = if (followingIme) ((current.getBottom(density) - nav).toFloat() / entryImeHeight).coerceIn(0f, 1f) else 0f
+            lerp(panelGap, lastEditorGap, fraction)
+        }
+        else -> lerp(lastEditorGap, panelGap, pageProgress)
     }
     SideEffect {
         if (morphingEditor) entrySide = lastEditorSide
-        else {
+        else if (!restoringDock) {
             lastEditorSide = sideInset
             lastEditorGap = normalGap
             parkedDraft = hasContent && !imeActive && !hardwareOnly
@@ -497,14 +552,17 @@ internal fun HubComposer(
             shape = shape,
             color = fill,
         ) {
-            ComposerPanelBody({ pageProgress }, panelRequested, sideInset, expandedSide, bottomGap, 34.dp, panelContent) {
+            ComposerPanelBody(panelClock, panelRequested, returningToEditor, sideInset, expandedSide, bottomGap,
+                if (entryImeHeight > 0) 0.dp else lastEditorGap - panelGap, 34.dp,
+                handleId = if (modelPanel) "model" else "tools",
+                dismiss = { if (modelPanel) chatPicker?.systemBack() else tools?.close() }, panel = panelContent) {
                 Column {
                     if (!dictating && draft.attachments.isNotEmpty()) {
                         val imageAndText = draft.text.isNotEmpty() && draft.attachments.any { it.hasImagePreview }
                         // Let the editor and toolbar measure first in short windows above the IME.
                         BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth()
                             .then(when {
-                                morphingEditor -> draftFade.clearAndSetSemantics { }.revealHeight(1f - pageProgress, 0.dp)
+                                morphingEditor -> draftFade.clearAndSetSemantics { }.revealHeight(1f - contentProgress, 0.dp)
                                 else -> Modifier
                             })
                             .padding(start = 8.dp, end = 8.dp, top = 3.dp, bottom = if (imageAndText) 0.dp else 3.dp)) {
@@ -546,7 +604,7 @@ internal fun HubComposer(
                                 val inputHint = if (chat) chatDraftHint else "描述想生成的图片"
                                 BasicTextField(
                                     value = editorValue,
-                                    readOnly = morphingEditor,
+                                    readOnly = !writableDraft,
                                     onValueChange = { if (!dictation.isActive && acceptsDraftInput()) updateDraft(it) },
                                     modifier = Modifier.fillMaxWidth().padding(
                                         start = lerp(FoldedTextStart, OpenTextStart, toolbar), end = lerp(FoldedTextStart, OpenTextEnd, toolbar)
@@ -579,11 +637,10 @@ internal fun HubComposer(
                                                 Modifier.testTag("composer-editable-text").then(if (effortAtEditor) Modifier else editorTap)
                                             else Modifier
                                             Box(Modifier.fillMaxWidth().trackPickerEditor(chatPicker, textOnly = true)
-                                                .then(visibleTextLine), contentAlignment = Alignment.CenterStart) {
+                                                .then(visibleTextLine).panelPromptOrigin(), contentAlignment = Alignment.CenterStart) {
                                                 if (editorValue.text.isEmpty()) {
                                                     val hintStyle = if (chat) editorTextStyle else editorTextStyle.copy(fontSize = 17.sp)
-                                                    Text(inputHint, color = HubStyle.ComposerHint, style = hintStyle,
-                                                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    PanelPromptText(inputHint, color = HubStyle.ComposerHint, style = hintStyle, fromEditor = true)
                                                 }
                                                 editor()
                                             }
@@ -611,10 +668,10 @@ internal fun HubComposer(
                             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                                 .height(lerp(editorMinHeight, controlRowHeight, actionRow))
                                 .graphicsLayer {
-                                    translationY = size.height * pageProgress
-                                    scaleX = 1f - .36f * pageProgress
+                                    translationY = size.height * contentProgress
+                                    scaleX = 1f - .36f * contentProgress
                                     scaleY = scaleX
-                                    alpha = 1f - pageProgress
+                                    alpha = 1f - contentProgress
                                 }.testTag("composer-action-row")
                                 .padding(start = ToolbarTouchOutset, end = ToolbarTouchOutset + if (chat) 2.dp else 0.dp),
                         ) { leading, trailing ->

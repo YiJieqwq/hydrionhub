@@ -5,7 +5,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -124,10 +128,13 @@ internal fun ChatToolsPage(
             Column(modifier.fillMaxWidth()) {
                 ToolPanelHeading(onBack, countLabel)
                 Spacer(Modifier.height(4.dp))
-                PanelViewport(Modifier.weight(1f, fill = false).fillMaxWidth().padding(horizontal = 16.dp)) {
-                    Column(Modifier.fillMaxWidth().testTag("chat-tools-page").verticalScroll(browsing).padding(bottom = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        ChatToolGroups(search, imageTool, "", onSearch, onImageTool, vm, modelToolsEnabled)
+                PanelViewport(Modifier.weight(1f, fill = false).fillMaxWidth().padding(horizontal = 16.dp), scheme.surface, { browsing.value }) {
+                    BoxWithConstraints {
+                        val rowWidth = maxWidth
+                        Column(Modifier.fillMaxWidth().testTag("chat-tools-page").verticalScroll(browsing).padding(bottom = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            ChatToolGroups(search, imageTool, "", onSearch, onImageTool, vm, modelToolsEnabled, rowWidth)
+                        }
                     }
                 }
             }
@@ -138,7 +145,7 @@ internal fun ChatToolsPage(
 @Composable
 private fun ChatToolGroups(
     search: String, imageTool: String, query: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit, vm: HubViewModel,
-    modelToolsEnabled: Boolean,
+    modelToolsEnabled: Boolean, rowWidth: Dp,
 ) {
     val off = ToolChoice(Disabled, stringResource(R.string.chat_mode_off))
     val web = listOf(off, ToolChoice("自定义搜索", stringResource(R.string.chat_mode_local_search)),
@@ -148,10 +155,23 @@ private fun ChatToolGroups(
     val imageTitle = stringResource(R.string.chat_tools_image)
     val webVisible = matchingToolChoices(query, webTitle, web) { it.label }.isNotEmpty()
     val imageVisible = matchingToolChoices(query, imageTitle, image) { it.label }.isNotEmpty()
+    val measurer = rememberTextMeasurer()
+    val style = MaterialTheme.typography.labelLarge
+    val density = LocalDensity.current
+    val height = remember(web, image, rowWidth, style, density, measurer) {
+        with(density) {
+            val width = (rowWidth - GroupHeadingInset * 2).roundToPx()
+            val tallest = listOf(web, image).maxOf { options ->
+                val slot = (width / options.size - 8.dp.roundToPx()).coerceAtLeast(1)
+                options.maxOf { measurer.measure(it.label, style, constraints = Constraints(maxWidth = slot)).size.height }
+            }
+            (tallest.toDp() + 8.dp).coerceAtLeast(32.dp)
+        }
+    }
     ToolModeSection("web", webTitle, web, search, webVisible, initiallyOpen = true,
-        filtering = query.isNotEmpty(), enabled = modelToolsEnabled, onSelect = onSearch)
+        filtering = query.isNotEmpty(), enabled = modelToolsEnabled, height = height, onSelect = onSearch)
     ToolModeSection("image", imageTitle, image, imageTool, imageVisible, initiallyOpen = false,
-        filtering = query.isNotEmpty(), enabled = modelToolsEnabled, onSelect = onImageTool)
+        filtering = query.isNotEmpty(), enabled = modelToolsEnabled, height = height, onSelect = onImageTool)
     HostToolGroups(vm, query, webVisible || imageVisible)
 }
 
@@ -188,24 +208,24 @@ internal fun ImageComposerTools(
 
 @Composable
 private fun ToolModeSection(id: String, title: String, choices: List<ToolChoice>, value: String, visible: Boolean,
-    initiallyOpen: Boolean, filtering: Boolean, enabled: Boolean, onSelect: (String) -> Unit) {
+    initiallyOpen: Boolean, filtering: Boolean, enabled: Boolean, height: Dp, onSelect: (String) -> Unit) {
     val selected = choices.firstOrNull { it.value == value }
     val summary = if (enabled) selected?.label ?: value else stringResource(R.string.panel_model_unavailable)
     PanelSection(id, title, summary, visible, initiallyOpen, filtering, summaryOnCollapseOnly = enabled && selected != null) {
-        ToolModeTrack(id, title, choices, value, enabled, onSelect)
+        ToolModeTrack(id, title, choices, value, enabled, height, onSelect)
     }
 }
 
 @Composable
-private fun ToolModeTrack(id: String, title: String, choices: List<ToolChoice>, value: String, enabled: Boolean, onSelect: (String) -> Unit) {
+private fun ToolModeTrack(id: String, title: String, choices: List<ToolChoice>, value: String, enabled: Boolean, height: Dp, onSelect: (String) -> Unit) {
     val colors = MaterialTheme.colorScheme
     val values = choices.map { it.value }
     val track = colors.surfaceContainerHighest
     val thumb = colors.primary.copy(alpha = if (enabled) .36f else .12f).compositeOver(track)
     val ink = if (enabled) colors.onSurface else colors.onSurface.copy(alpha = .8f).compositeOver(track)
     DiscreteChoiceTrack(values, value, title, { selected -> choices.first { it.value == selected }.label }, onSelect,
-        modifier = Modifier.testTag("chat-tools-track:$id"), enabled = enabled) { position ->
-        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).height(IntrinsicSize.Min)
+        modifier = Modifier.padding(horizontal = GroupHeadingInset).testTag("chat-tools-track:$id"), enabled = enabled) { position ->
+        Row(Modifier.fillMaxWidth().height(height).testTag("chat-tools-track-fill:$id")
             .clip(HubShapes.Large).drawBehind {
                 drawRect(track)
                 position()?.let { thumbPosition ->
@@ -218,7 +238,7 @@ private fun ToolModeTrack(id: String, title: String, choices: List<ToolChoice>, 
             for (choice in choices) {
                 Box(Modifier.weight(1f).fillMaxHeight().keepToolEditorFocus().testTag("chat-tools-option:$id:${choice.value}")
                     .selectable(choice.value == value, enabled = enabled, role = Role.RadioButton) { onSelect(choice.value) }
-                    .padding(horizontal = 6.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
+                    .padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
                     Text(choice.label, Modifier.fillMaxWidth(), color = ink, textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.labelLarge)
                 }
@@ -226,6 +246,8 @@ private fun ToolModeTrack(id: String, title: String, choices: List<ToolChoice>, 
         }
     }
 }
+
+private val GroupHeadingInset = 12.dp
 
 @Composable
 internal fun PanelSection(id: String, title: String, summary: String, visible: Boolean, initiallyOpen: Boolean,
@@ -245,7 +267,7 @@ internal fun PanelSection(id: String, title: String, summary: String, visible: B
             Row(
                 Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).testTag("chat-tools-group:$id").then(toggle)
                     .semantics { stateDescription = describeState }
-                    .heightIn(min = 32.dp).padding(horizontal = 12.dp),
+                    .heightIn(min = 32.dp).padding(horizontal = GroupHeadingInset),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {

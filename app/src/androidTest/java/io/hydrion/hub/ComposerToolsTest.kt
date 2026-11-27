@@ -48,7 +48,11 @@ class ComposerToolsTest {
     private val page get() = screen.onNodeWithTag("chat-tools-page")
     private val tools get() = screen.onNodeWithContentDescription("打开工具箱")
     private fun action(name: String) = screen.onNodeWithTag("chat-tools-$name")
-    private fun dismissTools() = action("handle").performTouchInput { swipe(center, center + androidx.compose.ui.geometry.Offset(0f, height * 3f), 200) }
+    private fun dismissTools() {
+        val grip = action("grip").fetchSemanticsNode().boundsInRoot.center
+        val travel = screen.onNodeWithTag("composer-capsule", true).fetchSemanticsNode().boundsInRoot.height * .6f
+        screen.onRoot().performTouchInput { swipe(grip, grip + androidx.compose.ui.geometry.Offset(0f, travel), 400) }
+    }
     private fun option(group: String, value: String) = action("option:$group:$value")
 
     private fun imeVisible() = screen.runOnUiThread {
@@ -148,18 +152,11 @@ class ComposerToolsTest {
             screen.waitUntil(15_000) { imeVisible() }
             editor.performTextReplacement("keep this draft")
             open()
-            val clock = screen.mainClock
-            withStableIme(true) {
-                try {
-                    clock.autoAdvance = false
-                    tap(tools)
-                    clock.advanceTimeBy(80)
-                    screen.onNodeWithTag("chat-tools-surface", useUnmergedTree = true).assertExists()
-                    screen.onNodeWithTag("chat-picker-bubble", useUnmergedTree = true).assertExists()
-                } finally { clock.autoAdvance = true }
-                field.assertIsDisplayed()
-                dismissTools()
-            }
+            tap(tools)
+            page.assertIsDisplayed()
+            screen.waitUntil(15_000) { !imeVisible() }
+            dismissTools()
+            screen.waitUntil(15_000) { imeVisible() }
             editor.assertTextEquals("keep this draft")
             open()
             val shell = screen.onNodeWithTag("chat-picker-bubble", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
@@ -461,8 +458,9 @@ class ComposerToolsTest {
             page.assertIsDisplayed()
             screen.waitUntil(15_000) { !imeVisible() }
             field.assertDoesNotExist()
-            withStableIme(false) { dismissTools() }
-            editor.assertTextEquals(saved.text).assertIsNotFocused()
+            dismissTools()
+            screen.waitUntil(15_000) { imeVisible() }
+            editor.assertTextEquals(saved.text).assertIsFocused()
             assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
             screen.onNodeWithText(attachment.name).assertIsDisplayed()
             screen.runOnIdle { assertEquals(saved, vm.state.value.draft) }
