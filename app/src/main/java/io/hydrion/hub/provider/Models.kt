@@ -42,6 +42,7 @@ data class ModelCatalog(
     val active: Map<Mode, RemoteModel> = emptyMap(),
     val overrides: Map<RemoteModel, Map<String, String>> = emptyMap(),
     val perChatModel: Boolean = true,
+    val favorites: Set<RemoteModel> = emptySet(),
 ) {
     /** Disabling per-chat selection hides the saved pin without modifying the conversation. */
     internal fun forConversation(routes: Map<Mode, RemoteModel>?, assistantDefault: RemoteModel? = null): ModelCatalog {
@@ -162,7 +163,7 @@ data class ModelCatalog(
             declared[route]?.let { (m, _) -> route to parameters(m, values) }
         }.toMap()
         return copy(defaults = validDefaults, active = active.filter { (mode, route) -> keepRoute(mode, route) },
-            overrides = validOverrides)
+            overrides = validOverrides, favorites = favorites.intersect(declared.keys))
     }
 }
 

@@ -6,6 +6,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ModelCatalogTest {
+    @Test fun optionalFavoriteSurvivesRenamesAndDisableButExpiresWithTheModel() {
+        val old = demoCatalog()
+        val (model, provider) = old.entries(Mode.Chat).first()
+        val route = RemoteModel(provider.id, model.id)
+        val legacy = encodeCatalog(old)
+        assertFalse(legacy.getJSONArray("providers").getJSONObject(0).getJSONArray("models").getJSONObject(0).has("favorite"))
+        assertTrue(decodeCatalog(legacy.toString()).favorites.isEmpty())
+        val marked = old.copy(favorites = setOf(route))
+        val renamed = marked.withEditedModel(route, model.copy(name = "New label"))
+        val owner = renamed.providers.single { it.id == provider.id }
+        val disabled = renamed.withProvider(owner.copy(name = "New provider label", enabled = false), emptyMap())
+        val reopened = decodeCatalog(encodeCatalog(disabled).toString())
+        assertEquals(setOf(route), reopened.favorites)
+        assertTrue(reopened.entries(Mode.Chat).none { it.route == route })
+        val enabled = reopened.withProvider(owner, emptyMap())
+        assertEquals(setOf(route), enabled.favorites)
+        val removed = enabled.withEditedModel(route, null)
+        assertTrue(removed.withProvider(owner, emptyMap()).favorites.isEmpty())
+    }
+
     @Test fun editingFromThePickerChangesOnlyTheExactProviderAndModel() {
         val a = ProviderModel("shared", "First")
         val b = a.copy(name = "Second")

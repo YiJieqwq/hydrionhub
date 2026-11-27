@@ -45,7 +45,7 @@ internal fun ModelCatalog.portableCatalog(): ModelCatalog {
             if (selected.isNotEmpty()) put(route, selected)
         }
     }
-    return ModelCatalog(safeProviders, defaults, active, safeOverrides, perChatModel).normalized()
+    return ModelCatalog(safeProviders, defaults, active, safeOverrides, perChatModel, favorites).normalized()
 }
 
 internal data class AppBackupSettings(val catalog: ModelCatalog, val appearance: MessageStyle) {

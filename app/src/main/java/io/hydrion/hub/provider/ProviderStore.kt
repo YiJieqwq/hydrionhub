@@ -53,6 +53,13 @@ class ProviderStore internal constructor(private val storage: ProviderCatalogSto
 
     internal fun setPerChatModel(enabled: Boolean) = update(stored.copy(perChatModel = enabled))
 
+    @Synchronized
+    internal fun setChatModelFavorite(route: RemoteModel, favorite: Boolean) {
+        val current = stored.favorites
+        if ((route in current) == favorite || stored.entries(Mode.Chat).none { it.route == route }) return
+        update(stored.copy(favorites = if (favorite) current + route else current - route))
+    }
+
     internal fun moveChatProvider(id: String, direction: Int) {
         val next = stored.movedChatProvider(id, direction)
         if (next !== stored) update(next)
@@ -206,6 +213,7 @@ internal fun encodeCatalog(catalog: ModelCatalog): JSONObject = JSONObject().app
                     put("name", model.name)
                     put("profile", model.profile.toStoredJson())
                     put("enabled", model.enabled)
+                    if (RemoteModel(provider.id, model.id) in catalog.favorites) put("favorite", true)
                     put("capabilities", JSONArray(model.capabilities.map { cap ->
                         JSONObject().put("key", cap.key).put("label", cap.label).put("choices", JSONArray(cap.choices))
                     }))
@@ -226,10 +234,14 @@ internal fun encodeCatalog(catalog: ModelCatalog): JSONObject = JSONObject().app
 internal fun decodeCatalog(text: String): ModelCatalog = decodeCatalog(JSONObject(text))
 
 private fun decodeCatalog(json: JSONObject): ModelCatalog {
+    val favorites = mutableSetOf<RemoteModel>()
     val providers = json.getJSONArray("providers").mapObjects { p ->
-        Provider(p.getString("id"), Mode.valueOf(p.getString("mode")), p.getString("name"),
+        val providerId = p.getString("id")
+        Provider(providerId, Mode.valueOf(p.getString("mode")), p.getString("name"),
             p.getString("protocol"), p.getString("baseUrl"), p.getJSONArray("models").mapObjects { m ->
-                ProviderModel(m.getString("id"), m.getString("name"), m.getJSONArray("capabilities").mapObjects { c ->
+                val modelId = m.getString("id")
+                if (m.optBoolean("favorite", false)) favorites.add(RemoteModel(providerId, modelId))
+                ProviderModel(modelId, m.getString("name"), m.getJSONArray("capabilities").mapObjects { c ->
                     val choices = c.getJSONArray("choices")
                     Capability(c.getString("key"), c.getString("label"), (0 until choices.length()).map { choices.getString(it) })
                 }, m.optJSONObject("profile").readProfile(), enabled = m.optBoolean("enabled", true))
@@ -260,6 +272,7 @@ private fun decodeCatalog(json: JSONObject): ModelCatalog {
         }.toMap()
         else -> emptyMap()
     }
-    val catalog = ModelCatalog(providers, routes("defaults"), routes("active"), overrides, json.optBoolean("perChatModel", true)).normalized()
+    val catalog = ModelCatalog(providers, routes("defaults"), routes("active"), overrides,
+        json.optBoolean("perChatModel", true), favorites).normalized()
     return if (json.optInt("formatVersion") < DEEPSEEK_CATALOG_FORMAT) catalog.withDeepSeekPreset() else catalog
 }

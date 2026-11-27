@@ -24,6 +24,7 @@ import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
 
 private const val FOLLOW_DEFAULT_KEY = "follow-chat-default"
+private const val FAVORITES_HEADING_KEY = "chat-favorites-heading"
 
 private fun LazyListState.anchor(): PickerScrollAnchor {
     val index = firstVisibleItemIndex
@@ -40,8 +41,14 @@ internal fun matchingMenuModels(models: List<ProviderModel>, query: String): Lis
     }
 }
 
-internal data class ModelMenuRow(val provider: Provider, val model: ProviderModel?, val label: String) {
-    val key = if (model == null) "heading:${provider.id}" else "model:${provider.id.length}:${provider.id}/${model.id}"
+internal data class ModelMenuRow(val provider: Provider, val model: ProviderModel?, val label: String,
+    val providerLabel: String = label, val favoriteShortcut: Boolean = false) {
+    val route = model?.let { RemoteModel(provider.id, it.id) }
+    val key = when {
+        model == null -> "heading:${provider.id}"
+        favoriteShortcut -> "favorite:${provider.id.length}:${provider.id}/${model.id}"
+        else -> "model:${provider.id.length}:${provider.id}/${model.id}"
+    }
 }
 
 internal fun modelMenuRows(entries: List<Pair<ProviderModel, Provider>>, query: String,
@@ -64,7 +71,7 @@ internal fun modelMenuRows(entries: List<Pair<ProviderModel, Provider>>, query: 
                 val names = models.groupingBy { it.name }.eachCount()
                 matches.forEach { model ->
                     val label = if (names[model.name] == 1) model.name else "${model.name} · ${model.id}"
-                    add(ModelMenuRow(provider, model, label))
+                    add(ModelMenuRow(provider, model, label, providerLabel = name))
                 }
             }
         }
@@ -78,15 +85,24 @@ internal fun modelGroupLabels(entries: List<Pair<ProviderModel, Provider>>): Map
 }
 
 internal fun LazyListScope.modelMenuItems(rows: List<ModelMenuRow>,
-    selected: RemoteModel?, onPick: (RemoteModel) -> Unit, onEdit: ((RemoteModel) -> Unit)? = null) {
+    selected: RemoteModel?, onPick: (RemoteModel) -> Unit, onEdit: ((RemoteModel) -> Unit)? = null,
+    favorites: Set<RemoteModel> = emptySet(), onFavoriteChange: ((RemoteModel, Boolean) -> Unit)? = null) {
     items(rows, key = { it.key }, contentType = { if (it.model == null) "header" else "model" }) { row ->
         val model = row.model
         if (model == null) BrowseHeading(row.label)
         else {
-            val route = RemoteModel(row.provider.id, model.id)
-            BrowseTile(row.label, row.provider, model, route == selected,
-                Modifier.testTag("chat-model-option:${route.providerId}/${route.modelId}"),
-                onEdit = onEdit?.let { edit -> { edit(route) } }, onPick = { onPick(route) })
+            val route = requireNotNull(row.route)
+            val prefix = if (row.favoriteShortcut) "chat-model-favorite-option" else "chat-model-option"
+            val tag = "$prefix:${route.providerId}/${route.modelId}"
+            val qualifiedLabel = stringResource(R.string.browse_model_with_provider, row.label, row.providerLabel)
+            val label = if (row.favoriteShortcut) qualifiedLabel else row.label
+            BrowseTile(label, row.provider, model, route == selected, Modifier.testTag(tag),
+                onEdit = onEdit?.let { edit -> { edit(route) } },
+                favoriteButton = if (onFavoriteChange == null) null else ({
+                    ModelFavoriteButton(route in favorites, qualifiedLabel, Modifier.testTag("$tag:favorite")) {
+                        onFavoriteChange(route, it)
+                    }
+                }), onPick = { onPick(route) })
         }
     }
 }
@@ -108,7 +124,13 @@ internal fun ChatModelBrowsePage(
     if (open) SideEffect { lastQuery = query }
     val labels = modelGroupLabels(entries)
     val all = remember(entries, labels) { modelMenuRows(entries, "", labels) }
-    val rows = remember(all, query) { if (query.isEmpty()) all else modelMenuRows(entries, query, labels) }
+    val shortcuts = remember(all, catalog.favorites) {
+        if (catalog.favorites.isEmpty()) emptyList() else all.mapNotNull { row ->
+            if (row.route in catalog.favorites) row.copy(favoriteShortcut = true) else null
+        }
+    }
+    val browseRows = remember(all, shortcuts) { if (shortcuts.isEmpty()) all else shortcuts + all }
+    val rows = if (query.isEmpty()) browseRows else remember(entries, labels, query) { modelMenuRows(entries, query, labels) }
     val showFollow = catalog.perChatModel && query.isEmpty()
     val browsingScroll = rememberLazyListState()
     val filteredScroll = rememberLazyListState()
@@ -129,7 +151,11 @@ internal fun ChatModelBrowsePage(
     LaunchedEffect(restore, hideForReturn, interactive) {
         if (restore == null || (!interactive && !hideForReturn)) return@LaunchedEffect
         savedRoom = restore.menuHeightDp.takeIf { it > 0f }?.dp
-        val allKeys = if (catalog.perChatModel) listOf(FOLLOW_DEFAULT_KEY) + all.map { it.key } else all.map { it.key }
+        val allKeys = buildList {
+            if (catalog.perChatModel) add(FOLLOW_DEFAULT_KEY)
+            if (shortcuts.isNotEmpty()) add(FAVORITES_HEADING_KEY)
+            browseRows.mapTo(this) { it.key }
+        }
         val fullIndex = restore.browsing.resolveIndex(allKeys)
         val resultIndex = restore.filtered.resolveIndex(rows.map { it.key })
         if (scroll === browsingScroll) {
@@ -156,6 +182,9 @@ internal fun ChatModelBrowsePage(
                     Text(stringResource(if (chatOverride == null) R.string.chat_model_following_default else R.string.chat_model_follow_default))
                 }
             }
+            if (query.isEmpty() && shortcuts.isNotEmpty()) item(key = FAVORITES_HEADING_KEY) {
+                BrowseHeading(stringResource(R.string.browse_favorites))
+            }
             if (rows.isEmpty()) item(key = "empty") {
                 Text(stringResource(if (query.isEmpty()) R.string.chat_picker_no_models else R.string.chat_picker_search_empty),
                     Modifier.testTag("chat-model-search-empty").semantics { liveRegion = LiveRegionMode.Polite }
@@ -174,6 +203,8 @@ internal fun ChatModelBrowsePage(
                     onEditModel(route, PickerBrowseSnapshot(page, picker.searchQuery,
                         browsingScroll.anchor(), filteredScroll.anchor(), room.value))
                 }
+            }, favorites = catalog.favorites, onFavoriteChange = { route, favorite ->
+                if (interactive && picker.modelListNavigation) store.setChatModelFavorite(route, favorite)
             })
         }
     }

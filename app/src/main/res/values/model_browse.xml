@@ -1,4 +1,8 @@
 <resources>
+    <string name="browse_favorites">Favorites</string>
+    <string name="browse_model_with_provider">%1$s | %2$s</string>
+    <string name="browse_add_favorite">Add %1$s to favorites</string>
+    <string name="browse_remove_favorite">Remove %1$s from favorites</string>
     <string name="browse_chat">Chat</string>
     <string name="browse_embedding">Embedding</string>
     <string name="browse_outputs">Output</string>

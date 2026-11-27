@@ -9,6 +9,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -18,6 +21,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.*
@@ -53,7 +58,7 @@ internal fun BrowseHeading(label: String) {
 @Composable
 internal fun BrowseTile(
     label: String, provider: Provider, model: ProviderModel, checked: Boolean,
-    modifier: Modifier, onEdit: (() -> Unit)? = null, onPick: () -> Unit,
+    modifier: Modifier, onEdit: (() -> Unit)? = null, favoriteButton: (@Composable () -> Unit)? = null, onPick: () -> Unit,
 ) {
     val colors = browseColors()
     val shape = RoundedCornerShape(14.dp)
@@ -63,21 +68,35 @@ internal fun BrowseTile(
             onLongClickLabel = if (onEdit != null) stringResource(R.string.chat_picker_edit_model) else null,
             onLongClick = onEdit, onClick = onPick)
     Box(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-        Row(Modifier.fillMaxWidth().clip(shape).background(if (checked) colors.selected else Color.Transparent)
-            .then(action).heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 10.dp),
+        Row(Modifier.fillMaxWidth().clip(shape).background(if (checked) colors.selected else Color.Transparent),
             verticalAlignment = Alignment.CenterVertically) {
-            BrowseAvatar(provider, model, 28.dp, colors)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(label, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .25.sp,
-                    fontWeight = FontWeight.SemiBold, color = colors.text)
-                BrowseModelTags(model, provider, colors)
+            Row(Modifier.weight(1f).then(action).heightIn(min = 48.dp)
+                .padding(start = 12.dp, end = if (favoriteButton == null) 12.dp else 0.dp, top = 10.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                BrowseAvatar(provider, model, 28.dp, colors)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(label, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .25.sp,
+                        fontWeight = FontWeight.SemiBold, color = colors.text)
+                    BrowseModelTags(model, provider, colors)
+                }
+                Box(Modifier.size(if (favoriteButton == null) 36.dp else 22.dp), contentAlignment = Alignment.Center) {
+                    if (checked) Icon(painterResource(R.drawable.lucide_check), null, Modifier.size(20.dp), tint = colors.primary)
+                }
             }
-            // Keep labels and badges the same width on selected and unselected rows.
-            Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
-                if (checked) Icon(painterResource(R.drawable.lucide_check), null, Modifier.size(20.dp), tint = colors.primary)
-            }
+            favoriteButton?.invoke()
         }
+    }
+}
+
+@Composable
+internal fun ModelFavoriteButton(checked: Boolean, modelLabel: String, modifier: Modifier, onChange: (Boolean) -> Unit) {
+    val inputMode = LocalInputModeManager.current
+    val action = stringResource(if (checked) R.string.browse_remove_favorite else R.string.browse_add_favorite, modelLabel)
+    IconToggleButton(checked, onChange, modifier.size(48.dp)
+        .focusProperties { canFocus = inputMode.inputMode != InputMode.Touch }) {
+        Icon(if (checked) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder, action, Modifier.size(20.dp),
+            tint = browseColors().primary)
     }
 }
 

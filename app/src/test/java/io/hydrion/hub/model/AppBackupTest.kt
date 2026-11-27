@@ -31,7 +31,7 @@ class AppBackupTest {
     private val settings = AppBackupSettings(ModelCatalog(listOf(provider,
         provider.copy(id = "custom", baseUrl = "https://invalid.test/fake-endpoint-token")),
         defaults = mapOf(Mode.Chat to route), active = mapOf(Mode.Chat to route),
-        overrides = mapOf(route to mapOf("header" to "fake-signing-key")), perChatModel = false),
+        overrides = mapOf(route to mapOf("header" to "fake-signing-key")), perChatModel = false, favorites = setOf(route)),
         MessageStyle(assistantBubble = true))
     private val before = SavedWorkspace(history = listOf(Conversation(title = "Existing chat")))
 
@@ -99,6 +99,7 @@ class AppBackupTest {
         val config = requireNotNull(restarted.initialSettings())
         assertEquals(settings.appearance, config.appearance)
         assertFalse(config.catalog.perChatModel)
+        assertEquals(setOf(route), config.catalog.favorites)
         assertEquals(route, thread.modelRoutes!![Mode.Chat])
         assertEquals(owner.chatModel, config.catalog.defaultEntry(Mode.Chat)?.route)
         assertEquals(32768, config.catalog.defaultModel(Mode.Chat)!!.contextWindowTokens)

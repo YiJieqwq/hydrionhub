@@ -1,4 +1,8 @@
 <resources>
+    <string name="browse_favorites">收藏</string>
+    <string name="browse_model_with_provider">%1$s | %2$s</string>
+    <string name="browse_add_favorite">收藏 %1$s</string>
+    <string name="browse_remove_favorite">取消收藏 %1$s</string>
     <string name="browse_chat">对话</string>
     <string name="browse_embedding">嵌入</string>
     <string name="browse_outputs">输出</string>
