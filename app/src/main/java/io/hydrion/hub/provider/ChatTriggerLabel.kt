@@ -14,6 +14,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.constrainWidth
+import io.hydrion.hub.ui.messages.LocalMessageStyle
 
 internal val PeakEffortLabelColor = Color(0xFF924FF7)
 
@@ -63,7 +64,12 @@ internal fun ChatTriggerText(label: ChatTriggerLabel, dark: Boolean, style: Text
         Text(label.name, style = style, color = if (dark) Color.White else colors.onSurface,
             textAlign = TextAlign.End, maxLines = 1, overflow = TextOverflow.Ellipsis)
         label.effort?.let { effort ->
-            val ink = if (label.peak) PeakEffortLabelColor else if (dark) Color(0xFFAFAFAF) else colors.onSurfaceVariant
+            val ink = when {
+                !LocalMessageStyle.current.colorCodeReasoningEffort -> Color.White
+                label.peak -> PeakEffortLabelColor
+                dark -> Color(0xFFAFAFAF)
+                else -> colors.onSurfaceVariant
+            }
             Text(effort, style = style, color = ink,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }

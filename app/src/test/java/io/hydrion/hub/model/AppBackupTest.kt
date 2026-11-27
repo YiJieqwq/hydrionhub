@@ -189,6 +189,15 @@ class AppBackupTest {
         }
     }
 
+    @Test fun reasoningEffortColorRoundTripsWithoutChangingTheLegacyAppearanceFields() {
+        val settings = AppBackupSettings(demoCatalog(), MessageStyle(colorCodeReasoningEffort = true))
+        val backup = settings.encode()
+        assertFalse(backup.getJSONObject("appearance").has("colorCodeReasoningEffort"))
+        assertEquals(settings.appearance, AppBackupSettings.decode(backup).appearance)
+        backup.remove("colorCodeReasoningEffort")
+        assertEquals(MessageStyle(), AppBackupSettings.decode(backup).appearance)
+    }
+
     @Test fun deletedModelReferencesAreReportedAndBuiltInModelLevelsSurvive() {
         val deleted = RemoteModel("removed", "historical")
         val state = SavedWorkspace(assistants = listOf(LocalAssistant.Default, owner.copy(chatModel = deleted)))

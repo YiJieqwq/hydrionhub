@@ -23,8 +23,17 @@ class MessageStyleTest {
         assertEquals(MessageTone.Dark, restored.tone)
         assertEquals(CardMaterial.Solid, restored.material)
         assertFalse(restored.assistantBubble)
+        assertFalse(restored.colorCodeReasoningEffort)
         assertEquals(MessageCardStyle("#242628", "#3B3F44", "#FFFFFF"), restored.palette.assistant)
         assertEquals(MessageCardStyle("#020562", "#030776", "#D3F0FF"), restored.palette.user)
+    }
+
+    @Test fun aMissingReasoningEffortChoiceKeepsTheRestOfAnOlderAppearance() {
+        val oldStyle = MessageStyle(tone = MessageTone.Light, material = CardMaterial.Frosted, assistantBubble = true)
+        val oldFields = oldStyle.toPreferences() - "colorCodeReasoningEffort"
+        assertEquals(oldStyle, readMessageStyle(oldFields))
+        val optedIn = oldStyle.copy(colorCodeReasoningEffort = true)
+        assertEquals(optedIn, readMessageStyle(optedIn.toPreferences()))
     }
 
     @Test fun eachToneAndRoleSurvivesRoundTripIndependently() {

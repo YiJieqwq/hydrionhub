@@ -7,6 +7,7 @@
     <string name="settings_chat">聊天模型</string>
     <string name="settings_image">图像生成模型</string>
     <string name="settings_style">外观</string>
+    <string name="settings_color_code_reasoning_effort">推理档位异色</string>
     <string name="settings_data">数据管理</string>
     <string name="settings_about">关于 HydrionHub</string>
     <string name="settings_search">搜索设置</string>

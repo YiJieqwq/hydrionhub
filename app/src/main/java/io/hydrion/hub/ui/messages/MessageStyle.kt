@@ -39,7 +39,8 @@ data class MessageStyle(
     val light: MessagePalette = defaultMessagePalette(MessageTone.Light),
     val assistantBubble: Boolean = false,
     val material: CardMaterial = CardMaterial.Solid,
-    val chosenUserPalettes: Set<MessageTone> = emptySet()
+    val chosenUserPalettes: Set<MessageTone> = emptySet(),
+    val colorCodeReasoningEffort: Boolean = false
 ) {
     val palette: MessagePalette get() = when (tone) {
         MessageTone.Dark -> dark
@@ -86,6 +87,7 @@ internal fun MessageStyle.toPreferences(includeChoices: Boolean = true): Map<Str
     putCard("light.assistant", light.assistant)
     putCard("light.user", light.user)
     if (includeChoices) {
+        put("colorCodeReasoningEffort", colorCodeReasoningEffort.toString())
         put("dark.user.chosen", (MessageTone.Dark in chosenUserPalettes).toString())
         put("light.user.chosen", (MessageTone.Light in chosenUserPalettes).toString())
     }
@@ -114,6 +116,8 @@ internal fun readMessageStyle(fields: Map<String, *>, fallback: MessageStyle = M
         tone = MessageTone.entries.find { it.name == fields["tone"] } ?: fallback.tone,
         material = CardMaterial.entries.find { it.name == fields["material"] } ?: fallback.material,
         assistantBubble = (fields["assistantBubble"] as? String)?.toBooleanStrictOrNull() ?: fallback.assistantBubble,
+        colorCodeReasoningEffort = (fields["colorCodeReasoningEffort"] as? String)?.toBooleanStrictOrNull()
+            ?: fallback.colorCodeReasoningEffort,
         dark = palette("dark", fallback.dark), light = palette("light", fallback.light),
         chosenUserPalettes = MessageTone.entries.filterTo(mutableSetOf(), ::userSelected)
     )

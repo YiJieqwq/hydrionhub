@@ -44,6 +44,7 @@ import io.hydrion.hub.model.Mode
 import io.hydrion.hub.model.RemoteModel
 import io.hydrion.hub.provider.deepSeekProvider
 import io.hydrion.hub.provider.route
+import io.hydrion.hub.ui.messages.MessageStyleStore
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -78,8 +79,11 @@ class ChatModelPickerTest {
         val reason = RemoteModel("demo-chat", "demo-reason")
         val oldValues = before.overrides[reason].orEmpty()
         val rtl = screen.activity.resources.configuration.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL
+        val appearance = MessageStyleStore.shared(screen.activity)
+        val previousEffortColor = appearance.style.value.colorCodeReasoningEffort
         try {
             screen.runOnIdle {
+                appearance.update { it.copy(colorCodeReasoningEffort = true) }
                 store.configure(Mode.Chat, reason, oldValues + mapOf("effort" to "Low", "speed" to "Standard"))
             }
             editor.performTouchInput { click(center) }
@@ -153,6 +157,7 @@ class ChatModelPickerTest {
             assertTrue("Dragging must preserve the editor's soft keyboard", softwareKeyboardIsOpen())
         } finally {
             screen.runOnIdle {
+                appearance.update { it.copy(colorCodeReasoningEffort = previousEffortColor) }
                 store.configure(Mode.Chat, reason, oldValues)
                 if (previous != reason) store.configure(Mode.Chat, previous, before.overrides[previous].orEmpty())
             }

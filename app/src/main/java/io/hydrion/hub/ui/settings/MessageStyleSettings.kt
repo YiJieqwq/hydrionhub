@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.hydrion.hub.R
 import io.hydrion.hub.ui.theme.capsuleEdge
 import io.hydrion.hub.provider.Header
 import io.hydrion.hub.ui.messages.*
@@ -87,16 +89,11 @@ fun MessageStyleSettings(onBack: () -> Unit) {
                     }
                 }
             }
-            SettingsCard {
-                Row(
-                    Modifier.fillMaxWidth().toggleable(value = style.assistantBubble, role = Role.Switch,
-                        onValueChange = { checked -> store.update { it.copy(assistantBubble = checked) } })
-                        .heightIn(min = 58.dp).padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("显示助手正文气泡", Modifier.weight(1f))
-                    Switch(checked = style.assistantBubble, onCheckedChange = null)
-                }
+            StyleSwitch("显示助手正文气泡", style.assistantBubble) { checked ->
+                store.update { it.copy(assistantBubble = checked) }
+            }
+            StyleSwitch(stringResource(R.string.settings_color_code_reasoning_effort), style.colorCodeReasoningEffort) { checked ->
+                store.update { it.copy(colorCodeReasoningEffort = checked) }
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("配色预览", Modifier.padding(start = 4.dp),
@@ -168,6 +165,20 @@ private fun MaterialSwatch(material: CardMaterial) {
 private fun SettingsCard(content: @Composable () -> Unit) {
     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow, content = content)
+}
+
+@Composable
+private fun StyleSwitch(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    SettingsCard {
+        Row(
+            Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+                .heightIn(min = 58.dp).padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, Modifier.weight(1f))
+            Switch(checked = checked, onCheckedChange = null)
+        }
+    }
 }
 
 @Composable

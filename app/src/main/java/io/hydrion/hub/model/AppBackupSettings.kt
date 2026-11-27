@@ -53,6 +53,7 @@ internal data class AppBackupSettings(val catalog: ModelCatalog, val appearance:
         .put("appearance", JSONObject(appearance.toPreferences(includeChoices = false)))
         // Older readers strictly validate the fields inside appearance but ignore sibling metadata.
         .put("chosenUserPalettes", JSONArray(MessageTone.entries.filter { it in appearance.chosenUserPalettes }.map { it.name }))
+        .apply { if (appearance.colorCodeReasoningEffort) put("colorCodeReasoningEffort", true) }
 
     companion object {
         fun decode(json: JSONObject): AppBackupSettings {
@@ -72,7 +73,8 @@ internal data class AppBackupSettings(val catalog: ModelCatalog, val appearance:
             }
             val appearance = json.getJSONObject("appearance")
             val fields = appearance.keys().asSequence().associateWith { appearance.getString(it) }
-            val style = readMessageStyle(fields)
+            val style = readMessageStyle(fields).copy(colorCodeReasoningEffort =
+                json.has("colorCodeReasoningEffort") && json.getBoolean("colorCodeReasoningEffort"))
             require(style.toPreferences(includeChoices = false) == fields)
             val restored = if (json.has("chosenUserPalettes")) {
                 val list = json.getJSONArray("chosenUserPalettes")
