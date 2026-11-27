@@ -414,24 +414,35 @@ internal fun HubComposer(
     }
     // An empty folded chat uses the same physical bottom and side margin. Keep the parked draft's dock.
     val restingInset = if (chat) lerp(34.dp, 35.dp, rowGate) else 35.dp
-    val normalSide = lerp(restingInset, if (chat) 12.dp else 12.25.dp, expansion)
-    // The two-row trigger can be invoked with the IME already parked or fully raised.
-    // Lock its measured width for the entire visit, including a reversed entrance.
+    val expandedSide = if (chat) 12.dp else 12.25.dp
+    val normalSide = lerp(restingInset, expandedSide, expansion)
+    // Bottom insets have already been consumed by the host. A parked draft keeps its dock.
+    val compactGap = (restingInset - with(density) { nav.toDp() }).coerceAtLeast(8.dp)
+    val normalGap = lerp(compactGap, 12.25.dp, expansion)
     var lastEditorSide by remember { mutableStateOf(normalSide) }
+    var lastEditorGap by remember { mutableStateOf(normalGap) }
+    var parkedDraft by remember { mutableStateOf(false) }
     var entrySide by remember { mutableStateOf(normalSide) }
     val widthReturn = remember { Animatable(1f) }
     LaunchedEffect(morphingEditor) {
         if (morphingEditor) widthReturn.snapTo(0f)
         else if (widthReturn.value < 1f) widthReturn.animateTo(1f, tween(150))
     }
-    val sideInset = if (morphingEditor) lastEditorSide else lerp(entrySide, normalSide, widthReturn.value)
-    SideEffect {
-        if (morphingEditor) entrySide = lastEditorSide else lastEditorSide = sideInset
+    val sideInset = if (morphingEditor) lerp(lastEditorSide, expandedSide, pageProgress)
+        else lerp(entrySide, normalSide, widthReturn.value)
+    val bottomGap = when {
+        !morphingEditor -> normalGap
+        parkedDraft -> lastEditorGap
+        else -> lerp(normalGap, if (modelPanel) 8.dp else 0.dp, pageProgress)
     }
-    // The host has already consumed max(IME, navigation bars). On gesture navigation
-    // the collapsed reference is measured from the physical edge, not the nav top.
-    val compactGap = (restingInset - with(density) { nav.toDp() }).coerceAtLeast(8.dp)
-    val bottomGap = lerp(lerp(compactGap, 12.25.dp, expansion), 8.dp, pageProgress)
+    SideEffect {
+        if (morphingEditor) entrySide = lastEditorSide
+        else {
+            lastEditorSide = sideInset
+            lastEditorGap = normalGap
+            parkedDraft = hasContent && !imeActive && !hardwareOnly
+        }
+    }
     val foldedHeight = if (chat) 48.dp else FoldedEditorMinHeight
     val editorMinHeight = lerp(foldedHeight, 46.5.dp, toolbar)
     val controlRowHeight = 47.75.dp
@@ -457,18 +468,30 @@ internal fun HubComposer(
                 }
             }
         }
-        val shape = if (!morphingEditor && (dictating || toolbar == 0f)) CircleShape else RoundedCornerShape(24.dp)
+        val toolsPull = if (morphingEditor && !modelPanel) pageProgress else 0f
+        val shape = when {
+            !morphingEditor && (dictating || toolbar == 0f) -> CircleShape
+            toolsPull > 0f -> {
+                val top = lerp(24.dp, 20.dp, toolsPull)
+                val bottom = lerp(24.dp, 0.dp, toolsPull)
+                RoundedCornerShape(top, top, bottom, bottom)
+            }
+            else -> RoundedCornerShape(24.dp)
+        }
+        val fill = if (toolsPull > 0f) androidx.compose.ui.graphics.lerp(colors.surfaceContainerHigh,
+            toolPanelScheme().surface, toolsPull) else colors.surfaceContainerHigh
         Surface(
             modifier = Modifier.fillMaxWidth().testTag("composer-capsule")
                 .then(if (chatPicker != null) Modifier.pickerCapsuleBounds() else Modifier)
                 .then(if (chatPicker == null) Modifier else Modifier.onGloballyPositioned {
                     chatPicker.composerBounds = IntRect(it.positionInWindow().round(), it.size)
                 })
-                .border(0.66.dp, HubStyle.ComposerBorder, shape),
+                .then(if (toolsPull >= 1f) Modifier else Modifier.border(0.66.dp,
+                    HubStyle.ComposerBorder.copy(alpha = HubStyle.ComposerBorder.alpha * (1f - toolsPull)), shape)),
             shape = shape,
-            color = colors.surfaceContainerHigh,
+            color = fill,
         ) {
-            ComposerPanelBody({ pageProgress }, modelPanel, panelRequested, sideInset, 34.dp, panelContent) {
+            ComposerPanelBody({ pageProgress }, panelRequested, sideInset, expandedSide, bottomGap, 34.dp, panelContent) {
                 Column {
                     if (!dictating && draft.attachments.isNotEmpty()) {
                         val imageAndText = draft.text.isNotEmpty() && draft.attachments.any { it.hasImagePreview }

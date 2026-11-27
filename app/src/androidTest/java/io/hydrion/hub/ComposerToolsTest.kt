@@ -48,6 +48,7 @@ class ComposerToolsTest {
     private val page get() = screen.onNodeWithTag("chat-tools-page")
     private val tools get() = screen.onNodeWithContentDescription("打开工具箱")
     private fun action(name: String) = screen.onNodeWithTag("chat-tools-$name")
+    private fun dismissTools() = action("handle").performTouchInput { swipe(center, center + androidx.compose.ui.geometry.Offset(0f, height * 3f), 200) }
     private fun option(group: String, value: String) = action("option:$group:$value")
 
     private fun imeVisible() = screen.runOnUiThread {
@@ -157,7 +158,7 @@ class ComposerToolsTest {
                     screen.onNodeWithTag("chat-picker-bubble", useUnmergedTree = true).assertExists()
                 } finally { clock.autoAdvance = true }
                 field.assertIsDisplayed()
-                tap(action("back"))
+                dismissTools()
             }
             editor.assertTextEquals("keep this draft")
             open()
@@ -317,7 +318,7 @@ class ComposerToolsTest {
             withStableIme(false) {
                 tools.performTouchInput { click(center) }
                 page.assertIsDisplayed()
-                action("count").assertIsDisplayed()
+                action("title").assertIsDisplayed()
                 option("web", "模型内置搜索").assertIsSelected()
                 val custom = option("web", "自定义搜索")
                 custom.performScrollTo().assertIsDisplayed().performClick().assertIsSelected()
@@ -327,7 +328,7 @@ class ComposerToolsTest {
                 screen.runOnIdle { assertEquals("禁用", vm.state.value.draft.imageTool) }
                 action("group:web").performScrollTo().performClick()
                 custom.assertDoesNotExist()
-                action("back").performTouchInput { click(center) }
+                dismissTools()
                 page.assertDoesNotExist()
                 screen.onNodeWithTag("chat-tools-surface", useUnmergedTree = true).assertDoesNotExist()
                 editor.assertTextEquals("parked draft")
@@ -360,7 +361,7 @@ class ComposerToolsTest {
             val firstOptions = page.fetchSemanticsNode().layoutInfo
             action("group:image").performScrollTo().performClick()
             option("image", "禁用").assertExists()
-            action("back").performTouchInput { click(center) }
+            dismissTools()
             page.assertDoesNotExist()
 
             screen.runOnIdle { vm.newConversation() }
@@ -433,7 +434,7 @@ class ComposerToolsTest {
                 }
                 assertTrue("The original shell must have grown",
                     capsule.fetchSemanticsNode().boundsInRoot.height > editorHeight)
-                action("back").performTouchInput { click(center) }
+                dismissTools()
                 clock.autoAdvance = true
                 page.assertDoesNotExist()
             }
@@ -460,7 +461,7 @@ class ComposerToolsTest {
             page.assertIsDisplayed()
             screen.waitUntil(15_000) { !imeVisible() }
             field.assertDoesNotExist()
-            withStableIme(false) { action("back").performTouchInput { click(center) } }
+            withStableIme(false) { dismissTools() }
             editor.assertTextEquals(saved.text).assertIsNotFocused()
             assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
             screen.onNodeWithText(attachment.name).assertIsDisplayed()

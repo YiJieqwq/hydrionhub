@@ -175,7 +175,7 @@ class ComposerDictationDeviceTest {
         touch(screen.onNodeWithContentDescription("打开工具箱").assertIsEnabled())
         screen.onNodeWithTag("chat-tools-page").assertIsDisplayed()
         bar.assertDoesNotExist()
-        touch(screen.onNodeWithTag("chat-tools-back"))
+        screen.onNodeWithTag("composer-panel-dismiss").performClick()
         assertEditor(replacement, TextRange(13), field)
     }
 

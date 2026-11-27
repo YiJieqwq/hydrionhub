@@ -110,11 +110,10 @@ internal fun MessageCard(
     }
 }
 
-internal enum class ChatSurface { UserBubble, ThoughtAndTools, ToolPanel, Translation }
+internal enum class ChatSurface { UserBubble, ThoughtAndTools, Translation }
 
 private val chatTintedShape = RoundedCornerShape(16.dp)
 private val replyChainShape = RoundedCornerShape(20.dp)
-private val darkThoughtToolFill = defaultMessagePalette(MessageTone.Dark).assistant.background.messageColor()
 
 private fun uneditedUserFill(scheme: ColorScheme, dark: Boolean): Color {
     val stockAccent = if (dark) HubStyle.Blue else lightTimeline.primary
@@ -134,22 +133,11 @@ internal fun MessageStyle.userCardInEditor(): MessageCardStyle {
     return user.copy(background = String.format(Locale.ROOT, "#%06X", fill.toArgb() and 0xFFFFFF))
 }
 
-/** The floating panel lives outside MessageCanvas. Give a light card the same backing and text scheme as the timeline. */
-@Composable
-internal fun ToolPanelCard(modifier: Modifier, content: @Composable () -> Unit) {
-    val tone = LocalMessageStyle.current.tone
-    val scheme = timelineScheme(tone)
-    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
-        val backing = if (tone == MessageTone.Light) modifier.clip(chatTintedShape).background(scheme.background) else modifier
-        ChatTintedSurface(ChatSurface.ToolPanel, backing, content)
-    }
-}
-
 @Composable
 internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content: @Composable () -> Unit) {
     val style = LocalMessageStyle.current
     val user = target == ChatSurface.UserBubble
-    val thoughtOrTools = target == ChatSurface.ThoughtAndTools || target == ChatSurface.ToolPanel
+    val thoughtOrTools = target == ChatSurface.ThoughtAndTools
     val dark = style.tone == MessageTone.Dark
     val fixedDarkCard = thoughtOrTools && dark
     val palette = if (user) style.renderPalette.user else style.renderPalette.assistant
@@ -161,13 +149,11 @@ internal fun ChatTintedSurface(target: ChatSurface, modifier: Modifier, content:
         return
     }
     val scheme = MaterialTheme.colorScheme
-    val fill = if (dark && target == ChatSurface.ThoughtAndTools) Color(0xFF262B2E)
-        else if (fixedDarkCard) darkThoughtToolFill
+    val fill = if (fixedDarkCard) Color(0xFF262B2E)
         else if (user) uneditedUserFill(scheme, dark)
         else scheme.primaryContainer.copy(alpha = if (dark) .25f else .30f)
     Box(modifier.clip(shape).background(fill)) {
-        val ink = if (dark && target == ChatSurface.ThoughtAndTools) Color(0xFFB5CAD7)
-            else if (fixedDarkCard) Color.White else scheme.onSurface
+        val ink = if (fixedDarkCard) Color(0xFFB5CAD7) else scheme.onSurface
         CompositionLocalProvider(LocalContentColor provides ink, content = content)
     }
 }

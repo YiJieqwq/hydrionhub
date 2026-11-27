@@ -10,7 +10,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -103,8 +102,8 @@ private fun PanelSwitchTrack(checked: Boolean, enabled: Boolean, id: String) {
         // Keep Material's state animation and shrink only the painted switch, independently of the hit target.
         Switch(checked, onCheckedChange = null, enabled = enabled, thumbContent = {},
             modifier = Modifier.requiredSize(52.dp, 32.dp).graphicsLayer { scaleX = 44f / 52f; scaleY = 26f / 32f },
-            colors = SwitchDefaults.colors(checkedTrackColor = colors.primary, checkedThumbColor = Color.White,
-                uncheckedTrackColor = colors.onSurface.copy(alpha = .22f), uncheckedThumbColor = Color.White,
-                uncheckedBorderColor = Color.Transparent, disabledUncheckedBorderColor = Color.Transparent))
+            colors = SwitchDefaults.colors(checkedTrackColor = colors.primary, checkedThumbColor = colors.onPrimary,
+                uncheckedTrackColor = colors.surfaceContainerLowest, uncheckedThumbColor = colors.outline,
+                uncheckedBorderColor = colors.outlineVariant, disabledUncheckedBorderColor = colors.outlineVariant.copy(alpha = .5f)))
     }
 }

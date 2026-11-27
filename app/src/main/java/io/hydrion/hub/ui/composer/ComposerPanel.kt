@@ -1,11 +1,17 @@
 package io.hydrion.hub.ui.composer
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,6 +21,11 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.TransformOrigin
@@ -27,6 +38,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.dismiss
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -52,7 +66,7 @@ private val LocalPanelPull = compositionLocalOf<PanelPull?> { null }
  * destination, then reveal it with the moving shell edge rather than reflowing its rows. */
 @Composable
 internal fun ComposerPanelBody(
-    progress: () -> Float, models: Boolean, requested: Boolean, sideInset: Dp, foldedInset: Dp,
+    progress: () -> Float, requested: Boolean, sideInset: Dp, expandedSide: Dp, bottomGap: Dp, foldedInset: Dp,
     panel: (@Composable () -> Unit)?, draft: @Composable () -> Unit,
 ) {
     val latest by rememberUpdatedState(progress)
@@ -60,6 +74,7 @@ internal fun ComposerPanelBody(
     val pull = remember { PanelPull({ latest() }, { isRequested && latest() >= 1f }) }
     val bottom = WindowInsets.ime.union(WindowInsets.navigationBars)
     val bars = WindowInsets.statusBars
+    val navigation = WindowInsets.navigationBars
     // The source and the original animation clock survive a mid-flight Back.
     val source = remember { PanelSource() }
     Layout(content = {
@@ -68,7 +83,7 @@ internal fun ComposerPanelBody(
             if (panel != null) BlockPanelTouches(Modifier.matchParentSize())
         }
         if (panel != null) {
-            Box(Modifier.fillMaxSize().onPlaced { pull.root = it }, propagateMinConstraints = true) {
+            Box(Modifier.fillMaxWidth().onPlaced { pull.root = it }, propagateMinConstraints = true) {
                 CompositionLocalProvider(LocalPanelPull provides pull, content = panel)
             }
         }
@@ -82,12 +97,16 @@ internal fun ComposerPanelBody(
         }
         val p = pull.progress().coerceIn(0f, 1f)
         val inset = bottom.getBottom(this)
-        val full = limits.maxHeight + inset
-        val margin = maxOf(bars.getTop(this) + 56.dp.roundToPx(), (full * if (models) .19f else .25f).roundToInt())
-            .coerceAtMost(limits.maxHeight / 2)
-        val end = (limits.maxHeight - margin).coerceAtLeast(1)
-        val sheet = children[1].measure(Constraints.fixed(limits.maxWidth, end))
-        pull.sourceScale = (1f - 2f * (foldedInset - sideInset).toPx() / limits.maxWidth.coerceAtLeast(1)).coerceIn(.65f, 1f)
+        val windowHeight = limits.maxHeight + inset + bottomGap.roundToPx()
+        val keyboardHeight = (inset - navigation.getBottom(this)).coerceAtLeast(0)
+        // The cap is relative to the window. A tall list gives up space below its fixed
+        // header when search opens the IME; a short list uses only its measured height.
+        val windowCap = (windowHeight * .8f).roundToInt()
+        val available = (limits.maxHeight - bars.getTop(this)).coerceAtLeast(0)
+        val cap = (windowCap - keyboardHeight).coerceIn(available / 2, available).coerceAtMost(windowCap)
+        val targetWidth = (limits.maxWidth + 2 * (sideInset.roundToPx() - expandedSide.roundToPx())).coerceAtLeast(0)
+        val sheet = children[1].measure(Constraints(minWidth = targetWidth, maxWidth = targetWidth, maxHeight = cap))
+        pull.sourceScale = (1f - 2f * (foldedInset - expandedSide).toPx() / targetWidth.coerceAtLeast(1)).coerceIn(.65f, 1f)
         val sourceHeight = source.height.takeIf { it > 0 } ?: editor.height
         // When the entry IME retreats, the bottom follows it but the leading edge
         // still rises from the actual invocation point. Release this offset on Back.
@@ -95,10 +114,10 @@ internal fun ComposerPanelBody(
         if (requested) source.release = null
         else if (source.release == null) source.release = p to entryOffset
         val lift = source.release?.let { (at, px) -> if (at > 0f) px * (p / at).coerceIn(0f, 1f) else 0f } ?: entryOffset.toFloat()
-        val height = ((editor.height + lift) * (1f - p) + end * p).roundToInt().coerceIn(0, limits.maxHeight)
+        val height = ((editor.height + lift) * (1f - p) + sheet.height * p).roundToInt().coerceIn(0, limits.maxHeight)
         layout(limits.maxWidth, height) {
             if (p < .45f) editor.placeWithLayer(0, height - editor.height) { alpha = (1f - p / .45f).coerceIn(0f, 1f) }
-            sheet.place(0, 0)
+            sheet.place((limits.maxWidth - sheet.width) / 2, 0)
         }
     }
 }
@@ -118,7 +137,7 @@ internal fun PanelViewport(modifier: Modifier, content: @Composable () -> Unit) 
     val edge = remember { ListEdge() }
     val interactive = LocalPanelPull.current?.acceptingBodyInput?.invoke() != false
     Box(modifier.onPlaced { edge.viewport = it }, propagateMinConstraints = true) {
-        Box(Modifier.fillMaxSize().behindToolsPage(!interactive), propagateMinConstraints = true) {
+        Box(Modifier.fillMaxWidth().behindToolsPage(!interactive), propagateMinConstraints = true) {
             CompositionLocalProvider(LocalListEdge provides edge, content = content)
         }
         if (!interactive) BlockPanelTouches(Modifier.matchParentSize())
@@ -173,9 +192,9 @@ internal fun PanelStep(modifier: Modifier = Modifier, inheritGroupPull: Boolean 
     }
 }
 
+/** Feather only the stationary header's lower edge, leaving the composer's lower edge clear. */
 @Composable
-internal fun PanelHeading(models: Boolean, onBack: () -> Unit, trailing: @Composable () -> Unit = {}) {
-    val title = stringResource(if (models) R.string.chat_picker_models else R.string.chat_tools_title)
+private fun PanelHeader(content: @Composable () -> Unit) {
     val tint = with(MaterialTheme.colorScheme) { lerp(surfaceContainerHigh, onSurface, .10f) }
     val pull = LocalPanelPull.current
     PanelStep(Modifier.fillMaxWidth().zIndex(1f).drawWithContent {
@@ -183,41 +202,88 @@ internal fun PanelHeading(models: Boolean, onBack: () -> Unit, trailing: @Compos
         val depth = 7.dp.toPx()
         drawRect(Brush.verticalGradient(listOf(tint.copy(alpha = .55f * (pull?.progress?.invoke() ?: 1f)), tint.copy(alpha = 0f)),
             startY = size.height, endY = size.height + depth), topLeft = Offset(0f, size.height), size = Size(size.width, depth))
-    }) {
-        Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(if (models) "chat-model-heading" else "chat-tools-heading")) {
-            IconButton(onBack, Modifier.align(Alignment.CenterStart).testTag(if (models) "chat-model-list-back" else "chat-tools-back")) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.chat_tools_back))
+    }, content = content)
+}
+
+/** Only the handle owns vertical drags. List, bookmark and text gestures stay with their own controls. */
+@Composable
+private fun PanelHandle(id: String, onDismiss: () -> Unit) {
+    val label = stringResource(R.string.chat_panel_drag_dismiss)
+    val threshold = with(LocalDensity.current) { 28.dp.toPx() }
+    var travel by remember { mutableFloatStateOf(0f) }
+    val close by rememberUpdatedState(onDismiss)
+    val shape = RoundedCornerShape(2.dp)
+    Box(Modifier.fillMaxWidth().height(32.dp).testTag("chat-$id-handle")
+        .draggable(rememberDraggableState { travel += it }, Orientation.Vertical,
+            onDragStarted = { travel = 0f }, onDragStopped = { if (travel >= threshold) close() })
+        .semantics { contentDescription = label; dismiss { close(); true } }, contentAlignment = Alignment.Center) {
+        val light = MaterialTheme.colorScheme.surface.luminance() > .5f
+        Spacer(Modifier.size(40.dp, 4.dp).testTag("chat-$id-grip").background(Color.White, shape)
+            .then(if (light) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, shape) else Modifier))
+    }
+}
+
+@Composable
+internal fun ToolPanelHeading(onBack: () -> Unit, countLabel: String) {
+    PanelHeader {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            PanelHandle("tools", onBack)
+            Box(Modifier.fillMaxWidth().heightIn(min = 34.dp).testTag("chat-tools-heading"), contentAlignment = Alignment.Center) {
+                Text(stringResource(R.string.chat_tools_title), Modifier.testTag("chat-tools-title")
+                    .semantics { heading(); stateDescription = countLabel },
+                    fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Text(title, Modifier.align(Alignment.Center).padding(horizontal = 48.dp)
-                .testTag(if (models) "chat-model-title" else "chat-tools-title").semantics { heading() },
-                fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Box(Modifier.align(Alignment.CenterEnd)) { trailing() }
         }
     }
 }
 
 @Composable
-internal fun PanelModelSearch(picker: ChatModelPickerState, enabled: Boolean) {
-    PanelStep(Modifier.fillMaxWidth()) {
-        val hint = stringResource(R.string.chat_picker_search_hint)
-        var lastQuery by remember(picker) { mutableStateOf(picker.searchQuery) }
-        val value = if (picker.modelListNavigation) picker.searchQuery else lastQuery
-        if (picker.modelListNavigation) SideEffect { lastQuery = value }
-        Box(Modifier.fillMaxWidth().behindToolsPage(!enabled)) {
-            OutlinedTextField(value, { edit ->
-                if (enabled && picker.modelListNavigation) {
-                    if (isQuerySubmitEdit(value, edit)) picker.submitSearch() else picker.updateSearchQuery(edit.singleLineQuery())
-                }
-            }, Modifier.fillMaxWidth().focusProperties { canFocus = enabled }.testTag("chat-model-search-field"),
-                readOnly = !enabled, singleLine = true, shape = MaterialTheme.shapes.large,
-                placeholder = { Text(hint, maxLines = 1) }, leadingIcon = { Icon(Icons.Outlined.Search, null) },
-                trailingIcon = { if (value.text.isNotEmpty()) {
-                    IconButton({ if (enabled) picker.clearSearchQuery() }, Modifier.testTag("chat-model-search-clear")) {
-                        Icon(Icons.Outlined.Close, stringResource(R.string.chat_tools_clear))
+internal fun PanelModelSearch(picker: ChatModelPickerState, enabled: Boolean, onFavorites: (() -> Unit)?) {
+    val hint = stringResource(R.string.chat_panel_model_search_hint)
+    val colors = MaterialTheme.colorScheme
+    var focused by remember { mutableStateOf(false) }
+    var lastQuery by remember(picker) { mutableStateOf(picker.searchQuery) }
+    val value = if (picker.modelListNavigation) picker.searchQuery else lastQuery
+    if (picker.modelListNavigation) SideEffect { lastQuery = value }
+    PanelHeader {
+        Column(Modifier.fillMaxWidth().testTag("chat-model-heading")) {
+            PanelHandle("model", picker::systemBack)
+            val shape = RoundedCornerShape(14.dp)
+            val line = if (focused) colors.primary.copy(alpha = .5f) else colors.outlineVariant.copy(alpha = .4f)
+            Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).behindToolsPage(!enabled)) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("chat-model-search-box")
+                    .background(colors.surfaceContainerHighest, shape).border(1.dp, line, shape),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    BasicTextField(value, { edit ->
+                        if (enabled && picker.modelListNavigation) {
+                            if (isQuerySubmitEdit(value, edit)) picker.submitSearch() else picker.updateSearchQuery(edit.singleLineQuery())
+                        }
+                    }, Modifier.weight(1f).focusProperties { canFocus = enabled }.onFocusChanged { focused = it.isFocused }
+                        .testTag("chat-model-search-field").semantics { contentDescription = hint },
+                        readOnly = !enabled, singleLine = true, textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onSurface),
+                        cursorBrush = SolidColor(colors.primary), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { if (enabled) picker.submitSearch() }),
+                        decorationBox = { field ->
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.width(48.dp), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), tint = colors.onSurface.copy(alpha = .6f))
+                                }
+                                Box(Modifier.weight(1f).padding(end = if (onFavorites == null) 12.dp else 0.dp,
+                                    top = 12.dp, bottom = 12.dp), contentAlignment = Alignment.CenterStart) {
+                                    if (value.text.isEmpty()) Text(hint, color = colors.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    field()
+                                }
+                            }
+                        })
+                    if (onFavorites != null) IconButton(onClick = onFavorites, enabled = enabled,
+                        modifier = Modifier.size(48.dp).testTag("chat-model-bookmark")) {
+                        Icon(Icons.Outlined.BookmarkBorder, stringResource(R.string.browse_favorites),
+                            Modifier.size(18.dp), tint = colors.onSurface.copy(alpha = .7f))
                     }
-                } }, keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { if (enabled) picker.submitSearch() }))
-            if (!enabled) BlockPanelTouches(Modifier.matchParentSize())
+                }
+                if (!enabled) BlockPanelTouches(Modifier.matchParentSize())
+            }
         }
     }
 }

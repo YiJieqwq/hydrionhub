@@ -72,7 +72,8 @@ class ComposerPanelJourneyTest {
             vm.rename(vm.state.value.current.id, "Model comparison")
             for ((id, label) in listOf("a" to "OpenAI examples", "b" to "Research lab", "c" to "Local archive")) {
                 val names = listOf("GPT-4.1", "GPT-4o mini", "GPT reasoning", "Atlas", "Orion", "Nova")
-                val models = List(18) { n -> ProviderModel("model-$n", "${names[n % names.size]} · ${n + 1}") }
+                val models = List(18) { n -> ProviderModel("model-$n",
+                    if (id == "c" && n == 17) "Single offline example" else "${names[n % names.size]} · ${n + 1}") }
                 vm.providers.save(Provider(id, Mode.Chat, label, "local", "", models), "", null)
                 vm.providers.setChatModelFavorite(RemoteModel(id, models[0].id), true)
             }
@@ -115,6 +116,14 @@ class ComposerPanelJourneyTest {
         val frame = windowFrame()
         File(path, "$name.png").outputStream().use { frame.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
+
+    private fun pullHandle(id: String) = tag("chat-$id-handle").performTouchInput {
+        swipe(center, center + Offset(0f, height * 3f), durationMillis = 200)
+    }
+
+    private fun tapOutside(at: Offset) = ui.onRoot().performTouchInput { click(at) }
+
+    private fun scrollMax(id: String) = tag(id).fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue()
 
     private fun dragList(list: SemanticsNodeInteraction, upward: Boolean) {
         val name = if (upward) "up" else "down"
@@ -166,7 +175,8 @@ class ComposerPanelJourneyTest {
             capture("model-interrupt")
             tag("chat-model-list").assertExists()
             val half = shell
-            assertEquals(original.width, half.width, 1f)
+            assertTrue("Width grows from the parked dock", half.width > original.width)
+            assertEquals(original.bottom, half.bottom, 1f)
             val intermediate = shellInkHeight(x, ink)
             assertTrue("The drawn shell must grow: $parkedInk → $intermediate", intermediate > parkedInk + 20)
             back()
@@ -198,7 +208,10 @@ class ComposerPanelJourneyTest {
             }
         } finally { clock.autoAdvance = true }
         val open = shell
-        assertEquals(original.width, open.width, 1f)
+        val scale = host.resources.displayMetrics.density
+        assertEquals(12f * scale, open.left, 1f)
+        assertEquals(original.bottom, open.bottom, 1f)
+        assertEquals("Long list stops at the window cap", windowFrame().height * .8f, open.height, 2f)
         assertTrue(open.top > header.bottom && open.height > original.height * 2)
         assertEquals(header, bounds("floating-header"))
         tag("chat-model-search-field").assertIsNotFocused()
@@ -211,6 +224,8 @@ class ComposerPanelJourneyTest {
         dragList(results, upward = true)
         dragList(results, upward = false)
         assertEquals(title, bounds("chat-model-heading"))
+        tag("chat-model-list-back").assertDoesNotExist()
+        tag("chat-model-title").assertDoesNotExist()
         tag("chat-model-providers").performScrollToNode(hasTestTag("chat-model-provider:c"))
         tag("chat-model-provider:c").performClick()
         tag("chat-model-option:c/model-0").assertIsDisplayed()
@@ -220,14 +235,33 @@ class ComposerPanelJourneyTest {
         assertEquals(title, bounds("chat-model-heading"))
         assertEquals(queryBounds, bounds("chat-model-search-field"))
         assertEquals(rail, bounds("chat-model-providers"))
-        results.performScrollToIndex(0)
-        ui.onNodeWithText("Favorites").assertIsDisplayed()
-
         val search = tag("chat-model-search-field")
-        search.performClick().assertIsFocused().performTextReplacement("no-matching-model")
+        val beforeBookmark = shows
+        tag("chat-model-bookmark").performTouchInput { click(center) }
+        ui.onNodeWithText("Favorites").assertIsDisplayed()
+        search.assertIsNotFocused()
+        assertEquals(beforeBookmark, shows)
+
+        search.performClick().assertIsFocused().performTextReplacement("Single offline example")
+        tag("chat-model-option:c/model-17").assertIsDisplayed()
+        val short = shell
+        val shortList = bounds("chat-model-results")
+        assertTrue("One match should use less space than a full window", short.height < open.height / 2)
+        assertEquals(0f, scrollMax("chat-model-results"), 0f)
+        assertEquals(shortList.bottom, bounds("chat-model-providers").top, 1f)
+        capture("models-short")
+        search.performTextReplacement("no-matching-model")
         tag("chat-model-search-empty").assertIsDisplayed()
+        assertTrue(shell.height < short.height)
         assertEquals(rail, bounds("chat-model-providers"))
         tag("chat-model-provider:c").assertIsNotEnabled()
+        capture("models-empty")
+        val bookmarkKeyboard = shows
+        tag("chat-model-bookmark").performTouchInput { click(center) }
+        ui.onNodeWithText("Favorites").assertIsDisplayed()
+        assertEquals("", search.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        assertEquals(bookmarkKeyboard, shows)
+        println("Model shell px: parked=$original long=$open one=$short, density=$scale")
         search.performTextReplacement("GPT")
         keyboard(250)
         ui.waitForIdle()
@@ -247,7 +281,7 @@ class ComposerPanelJourneyTest {
         capture("models-before-close")
         clock.autoAdvance = false
         try {
-            tag("chat-model-list-back").performClick()
+            pullHandle("model")
             repeat(23) { i ->
                 clock.advanceTimeByFrame()
                 ui.waitForIdle()
@@ -271,8 +305,22 @@ class ComposerPanelJourneyTest {
         val row = tag("chat-model-option:b/model-9")
         list.performScrollToKey("model:1:b/model-9")
         val density = host.resources.displayMetrics.density
-        assertEquals(6f * density, search.top - title.bottom, 1f)
+        assertEquals(8f * density, viewport.top - title.bottom, 1f)
+        val searchBox = bounds("chat-model-search-box")
+        assertEquals(16f * density, searchBox.left - shell.left, 1f)
+        assertEquals(48f * density, searchBox.height, 1f)
+        assertEquals(searchBox.bottom, title.bottom, 1f)
+        val bookmark = bounds("chat-model-bookmark")
+        assertEquals(searchBox.right, bookmark.right, 1f)
+        assertTrue(search.right <= bookmark.left + 1f)
         val frame = windowFrame()
+        val left = searchBox.left.roundToInt()
+        val y = (searchBox.top + 3f * density).roundToInt()
+        val outside = frame.getPixel(left - 2, y)
+        val inside = frame.getPixel(left + (28 * density).roundToInt(), y)
+        assertNotEquals(outside, inside)
+        assertEquals("Curved search corner leaves the shell visible", outside, frame.getPixel(left + density.roundToInt(), y))
+        assertEquals("14 dp corner reaches the fill", inside, frame.getPixel(left + (10 * density).roundToInt(), y))
         fun shadeAt(dp: Float): Int = Color.red(frame.getPixel(title.center.x.roundToInt(), (title.bottom + dp * density).roundToInt()))
         assertTrue("The header feather is painted across its gap", shadeAt(.5f) > shadeAt(5.5f))
         // Unclipped viewport coordinates let us distinguish shrinking a row from simply cropping it.
@@ -347,15 +395,16 @@ class ComposerPanelJourneyTest {
         assertEquals(raised.width, expanded.width, 1f)
         assertEquals(header, bounds("floating-header"))
         tag("tools-search-field").assertDoesNotExist()
-        val title = bounds("chat-tools-heading")
+        tag("chat-tools-back").assertDoesNotExist()
         tag("chat-tools-group:image").performScrollTo().performClick()
+        val title = bounds("chat-tools-heading")
         tag("chat-tools-option:image:禁用").performScrollTo().assertIsDisplayed()
         assertEquals(title, bounds("chat-tools-heading"))
         tag("chat-tools-group:environment").performScrollTo().assertIsDisplayed()
         val showBeforeExit = shows
         clock.autoAdvance = false
         try {
-            tag("chat-tools-back").performClick()
+            tapOutside(titleChip.center)
             repeat(22) { i ->
                 clock.advanceTimeByFrame()
                 ui.waitForIdle()
@@ -363,7 +412,101 @@ class ComposerPanelJourneyTest {
             }
         } finally { clock.autoAdvance = true }
         editor.assertTextEquals(draft).assertIsNotFocused()
+        tag("context-window").assertDoesNotExist()
         assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
         assertEquals(showBeforeExit, shows)
+    }
+
+    @Test @Config(qualifiers = "zh-rCN-w393dp-h851dp-night-xhdpi")
+    fun bothPanelsOpenFromActualParkedDraftAndReverseToIt() {
+        editor.performClick().performTextInputSelection(selection)
+        keyboard(260)
+        val wide = shell
+        keyboard(0)
+        val parked = shell
+        assertTrue(parked.width < wide.width)
+        val titleChip = bounds("conversation-chip")
+        val parkedSelection = editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange]
+        println("Selection before invoking either panel, after parking IME: $parkedSelection")
+        val noNewKeyboard = shows
+        val clock = ui.mainClock
+        fun frames(name: String, start: Rect, opening: Boolean): List<Rect> {
+            val path = mutableListOf(start)
+            repeat(22) { i ->
+                clock.advanceTimeByFrame()
+                ui.waitForIdle()
+                capture("$name-" + (i + 1).toString().padStart(2, '0'))
+                val current = shell
+                val prev = path.last()
+                assertEquals("$name frame $i bottom", parked.bottom, current.bottom, 1f)
+                assertEquals("$name frame $i center", parked.center.x, current.center.x, 1f)
+                assertTrue("$name frame $i: $prev → $current", if (opening)
+                    current.width >= prev.width - 1f && current.top <= prev.top + 1f
+                    else current.width <= prev.width + 1f && current.top >= prev.top - 1f)
+                path += current
+            }
+            assertTrue("$name shows intermediate widths", path.map { it.width }.distinct().size > 4)
+            return path
+        }
+        for (id in listOf("model", "tools")) {
+            if (id == "model") {
+                tag("chat-model-trigger").performClick()
+                tag("chat-model-select").assertIsDisplayed()
+            }
+            ui.waitForIdle()
+            clock.autoAdvance = false
+            try {
+                capture("parked-$id-00")
+                if (id == "model") tag("chat-model-select").performClick()
+                else ui.onNodeWithContentDescription("打开工具箱").performClick()
+                assertEquals("First layout starts at the actual dock", parked, shell)
+                val path = frames("parked-$id", parked, true)
+                assertEquals(wide.width, path.last().width, 1f)
+                assertEquals(wide.left, path.last().left, 1f)
+                println("$id parked entry px: start=$parked middle=${path[8]} end=${path.last()}, fully edited=$wide")
+            } finally { clock.autoAdvance = true }
+
+            if (id == "tools") {
+                for (group in listOf("environment", "mcp", "web")) tag("chat-tools-group:$group").performScrollTo().performClick()
+                val short = shell
+                assertEquals(0f, scrollMax("chat-tools-page"), 0f)
+                capture("tools-short")
+                tag("chat-tools-group:local").performClick()
+                tag("panel-switch:Time").performClick().assertIsOn()
+                val local = shell
+                assertTrue(local.height > short.height)
+                capture("tools-local")
+                println("Tools shell px: groups=$short local=$local")
+                tag("chat-tools-group:environment").performScrollTo().performClick()
+                tag("chat-tools-page").performTouchInput { swipeDown() }
+                tag("chat-tools-page").assertIsDisplayed()
+            } else {
+                ui.onNodeWithText("搜索模型或服务商", useUnmergedTree = true).assertIsDisplayed()
+                tag("chat-model-search-field").assertIsNotFocused()
+            }
+            val beforeClose = shell
+            clock.autoAdvance = false
+            try {
+                if (id == "model") tapOutside(titleChip.center) else pullHandle(id)
+                val path = frames("parked-$id-close", beforeClose, false)
+                assertEquals(parked, path.last())
+            } finally { clock.autoAdvance = true }
+            editor.assertTextEquals(draft).assertIsNotFocused()
+            assertEquals(parkedSelection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            tag("context-window").assertDoesNotExist()
+            assertEquals(noNewKeyboard, shows)
+        }
+    }
+
+    @Test @Config(qualifiers = "en-rUS-w1080dp-h720dp-night-mdpi")
+    fun tapOutsideTheCenteredTabletColumnDismissesOnlyThePanel() {
+        ui.onNodeWithContentDescription("打开工具箱").performClick()
+        tag("chat-tools-page").assertIsDisplayed()
+        val root = ui.onRoot().fetchSemanticsNode().boundsInRoot
+        val farLeft = Offset(root.left + 3f, root.center.y)
+        assertTrue(farLeft.x < shell.left)
+        tapOutside(farLeft)
+        tag("chat-tools-page").assertDoesNotExist()
+        editor.assertTextEquals(draft).assertIsNotFocused()
     }
 }

@@ -5,12 +5,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -56,7 +54,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -69,7 +66,13 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.hydrion.hub.R
-import io.hydrion.hub.ui.messages.ToolPanelCard
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
+import io.hydrion.hub.ui.messages.LocalMessageStyle
+import io.hydrion.hub.ui.messages.MessageTone
+import io.hydrion.hub.ui.messages.timelineScheme
 import io.hydrion.hub.model.CUSTOM_IMAGE_TOOL
 import io.hydrion.hub.model.Draft
 import io.hydrion.hub.model.HubViewModel
@@ -94,6 +97,17 @@ private const val Disabled = "禁用"
 private data class ToolChoice(val value: String, val label: String, val icon: () -> ImageVector)
 
 @Composable
+internal fun toolPanelScheme(): androidx.compose.material3.ColorScheme {
+    val tone = LocalMessageStyle.current.tone
+    val palette = timelineScheme(tone)
+    return remember(tone, palette) {
+        if (tone == MessageTone.Light) palette else palette.copy(surface = Color(0xFF1D1D1D),
+            primary = Color(0xFFB8C2FF), onPrimary = Color(0xFF232A42),
+            surfaceContainerLowest = Color(0xFF111111), onSurfaceVariant = Color(0xFFADADAD))
+    }
+}
+
+@Composable
 internal fun ChatToolsPage(
     search: String, imageTool: String, onSearch: (String) -> Unit, onImageTool: (String) -> Unit,
     vm: HubViewModel, modelToolsEnabled: Boolean, modifier: Modifier = Modifier, onBack: () -> Unit,
@@ -101,17 +115,18 @@ internal fun ChatToolsPage(
     val browsing = rememberScrollState()
     val count = if (modelToolsEnabled) listOf(search, imageTool).count { it != Disabled } else 0
     val countLabel = stringResource(R.string.chat_tools_enabled_count, count)
-    Column(modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        PanelHeading(models = false, onBack = onBack) {
-            Text(stringResource(R.string.panel_mode_count, count), Modifier.padding(end = 12.dp).testTag("chat-tools-count")
-                .clearAndSetSemantics { contentDescription = countLabel },
-                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.height(6.dp))
-        PanelViewport(Modifier.weight(1f).fillMaxWidth()) {
-            Column(Modifier.fillMaxSize().testTag("chat-tools-page").verticalScroll(browsing),
-                verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                ChatToolGroups(search, imageTool, "", onSearch, onImageTool, vm, modelToolsEnabled)
+    val scheme = toolPanelScheme()
+    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
+        CompositionLocalProvider(LocalContentColor provides scheme.onSurface) {
+            Column(modifier.fillMaxWidth()) {
+                ToolPanelHeading(onBack, countLabel)
+                Spacer(Modifier.height(4.dp))
+                PanelViewport(Modifier.weight(1f, fill = false).fillMaxWidth().padding(horizontal = 16.dp)) {
+                    Column(Modifier.fillMaxWidth().testTag("chat-tools-page").verticalScroll(browsing).padding(bottom = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        ChatToolGroups(search, imageTool, "", onSearch, onImageTool, vm, modelToolsEnabled)
+                    }
+                }
             }
         }
     }
@@ -195,9 +210,10 @@ private fun ToolGroup(
                     ) {
                         Icon(choice.icon(), null, Modifier.size(20.dp),
                             tint = if (choice.value == Disabled) colors.onSurface.copy(alpha = .38f) else colors.onSurfaceVariant)
-                        Text(choice.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Text(choice.label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontSize = 15.sp,
+                            color = if (!enabled) colors.onSurface.copy(alpha = .5f) else if (checked && choice.value != Disabled) colors.primary else colors.onSurface)
                         RadioButton(selected = checked, onClick = null, enabled = enabled,
-                            colors = RadioButtonDefaults.colors(selectedColor = colors.onSurface, unselectedColor = colors.outline))
+                            colors = RadioButtonDefaults.colors(selectedColor = colors.primary, unselectedColor = colors.outline))
                     }
                 }
             }
@@ -218,7 +234,7 @@ internal fun PanelSection(id: String, title: String, summary: String, visible: B
     val keepEditorFocus = Modifier.focusProperties { canFocus = inputMode.inputMode != InputMode.Touch }
     val toggle = if (filtering) Modifier else keepEditorFocus.clickable(role = Role.Button, onClickLabel = toggleLabel) { expanded = !expanded }
     PanelStep(Modifier.fillMaxWidth()) {
-        SectionBody(id) {
+        Column(Modifier.fillMaxWidth().testTag("chat-tools-section:$id")) {
             val colors = MaterialTheme.colorScheme
             Row(
                 Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).testTag("chat-tools-group:$id").then(toggle)
@@ -242,16 +258,6 @@ internal fun PanelSection(id: String, title: String, summary: String, visible: B
             }
             AnimatedVisibility(showChoices) { content() }
         }
-    }
-}
-
-@Composable
-private fun SectionBody(id: String, content: @Composable ColumnScope.() -> Unit) {
-    when (id) {
-        "web", "image", "local", "mcp" -> ToolPanelCard(Modifier.fillMaxWidth().testTag("chat-tools-card:$id")) {
-            Column(Modifier.fillMaxWidth(), content = content)
-        }
-        else -> Column(content = content)
     }
 }
 

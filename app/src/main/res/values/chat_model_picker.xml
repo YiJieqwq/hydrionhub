@@ -8,6 +8,8 @@
     <string name="chat_picker_provider_empty">No enabled chat models for this provider.</string>
     <string name="chat_picker_search">Search models</string>
     <string name="chat_picker_search_hint">Enter model name…</string>
+    <string name="chat_panel_drag_dismiss">Swipe down to close panel</string>
+    <string name="chat_panel_model_search_hint">Search models or providers</string>
     <string name="chat_picker_search_close">Close model search</string>
     <string name="chat_picker_search_empty">No matching models.</string>
 </resources>

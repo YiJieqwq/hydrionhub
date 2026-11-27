@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import io.hydrion.hub.ui.chrome.ChatHeaderLayout
 
-private enum class WorkspaceLayer { Composer, Pages, Picker }
+private enum class WorkspaceLayer { Composer, Pages, Picker, PanelDismiss }
 
 private class WorkspacePageSlot {
     var lastChatDockPx: Int? = null
@@ -48,6 +48,7 @@ private class WorkspacePageSlot {
 internal fun ChatComposerLayers(
     modifier: Modifier, composer: @Composable () -> Unit, picker: (@Composable () -> Unit)?,
     trackPickerAnchor: () -> Boolean,
+    panelDismissLayer: (@Composable () -> Unit)? = null,
     freezeTimelineDock: Boolean = false,
     dockKey: Any? = null,
     pages: @Composable (timelineDock: Dp) -> Unit,
@@ -90,6 +91,10 @@ internal fun ChatComposerLayers(
                     CompositionLocalProvider(LocalPickerComposerBounds provides anchor, LocalPickerModelLabelBounds provides label,
                         LocalPickerModelTravelX provides travel, content = picker)
                 }.singleOrNull()?.measure(limits)?.place(0, 0)
+            }
+            if (panelDismissLayer != null) {
+                // The backdrop also owns taps in the gutters beyond a tablet's centered chat column.
+                subcompose(WorkspaceLayer.PanelDismiss, panelDismissLayer).single().measure(limits).place(0, 0)
             }
             if (freezeTimelineDock) bar.place(barLeft, barTop)
         }

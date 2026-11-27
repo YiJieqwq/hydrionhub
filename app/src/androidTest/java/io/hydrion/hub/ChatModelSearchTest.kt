@@ -130,7 +130,7 @@ class ChatModelSearchTest {
                 assertEquals(saved, vm.state.value.draft)
                 assertEquals(RemoteModel(first.id, "batch-alpha"), vm.providers.catalog.value.active[Mode.Chat])
             }
-            control("search-clear").performClick()
+            search.performTextClearance()
             reveal(option(first, "last"))
             search.performTextReplacement("Elsewhere")
             reveal(option(second, "other-only")).performTouchInput { click(center) }
@@ -138,7 +138,7 @@ class ChatModelSearchTest {
             screen.waitUntil(15_000) { !imeIsVisible() }
             enterModels()
             reveal(option(second, "other-only")).assertIsSelected()
-            control("list-back").performTouchInput { click(center) }
+            screen.onNodeWithTag("composer-panel-dismiss").performClick()
             control("list").assertDoesNotExist()
             editor.assertIsNotFocused().assertTextEquals(draft)
             assertEquals(range, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
@@ -201,7 +201,7 @@ class ChatModelSearchTest {
                 assertEquals("Nimbus B", reloaded.providers.single { it.id == second.id }.models.first().name)
                 assertEquals(RemoteModel(first.id, "batch-alpha"), reloaded.active[Mode.Chat])
             }
-            control("list-back").performClick()
+            screen.onNodeWithTag("composer-panel-dismiss").performClick()
             editor.assertTextEquals(draft).assertIsNotFocused()
             assertEquals(range, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
             assertTrue(!imeIsVisible())
@@ -231,7 +231,7 @@ class ChatModelSearchTest {
             assertTrue(messages.any { it.text == "offline background fixture" })
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
             search.assertIsDisplayed().assertIsNotFocused()
-            control("list-back").performClick()
+            screen.onNodeWithTag("composer-panel-dismiss").performClick()
             editor.assertIsNotFocused().assertTextEquals(draft)
             assertEquals(selection, editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
             screen.runOnIdle {

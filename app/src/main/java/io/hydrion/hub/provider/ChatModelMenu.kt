@@ -13,7 +13,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import io.hydrion.hub.ui.composer.PanelHeading
 import io.hydrion.hub.ui.composer.PanelModelSearch
 import io.hydrion.hub.ui.composer.PanelViewport
 import io.hydrion.hub.ui.composer.PanelStep
@@ -178,13 +177,15 @@ internal fun ChatModelBrowsePage(
         }
         picker.consumeBrowseRestore(restore)
     }
-    Column(modifier.fillMaxSize().testTag("chat-model-list").padding(horizontal = 12.dp, vertical = 6.dp)) {
-        PanelHeading(models = true, onBack = picker::systemBack)
-        Spacer(Modifier.height(6.dp))
-        PanelModelSearch(picker, enabled = interactive && settled)
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+    Column(modifier.fillMaxWidth().testTag("chat-model-list").padding(bottom = 6.dp)) {
+        PanelModelSearch(picker, enabled = interactive && settled, onFavorites = if (shortcuts.isEmpty()) null else ({
+            picker.clearSearchQuery()
+            browsingScroll.requestScrollToItem(if (catalog.perChatModel) 1 else 0)
+        }))
+        Spacer(Modifier.height(8.dp))
+        BoxWithConstraints(Modifier.weight(1f, fill = false).fillMaxWidth().padding(horizontal = 12.dp)) {
             val room = maxHeight
-            PanelViewport(Modifier.fillMaxSize()) { LazyColumn(Modifier.fillMaxSize().testTag("chat-model-results"), state = scroll,
+            PanelViewport(Modifier.fillMaxWidth()) { LazyColumn(Modifier.fillMaxWidth().testTag("chat-model-results"), state = scroll,
                 contentPadding = PaddingValues(top = 6.dp, bottom = composerPadding + 6.dp)) {
                 if (showFollow) item(key = FOLLOW_DEFAULT_KEY) {
                     PanelStep(Modifier.fillMaxWidth()) { TextButton(
@@ -225,7 +226,7 @@ internal fun ChatModelBrowsePage(
                 derivedStateOf { rows.getOrNull(scroll.firstVisibleItemIndex - prefixCount)?.takeUnless { it.favoriteShortcut }?.provider?.id }
             }
             PanelStep(Modifier.fillMaxWidth()) {
-                LazyRow(Modifier.fillMaxWidth().testTag("chat-model-providers"), horizontalArrangement = Arrangement.spacedBy(6.dp),
+                LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp).testTag("chat-model-providers"), horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     items(providers, key = { it.provider.id }) { heading ->
                         val index = headingIndex[heading.provider.id]

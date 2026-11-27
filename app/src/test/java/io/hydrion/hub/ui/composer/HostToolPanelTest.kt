@@ -138,7 +138,7 @@ class HostToolPanelTest {
         open()
         screen.onNodeWithTag("tools-search-field").assertDoesNotExist()
         hint("Message 月笺").assertDoesNotExist()
-        screen.onNodeWithTag("chat-tools-back").performClick()
+        screen.onNodeWithTag("composer-panel-dismiss").performClick()
         editor.assertTextContains("一段草稿").performTextClearance()
         hint("Message 月笺").assertIsDisplayed()
         val blank = vm.state.value.copy(assistants = listOf(other.copy(name = "  ")))
@@ -265,8 +265,8 @@ class HostToolPanelTest {
         val heading = bounds("chat-tools-heading")
         val title = bounds("chat-tools-title")
         near(0f, (title.left + title.right - page.left - page.right) / 2)
-        near(48f, heading.bottom - heading.top)
-        near(6f, page.top - heading.bottom)
+        near(34f, heading.bottom - heading.top)
+        near(4f, page.top - heading.bottom)
         val localTag = "chat-tools-group:local"
         val localHeader = bounds(localTag)
         near(32f, localHeader.bottom - localHeader.top)
@@ -305,8 +305,8 @@ class HostToolPanelTest {
         mcp.performClick()
         awaitUi { screen.onAllNodes(hasTestTag("panel-action:" + server.id) and isOn()).fetchSemanticsNodes().isNotEmpty() }
         screen.onNodeWithTag("chat-tools-group:mcp").assertTextContains("1/1")
-        near(0f, bounds("chat-tools-title").top - title.top)
-        screen.onNodeWithTag("chat-tools-back").performClick()
+        near(0f, (bounds("chat-tools-title").left + bounds("chat-tools-title").right - title.left - title.right) / 2)
+        screen.onNodeWithTag("composer-panel-dismiss").performClick()
         assertEquals(Draft(text = "Panel draft"), vm.state.value.draft)
         println("Tool panel: density=$density, fontScale=" + screen.density.fontScale +
             ", viewport width=" + (page.right - page.left) + ", row pitch=" + (calendar.top - create.top) +
@@ -334,45 +334,41 @@ class HostToolPanelTest {
         }
     }
 
-    @Test fun fourWholeSectionsUseTheThoughtCardWhileTheEnvironmentUsesThePanelSurface() {
+    @Test fun toolSectionsShareOneOpaqueSurfaceInDarkAndLightThemes() {
         open()
         screen.onNodeWithTag("chat-tools-card:environment", true).assertDoesNotExist()
         screen.onNodeWithTag("chat-tools-group:environment").assertIsDisplayed()
-        fun checkCard(id: String, light: Boolean = false) {
-            val tag = "chat-tools-card:$id"
+        fun checkSurface(id: String, light: Boolean = false) {
             val header = screen.onNodeWithTag("chat-tools-group:$id", true).performScrollTo()
-            header.assert(hasAnyAncestor(hasTestTag(tag)))
-            val bounds = header.fetchSemanticsNode().boundsInWindow
-            val surface = screen.onNodeWithTag(tag, true).getUnclippedBoundsInRoot()
-            val row = header.getUnclippedBoundsInRoot()
-            assertEquals(row.left, surface.left)
-            assertTrue(surface.bottom >= row.bottom)
-            val x = bounds.left.roundToInt()
-            val y = bounds.center.y.roundToInt()
+            header.assert(hasAnyAncestor(hasTestTag("chat-tools-section:$id")))
+            screen.onNodeWithTag("chat-tools-card:$id", true).assertDoesNotExist()
+            val box = header.fetchSemanticsNode().boundsInWindow
+            val x = box.left.roundToInt()
+            val y = box.center.y.roundToInt()
             screen.runOnIdle {
                 val image = screen.activity.window.decorView.drawToBitmap()
                 val fill = image.getPixel(x + 2, y)
                 if (light) assertTrue(android.graphics.Color.luminance(fill) > .6f)
-                else assertEquals(android.graphics.Color.rgb(36, 38, 40), fill)
-                assertEquals(fill, image.getPixel(x + 6, y))
-                assertNotEquals(fill, image.getPixel(x + 1, bounds.top.roundToInt() + 1))
+                else assertEquals(android.graphics.Color.rgb(29, 29, 29), fill)
+                assertEquals("Group flows into the outer gutter", fill, image.getPixel(x - 4, y))
+                assertEquals("No separate corners around the group", fill, image.getPixel(x + 1, box.top.roundToInt() + 1))
             }
         }
-        for (id in listOf("local", "mcp", "web", "image")) checkCard(id)
+        for (id in listOf("local", "mcp", "web", "image")) checkSurface(id)
         screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
-        screen.onNodeWithTag("panel-switch:Time", true).assert(hasAnyAncestor(hasTestTag("chat-tools-card:local")))
+        screen.onNodeWithTag("panel-switch:Time", true).assert(hasAnyAncestor(hasTestTag("chat-tools-section:local")))
         enable("Time")
         screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
         screen.onNodeWithTag("panel-switch:Time").assertDoesNotExist()
-        checkCard("local")
+        checkSurface("local")
         screen.onNodeWithTag("chat-tools-group:image").performScrollTo().performClick()
-        screen.onNodeWithTag("chat-tools-option:image:" + CUSTOM_IMAGE_TOOL, true).assert(hasAnyAncestor(hasTestTag("chat-tools-card:image")))
+        screen.onNodeWithTag("chat-tools-option:image:" + CUSTOM_IMAGE_TOOL, true).assert(hasAnyAncestor(hasTestTag("chat-tools-section:image")))
         val styles = MessageStyleStore.shared(screen.activity)
         val original = styles.style.value
         try {
             screen.runOnIdle { styles.update { it.copy(tone = MessageTone.Light) } }
-            checkCard("image", light = true)
-            for (id in listOf("web", "mcp", "local")) checkCard(id, light = true)
+            checkSurface("image", light = true)
+            for (id in listOf("web", "mcp", "local")) checkSurface(id, light = true)
             screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
             fun textInk(text: String): Int {
                 val layouts = mutableListOf<TextLayoutResult>()
@@ -390,7 +386,7 @@ class HostToolPanelTest {
         } finally {
             screen.runOnIdle { styles.update { original } }
         }
-        screen.onNodeWithTag("chat-tools-back").performClick()
+        screen.onNodeWithTag("composer-panel-dismiss").performClick()
         assertEquals("Panel draft", vm.state.value.draft.text)
     }
 
@@ -421,7 +417,7 @@ class HostToolPanelTest {
             if (screen.onAllNodesWithTag("panel-switch:AskUser").fetchSemanticsNodes().isEmpty())
                 screen.onNodeWithTag("chat-tools-group:local").performScrollTo().performClick()
         }
-        fun back() = screen.onNodeWithTag("chat-tools-back").performClick()
+        fun back() = screen.onNodeWithTag("composer-panel-dismiss").performClick()
         fun send(text: String) {
             screen.onNodeWithContentDescription("消息输入框").performTextReplacement(text)
             screen.onNodeWithContentDescription("发送消息").assertIsEnabled().performClick()
@@ -618,7 +614,7 @@ class HostToolPanelTest {
         screen.onNodeWithText("Other assistant fixture").assertDoesNotExist()
         screen.onNodeWithContentDescription(label(R.string.settings_back)).performClick()
         act(server.id).performScrollTo().assertIsOn()
-        screen.onNodeWithTag("chat-tools-back").performClick()
+        screen.onNodeWithTag("composer-panel-dismiss").performClick()
         assertEquals(Draft(text = "Panel draft"), vm.state.value.draft)
     }
 }

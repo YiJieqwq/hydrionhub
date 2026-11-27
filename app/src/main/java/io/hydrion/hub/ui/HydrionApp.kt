@@ -245,6 +245,15 @@ private fun Workspace(vm: HubViewModel) {
                         { ChatModelPicker(providers, chatPicker, chatOverride = current.modelRoutes?.get(Mode.Chat), suspended = editVisit != null, hideForReturn = returning,
                             modelBrowseProgress = { modelBrowse.progress }, modifier = Modifier.fillMaxSize().windowInsetsPadding(hostImeInsets)) }
                     } else null,
+                    panelDismissLayer = if (covered) ({
+                        val label = stringResource(R.string.chat_tools_back)
+                        Spacer(Modifier.fillMaxSize().drawBehind {
+                            val p = if (toolsActive) toolsPage?.progress ?: 0f else modelBrowse.progress
+                            drawRect(Color.Black.copy(alpha = .45f * p))
+                        }.testTag("composer-panel-dismiss").clickable(
+                            interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = label
+                        ) { if (toolsActive) toolsPage?.close() else chatPicker.dismiss() })
+                    }) else null,
                     composer = {
                         val bottomBars = WindowInsets.safeDrawing
                         Column(Modifier.windowInsetsPadding(hostImeInsets).windowInsetsPadding(bottomBars.only(WindowInsetsSides.Bottom))) {
@@ -356,15 +365,6 @@ private fun Workspace(vm: HubViewModel) {
                                 assistantEditor = assistant.id
                             }) else null,
                             modifier = Modifier.fillMaxSize().padding(bottom = timelineDock))
-                    }
-                    if (covered) {
-                        val label = stringResource(R.string.chat_tools_back)
-                        Spacer(Modifier.fillMaxSize().drawBehind {
-                            val p = if (toolsActive) toolsPage?.progress ?: 0f else modelBrowse.progress
-                            drawRect(Color.Black.copy(alpha = .45f * p))
-                        }.testTag("composer-panel-dismiss").clickable(
-                            interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = label
-                        ) { if (toolsActive) toolsPage?.close() else chatPicker.dismiss() })
                     }
                 }
             }

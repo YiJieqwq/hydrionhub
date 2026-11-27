@@ -207,7 +207,7 @@ class ChatModelPickerTest {
             control("search-field").assertIsDisplayed()
             assertTrue("Browsing from a parked draft keeps the keyboard down", !softwareKeyboardIsOpen())
             control("search-clear").assertDoesNotExist()
-            control("list-back").performTouchInput { click(center) }
+            screen.onNodeWithTag("composer-panel-dismiss").performClick()
             control("trigger").performClick()
             val effort = control("effort").assertIsDisplayed()
             val initial = store.selection(Mode.Chat).parameters
