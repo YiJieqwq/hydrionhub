@@ -124,11 +124,11 @@ class ReplyBubbleInteractionTest {
     private fun label(id: Int) = screen.activity.getString(id)
     private fun horizontalEdges(tag: String) = screen.onNodeWithTag(tag).getUnclippedBoundsInRoot().let { it.left to it.right }
 
-    private fun assertThoughtFillsReply() {
+    private fun assertReplyCardEdges(tag: String = "message-thought") {
         val body = horizontalEdges("message-assistant-body")
         val timeline = horizontalEdges("message-timeline")
-        assertTrue("The reply keeps both page insets", timeline.first < body.first && body.second < timeline.second)
-        assertEquals("Thought card edges should match the reply body", body, horizontalEdges("message-thought"))
+        assertEquals("Reply text stays in its column", timeline.first + 20.dp, body.first)
+        assertEquals("$tag uses only the left text inset", (body.first - 4.dp) to (timeline.second - 20.dp), horizontalEdges(tag))
     }
 
     private fun more() = screen.onNodeWithContentDescription(label(R.string.turn_more_reply)).performClick()
@@ -176,11 +176,11 @@ class ReplyBubbleInteractionTest {
             val pixel = bitmap.getPixel(x, y)
             assertEquals("$tag at ($x, $y)", Integer.toHexString(fill), Integer.toHexString(pixel))
         }
-        // A 16dp corner meets the scanline 2dp from the edge about 8dp from the side.
+        // A 20dp corner meets the scanline 2dp from the edge about 11dp from the side.
         val scale = screen.density.density
         val depth = (2 * scale).roundToInt()
-        val outside = (6.5f * scale).roundToInt()
-        val inside = (9 * scale).roundToInt()
+        val outside = (9 * scale).roundToInt()
+        val inside = (12 * scale).roundToInt()
         for (y in listOf(depth, bitmap.height - 1 - depth)) {
             for (left in listOf(true, false)) {
                 fun pixelAt(inset: Int) = bitmap.getPixel(if (left) inset else bitmap.width - 1 - inset, y)
@@ -209,6 +209,8 @@ class ReplyBubbleInteractionTest {
         val warning = textInk("Offline warning")
         assertNotEquals(ink, warning)
         fun checkCards() {
+            assertReplyCardEdges("message-thought")
+            assertReplyCardEdges("message-tool-chain")
             assertFlatCard("message-thought", fill)
             assertFlatCard("message-tool-chain", fill)
             assertEquals(ink, textInk(thought))
@@ -960,7 +962,7 @@ class ReplyBubbleInteractionTest {
         val density = screen.density.density
         screen.onNodeWithText("Show 1 more step").performClick()
         val original = card.fetchSemanticsNode().boundsInWindow
-        assertThoughtFillsReply()
+        assertReplyCardEdges()
         fun checkBody(headerText: String, bodyText: String, next: String?) {
             val headerBox = header(headerText).fetchSemanticsNode().boundsInWindow
             val body = rect(bodyText)
@@ -980,7 +982,7 @@ class ReplyBubbleInteractionTest {
             }
         }
         header(title).performClick()
-        assertThoughtFillsReply()
+        assertReplyCardEdges()
         checkBody(title, thought, first)
         assertEquals(12f, textLayout(thought).layoutInput.style.fontSize.value)
         checkBody(first, "Found a lamp.", last)
@@ -1058,6 +1060,7 @@ class ReplyBubbleInteractionTest {
         val summary = "A complete, selectable result for the inventory team. ".repeat(3).trimEnd()
         val reply = answer.copy(text = body, toolCalls = listOf(ReplyToolCall(name, ToolCallState.Completed, body.length, result = summary)))
         open(width = 174.dp, fontScale = 1.8f, initial = Conversation(messages = listOf(reply)))
+        assertReplyCardEdges("message-tool-chain")
         val inline = textLayout(summary)
         assertEquals(4, inline.lineCount)
         assertTrue(inline.isLineEllipsized(3))
@@ -1141,18 +1144,18 @@ class ReplyBubbleInteractionTest {
             org.robolectric.util.ReflectionHelpers.ClassParameter.from(Float::class.javaPrimitiveType, scale))
         val oldScale = android.animation.ValueAnimator.getDurationScale()
         val closed = height()
-        assertThoughtFillsReply()
+        assertReplyCardEdges()
         clock.autoAdvance = false
         try {
             systemScale(1f)
             toggle()
             clock.advanceTimeBy(112)
             val during = height()
-            assertThoughtFillsReply()
+            assertReplyCardEdges()
             clock.advanceTimeBy(320)
             val expanded = height()
             assertTrue("closed=$closed during=$during expanded=$expanded", during > closed && during < expanded)
-            assertThoughtFillsReply()
+            assertReplyCardEdges()
             toggle()
             clock.advanceTimeBy(96)
             assertTrue(height() in (closed + 1f)..(expanded - 1f))
@@ -1163,7 +1166,7 @@ class ReplyBubbleInteractionTest {
             toggle()
             clock.advanceTimeByFrame()
             assertEquals(closed, height(), .5f)
-            assertThoughtFillsReply()
+            assertReplyCardEdges()
             toggle()
             clock.advanceTimeByFrame()
             assertEquals(expanded, height(), .5f)
@@ -1224,10 +1227,10 @@ class ReplyBubbleInteractionTest {
         awaitHost { !session.state.value.isGenerating }
         screen.onNodeWithText("Monday.").assertIsDisplayed()
         header.assert(hasState(R.string.turn_collapsed))
-        assertThoughtFillsReply()
-        val body = horizontalEdges("message-assistant-body")
-        assertEquals(body, expanded)
-        assertEquals(body, collapsed)
+        assertReplyCardEdges()
+        assertEquals(horizontalEdges("message-assistant-body").second, expanded.second)
+        assertEquals(horizontalEdges("message-thought"), expanded)
+        assertEquals(expanded, collapsed)
     }
 
     private fun openStreamingReply(repository: GenerationRepository, prompt: String): ConversationSession {

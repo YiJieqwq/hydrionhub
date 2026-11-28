@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -54,6 +55,7 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import io.hydrion.hub.R
@@ -256,6 +258,13 @@ private val stepNodeSize = 20.dp
 private val stepColumnGap = 8.dp
 internal val stepBodyPadding = PaddingValues(start = stepIconColumn + stepColumnGap, top = 4.dp, bottom = 8.dp)
 
+// The card uses the text column's left inset while its right edge stays aligned with the reply.
+private val replyCardWidth = Modifier.fillMaxWidth().layout { measurable, constraints ->
+    val inset = assistantTextInset.roundToPx()
+    val card = measurable.measure(constraints.offset(horizontal = inset))
+    layout(card.width - inset, card.height) { card.place(-inset, 0) }
+}
+
 @Composable
 private fun ReplyToolChain(block: ReplyBlock.Chain, calls: Map<Int, ReplyToolCall>, query: String, thought: String, pendingSlots: Set<Int>,
     answerCard: @Composable (ReplyToolCall) -> Unit, openRecord: (Int) -> Unit,
@@ -280,7 +289,7 @@ private fun ReplyToolChain(block: ReplyBlock.Chain, calls: Map<Int, ReplyToolCal
         if (block.unplaced) Text(stringResource(R.string.turn_tool_position_unknown), fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         ChatTintedSurface(ChatSurface.ThoughtAndTools,
-            Modifier.fillMaxWidth().testTag(if (hasThought) "message-thought" else "message-tool-chain")) {
+            replyCardWidth.testTag(if (hasThought) "message-thought" else "message-tool-chain")) {
             Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
                 if (hidden > 0) ChainFoldControl(expanded, hidden) { expanded = !expanded }
                 for (index in 0 until count) {

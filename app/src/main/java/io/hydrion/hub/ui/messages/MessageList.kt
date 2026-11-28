@@ -311,12 +311,14 @@ private fun ChatUserText(text: AnnotatedString) {
     }
 }
 
+internal val assistantTextInset = 4.dp
+
 @Composable
 internal fun AssistantTurn(msg: Message, chat: Conversation, query: String, vm: HubViewModel, busy: Boolean,
     assistant: LocalAssistant? = null, open: (Message, TurnSheet) -> Unit) {
     val mode = chat.mode
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().padding(horizontal = if (mode == Mode.Chat) 4.dp else 0.dp),
+    Column(Modifier.fillMaxWidth().padding(horizontal = if (mode == Mode.Chat) assistantTextInset else 0.dp),
         verticalArrangement = Arrangement.spacedBy(if (mode == Mode.Chat) 8.dp else 7.dp)) {
         if (mode == Mode.Image) Row(verticalAlignment = Alignment.CenterVertically) {
             IonMark(26.dp)
