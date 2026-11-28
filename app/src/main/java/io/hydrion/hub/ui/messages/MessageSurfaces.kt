@@ -114,7 +114,7 @@ internal fun MessageCard(
 internal enum class ChatSurface { UserBubble, ThoughtAndTools, Translation }
 
 private val chatTintedShape = RoundedCornerShape(16.dp)
-private val replyChainShape = RoundedCornerShape(20.dp)
+private val replyChainShape = RoundedCornerShape(16.dp)
 
 private fun uneditedUserFill(scheme: ColorScheme, dark: Boolean): Color {
     val stockAccent = if (dark) HubStyle.Blue else lightTimeline.primary

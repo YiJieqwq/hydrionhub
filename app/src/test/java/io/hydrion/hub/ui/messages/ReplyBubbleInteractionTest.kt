@@ -176,6 +176,18 @@ class ReplyBubbleInteractionTest {
             val pixel = bitmap.getPixel(x, y)
             assertEquals("$tag at ($x, $y)", Integer.toHexString(fill), Integer.toHexString(pixel))
         }
+        // A 16dp corner meets the scanline 2dp from the edge about 8dp from the side.
+        val scale = screen.density.density
+        val depth = (2 * scale).roundToInt()
+        val outside = (6.5f * scale).roundToInt()
+        val inside = (9 * scale).roundToInt()
+        for (y in listOf(depth, bitmap.height - 1 - depth)) {
+            for (left in listOf(true, false)) {
+                fun pixelAt(inset: Int) = bitmap.getPixel(if (left) inset else bitmap.width - 1 - inset, y)
+                assertEquals("$tag outside the corner at y=$y", pixelAt(0), pixelAt(outside))
+                assertEquals("$tag inside the corner at y=$y", fill, pixelAt(inside))
+            }
+        }
     }
 
     private fun checkThoughtAndToolCards(tone: MessageTone) {
@@ -214,10 +226,6 @@ class ReplyBubbleInteractionTest {
             assertTrue("The two tool steps must stay connected", railAt(joinY))
             assertTrue(railAt((center - 11 * scale).roundToInt()))
             assertFalse(railAt((center - 9 * scale).roundToInt()))
-            val outsideCorner = (5 * scale).roundToInt()
-            val insideCorner = (7 * scale).roundToInt()
-            assertEquals(bitmap.getPixel(0, 0), bitmap.getPixel(outsideCorner, outsideCorner))
-            assertEquals(fill, bitmap.getPixel(insideCorner, insideCorner))
         }
         checkCards()
         screen.onNodeWithText(thought).performClick()
